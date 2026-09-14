@@ -35,7 +35,7 @@ REGOLITH_PAGES_TOKEN=<openssl rand -hex 32>
 
 The intake listener starts on the container's loopback address, where nothing outside reaches it.
 Open it to the control plane on an address only the control plane can use — a private network or a
-tunnel:
+tunnel, where the pages machine is `10.0.0.5` here:
 
 ```dotenv
 REGOLITH_PAGES_API_BIND=0.0.0.0
