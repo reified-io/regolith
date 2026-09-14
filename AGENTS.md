@@ -31,7 +31,9 @@ reaches into a container.
 | `buildSrc/` | The convention plugins every module applies | — |
 
 - `protocol`, `sdk` and `koog` are libraries built with `explicitApi()`: every public declaration
-  says `public` and carries KDoc. The server keeps default visibility.
+  says `public` and carries KDoc. The server keeps default visibility. They are what a release
+  publishes to Maven Central, as `io.reified.regolith:<module>`, so a module added to that list needs
+  a `description` — the POM is refused without one.
 - A module's build file applies one convention plugin — `regolith.library` for a published library,
   `regolith.jvm` for the rest — and never repeats the toolchain or test wiring they hold.
 - The server image builds from an allowlist in `.dockerignore`: the build files, the convention
@@ -56,7 +58,13 @@ reaches into a container.
   with actions pinned by commit and bumped by Dependabot. A GitHub release publishes all three
   images through `.github/workflows/images.yml`, each tagged with the version, because a server
   pointed at a sandbox image from another build fails only when a command does. Only the server also
-  takes `latest` and `major.minor`, since a moving sandbox image changes every running sandbox.
+  takes `latest` and `major.minor`, since a moving sandbox image changes every running sandbox. The
+  same release signs the three libraries and uploads them through `.github/workflows/libraries.yml`,
+  which runs in the `maven-central` environment — the one place the Central token and the signing key
+  exist, and it admits release tags and no branch. The upload only stages the deployment: a version
+  published to Maven Central can never be replaced or removed, so releasing it stays a person's click
+  in the Portal. The job refuses a release whose tag and `gradle.properties` version disagree, since
+  images take their tag from git and jars take their version from the build.
 
 ## Server architecture
 
