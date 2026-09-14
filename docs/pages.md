@@ -9,13 +9,6 @@ image as the control plane: `regolith pages` instead of `regolith serve`. It hol
 and runs nobody's code. Visitors can only read; releases come in through a separate listener that
 takes a token.
 
-- **Running it** — [Setting it up](#setting-it-up) · [Two listeners](#two-listeners) · [TLS](#tls)
-- **What it serves** — [How a request is answered](#how-a-request-is-answered) ·
-  [What a site may hold](#what-a-site-may-hold)
-- **Publishing** — [From a sandbox](#publishing-from-a-sandbox) · [Releases](#releases) ·
-  [The intake API](#the-intake-api)
-- **Reference** — [Other settings](#other-settings)
-
 ## Setting it up
 
 On the machine that will serve the sites:
