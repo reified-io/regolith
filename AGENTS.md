@@ -7,8 +7,8 @@ working on it (`CLAUDE.md` imports this file); the product is in `README.md` and
 Pre-1.0 and unpublished: change the protocol, the storage schema and the module layout freely, and
 prefer a clean removal to a compatibility shim. Read [`docs/architecture.md`](docs/architecture.md)
 before changing request flow, sessions, execs, output, storage or startup, and
-[`docs/security.md`](docs/security.md) before touching what creates, confines or reaches into a
-container.
+[`docs/sandbox-security.md`](docs/sandbox-security.md) before touching what creates, confines or
+reaches into a container.
 
 ## Local files
 
@@ -126,7 +126,7 @@ same image, it shares the project's conventions and nothing else.
 
 ## Security invariants
 
-These hold for every change; [`docs/security.md`](docs/security.md) explains each.
+These hold for every change; [`docs/sandbox-security.md`](docs/sandbox-security.md) explains each.
 
 - Fail closed. A precondition that cannot be established — the network floor, bounded homes, the
   state lock — stops the server. Never add a flag, fallback or degraded mode that serves sandboxes
@@ -185,8 +185,8 @@ Update in the same change as the behaviour:
 - `docs/pages.md` and `.env.pages.example` — anything `pages` serves, stores, limits or is
   configured with.
 - `docs/architecture.md` — layers, lifecycle, output format, storage layout, startup.
-- `docs/security.md` — what creates, confines or reaches into a container, the network floor, homes,
-  the token.
+- `docs/sandbox-security.md` — what creates, confines or reaches into a container, the network
+  floor, homes, the token.
 - `README.md` — a user-visible capability, in one line; the detail belongs in `docs/`.
 
 The docs are written for people: sentence-case headings, prose wrapped at 100 columns, and invented

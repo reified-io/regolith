@@ -1,6 +1,6 @@
 # one regolith server on this docker host. configuration is in .env beside this file; see
 # docs/configuration.md. the server drives docker through its socket, which no sandbox ever sees; a
-# machine of its own is the recommended setup, see docs/security.md.
+# machine of its own is the recommended setup, see docs/sandbox-security.md.
 name: regolith
 
 services:

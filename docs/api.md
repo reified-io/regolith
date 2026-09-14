@@ -293,7 +293,8 @@ Under every mode sits the same floor. Private, shared, loopback, link-local (clo
 multicast and reserved IPv4 space, the host itself and outbound SMTP are unreachable, and IPv6 is
 off. An allowlist entry that lies entirely inside that space is refused.
 
-Domain rules are not supported — [security](security.md#why-addresses-and-not-domains) explains why.
+Domain rules are not supported — [security](sandbox-security.md#why-addresses-and-not-domains)
+explains why.
 
 ## Execs
 

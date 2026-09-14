@@ -26,7 +26,7 @@ sandbox it cannot confine.
 
 The server runs as one container next to Docker. Sandboxes are locked down on every layer Docker
 offers, so what remains is trusting Docker's own isolation; a dedicated machine is recommended.
-[Security](docs/security.md) has the details.
+[Security](docs/sandbox-security.md) has the details.
 
 ```bash
 mkdir regolith && cd regolith
@@ -78,7 +78,7 @@ From anything else, the [API](docs/api.md) is plain HTTP and JSON.
 - [API](docs/api.md) — every endpoint, what it means, and the errors it returns.
 - [Configuration](docs/configuration.md) — every setting and its default.
 - [Pages](docs/pages.md) — publishing a sandbox's files to the web.
-- [Security](docs/security.md) — what confines a sandbox, and what does not.
+- [Security](docs/sandbox-security.md) — what confines a sandbox, and what does not.
 - [Architecture](docs/architecture.md) — how it is built, for people changing it.
 
 ## Building from source

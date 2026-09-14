@@ -58,7 +58,7 @@ operator commands that are not the API. Both may use every layer, and no layer m
 short runs of the server's own image with exactly the capability one fixed script needs. The server
 resolves that image to an id at startup — from `REGOLITH_HELPER_IMAGE`, or by inspecting the
 container it runs in — so what it checks and what it runs come from one build.
-[Security](security.md) describes both.
+[Security](sandbox-security.md) describes both.
 
 ## Sandboxes and sessions
 
@@ -175,7 +175,7 @@ Startup runs its preconditions before the API listens, and any failure exits:
    the sandbox network exists.
 5. Release home attachments left by a previous run.
 6. Refuse to start while a home exists that no sandbox record claims (see
-   [security](security.md#homes)); `orphans` resolves it.
+   [security](sandbox-security.md#homes)); `orphans` resolves it.
 7. Install the network floor, and prove it with a control listener and a throwaway probe.
 8. Check host storage.
 
