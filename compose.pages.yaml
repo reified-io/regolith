@@ -1,0 +1,43 @@
+# the pages role: it serves published sites and takes in releases. a deployment of its own, normally on
+# a machine with a public address — copy this file and its .env there, nothing else. configuration is
+# in that .env; see docs/pages.md.
+#
+# it holds no docker socket and runs no caller's code: it answers reads and stores what the control
+# plane pushes to it.
+name: regolith-pages
+
+services:
+  pages:
+    image: ${REGOLITH_REGISTRY:-ghcr.io/reified-io}/regolith:${REGOLITH_VERSION:?set REGOLITH_VERSION in .env}
+    command: ["pages"]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: "1000:1000"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file: .env
+    ports:
+      # what visitors reach, normally behind a CDN or a tunnel that terminates TLS.
+      - "${REGOLITH_PAGES_PUBLISH:-127.0.0.1:8081}:8081"
+      # releases arrive here. the intake binds to the container's loopback address by default, so this
+      # port reaches nothing until REGOLITH_PAGES_API_BIND=0.0.0.0 is set as well. then publish it on an
+      # address only the control plane can reach, never a public one.
+      - "${REGOLITH_PAGES_API_PUBLISH:-127.0.0.1:8082}:8082"
+    tmpfs:
+      - /tmp
+    volumes:
+      - releases:/var/lib/regolith-pages
+      # certificates for tls, when this role terminates it; readable by uid 1000, and never written.
+      - ${REGOLITH_PAGES_CERT_DIR:-./certs}:/etc/regolith-pages/certs:ro
+    # the image's own check is the control plane's; this role answers on the intake listener.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8082/v1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  releases:
+    name: regolith-pages-releases

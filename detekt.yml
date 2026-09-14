@@ -1,0 +1,43 @@
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+
+# The default ruleset stays active (buildUponDefaultConfig in build.gradle.kts); this file only
+# relaxes rules that are noise for this codebase. Coding conventions live in AGENTS.md.
+
+complexity:
+  LongParameterList:
+    active: false
+  LongMethod:
+    active: false
+  CyclomaticComplexMethod:
+    active: false
+  TooManyFunctions:
+    active: false
+
+style:
+  MagicNumber:
+    active: false
+  ReturnCount:
+    active: false
+  WildcardImport:
+    active: false
+  ForbiddenComment:
+    active: false
+  MaxLineLength:
+    active: false
+  LoopWithTooManyJumpStatements:
+    active: false
+
+naming:
+  FunctionNaming:
+    active: true
+    ignoreAnnotated: ['Test']
+  MatchingDeclarationName:
+    active: false
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  SwallowedException:
+    active: false

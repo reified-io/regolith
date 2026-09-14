@@ -1,0 +1,183 @@
+name: images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .dockerignore
+      - .env.example
+      - .env.pages.example
+      - .github/workflows/images.yml
+      - LICENSE
+      - build.gradle.kts
+      - buildSrc/**
+      - compose.pages.yaml
+      - compose.yaml
+      - gradle.properties
+      - gradle/**
+      - images/**
+      - koog/build.gradle.kts
+      - koog/src/main/**
+      - pages/build.gradle.kts
+      - pages/src/main/**
+      - protocol/build.gradle.kts
+      - protocol/src/main/**
+      - sdk/build.gradle.kts
+      - sdk/src/main/**
+      - server/build.gradle.kts
+      - server/src/main/**
+      - settings.gradle.kts
+  pull_request:
+    paths:
+      - .dockerignore
+      - .env.example
+      - .env.pages.example
+      - .github/workflows/images.yml
+      - LICENSE
+      - build.gradle.kts
+      - buildSrc/**
+      - compose.pages.yaml
+      - compose.yaml
+      - gradle.properties
+      - gradle/**
+      - images/**
+      - koog/build.gradle.kts
+      - koog/src/main/**
+      - pages/build.gradle.kts
+      - pages/src/main/**
+      - protocol/build.gradle.kts
+      - protocol/src/main/**
+      - sdk/build.gradle.kts
+      - sdk/src/main/**
+      - server/build.gradle.kts
+      - server/src/main/**
+      - settings.gradle.kts
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # only a pull request may drop an older run: on main every commit gets its own group, so a burst
+  # of merges neither cancels the run in progress nor discards the ones waiting behind it — a pending
+  # run is dropped when the next one queues, which would leave commits verified by nothing.
+  group: images-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  REGISTRY: ghcr.io/reified-io
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # both deployments have to resolve from the example file a reader starts with, and each role
+      # reads the .env beside its own compose file.
+      - run: cp .env.example .env && docker compose config --quiet
+      - run: cp .env.pages.example .env && docker compose -f compose.pages.yaml config --quiet
+
+  verify:
+    if: github.event_name != 'release'
+    needs: compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the server image also runs the pages role and is the image of its own helpers.
+          - image: regolith
+            context: .
+            file: images/server/Dockerfile
+            target: ''
+          - image: regolith-sandbox
+            context: images/sandbox
+            file: images/sandbox/Dockerfile
+            target: base
+          - image: regolith-sandbox-full
+            context: images/sandbox
+            file: images/sandbox/Dockerfile
+            target: full
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  publish:
+    if: github.event_name == 'release'
+    needs: compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # only the server takes moving tags. a sandbox image that changes under a running server
+          # changes every sandbox with it, so a released one is addressed by its version and nothing
+          # else. a moving tag an operator pushes by hand is the one exception, and belongs to a
+          # host they redeploy themselves.
+          - image: regolith
+            context: .
+            file: images/server/Dockerfile
+            target: ''
+            moving_tags: true
+          - image: regolith-sandbox
+            context: images/sandbox
+            file: images/sandbox/Dockerfile
+            target: base
+            moving_tags: false
+          - image: regolith-sandbox-full
+            context: images/sandbox
+            file: images/sandbox/Dockerfile
+            target: full
+            moving_tags: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ matrix.moving_tags }}
+            type=raw,value=latest,enable=${{ matrix.moving_tags && github.event.release.prerelease == false }}
+      - id: push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ matrix.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

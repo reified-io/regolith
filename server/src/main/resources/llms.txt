@@ -1,0 +1,76 @@
+# Regolith
+
+> Self-hosted sandboxes for AI agents: persistent, named Linux homes behind an HTTP API. Run commands,
+> read and write files, and come back later to find everything where you left it.
+
+Every endpoint is under `/v1` and needs `Authorization: Bearer <token>`, except `GET /v1/health` and this
+file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 problem documents
+(`application/problem+json`) with a stable `code` member.
+
+## Facts to rely on
+
+- A sandbox is named by you: 1-63 lowercase letters, digits and inner hyphens (`user-23`).
+- `PUT /v1/sandboxes/{name}` creates it or returns the existing one unchanged. It is safe to call first,
+  every time. Its body counts only on creation: change `network`, `lifecycle`, `env` or `labels` later
+  with `PATCH`; image, CPUs, memory and home size stay.
+- Commands run as uid 1000 with no root, in `/home/sandbox` by default. Only `/home/sandbox` survives a
+  session; `/tmp` and running processes do not.
+- Install tools into the home: `python3 -m venv ~/venv` (there is no system `pip`), `npm install -g`, or
+  binaries in `~/.local/bin`, which is on the `PATH`.
+- A session starts on first use and stops when idle; `lastSessionEnd.reason` says why the last one ended.
+  A process left in the background after its command ends stops with it, or sooner if it keeps using
+  CPU: keep long work inside a command.
+- The network is `public`, `allowlist` (CIDRs) or `none` (no network, no DNS). Private addresses, the host
+  and SMTP are never reachable.
+- Limits come from `GET /v1/info`; do not assume them.
+
+## Sandboxes
+
+- `PUT /v1/sandboxes/{name}` - body optional: `{"resources":{"cpus":1,"memoryMb":1024,"homeMb":4096},"network":{"mode":"public"},"lifecycle":{"idleStopSeconds":900,"maxSessionSeconds":86400,"retainDays":30},"env":{},"labels":{}}`. 201 created, 200 existing.
+- `GET /v1/sandboxes/{name}`, `GET /v1/sandboxes?label=key=value&limit=100&cursor=`
+- `PATCH /v1/sandboxes/{name}` - `network`, `lifecycle`, `env`, `labels`; a network change applies to the running session at once.
+- `POST /v1/sandboxes/{name}/start`, `POST /v1/sandboxes/{name}/stop`
+- `DELETE /v1/sandboxes/{name}` - deletes the home too; there is no undo.
+
+## Commands
+
+- `POST /v1/sandboxes/{name}/execs` - `{"shell":"npm test","cwd":"app","env":{},"timeoutSeconds":600,"stdin":false}` or `{"argv":["python3","main.py"]}`. Returns 201 with `id` at once. Send `Idempotency-Key` to make a retry safe.
+- `GET /v1/sandboxes/{name}/execs/{id}?waitSeconds=30` - status and, when finished, `outcome`: `exited` with `exitCode` (and `reason` `oom_killed` or `pids_limited` when a limit explains it), `timed_out`, `cancelled`, or `interrupted` with `reason`.
+- `GET /v1/sandboxes/{name}/execs/{id}/output?offset=0&waitSeconds=20` - `{"frames":[{"kind":"stdout","text":"...","end":42}],"nextOffset":42,"complete":false}`. Loop with `offset = nextOffset` until `complete`. Output is kept on the server: after a disconnect, resume from the last offset. With `Accept: text/event-stream` the same output arrives as server-sent events, ending with `event: end`.
+- `POST /v1/sandboxes/{name}/execs/{id}/stdin?close=true` - raw bytes; only for execs started with `"stdin":true`.
+- `POST /v1/sandboxes/{name}/execs/{id}/cancel`
+- `GET /v1/sandboxes/{name}/execs` - recent execs, newest first.
+
+To run a command and wait for its result: start it, loop over `output` until `complete`, then read the
+exec for its `outcome`.
+
+## Publishing to the web
+
+Only when the server has a pages role: `GET /v1/info` reports `"publishing": true`. Without one these
+answer `not_implemented`.
+
+- `POST /v1/sandboxes/{name}/publish` - `{"path":"dist","site":"optional-name"}`. Publishes a snapshot of that directory and returns `{"site","url","release","files","bytes","publishedAt"}`. The URL is public: anyone with the link sees those files. Publishing again replaces it.
+- `GET /v1/sandboxes/{name}/site` - what is published, or `not_found`.
+- `DELETE /v1/sandboxes/{name}/site` - takes it down; the sandbox keeps its files.
+
+A site is a snapshot, not the live home: build first, then publish. Static files only - no server side
+runs there. A file or directory whose name starts with a dot (`.git`, `.env`, `.well-known`) fails the
+whole publish, and symlinks are skipped. Publishing to a name that is already live replaces that site,
+whoever published it.
+
+## Files
+
+Paths are absolute or relative to `/home/sandbox`.
+
+- `GET /v1/sandboxes/{name}/files/content?path=notes/a.txt` - raw bytes.
+- `PUT /v1/sandboxes/{name}/files/content?path=notes/a.txt` - raw bytes in the body; replaces atomically, creates parent directories.
+- `GET /v1/sandboxes/{name}/files/entries?path=notes` - directory listing.
+- `GET /v1/sandboxes/{name}/files/stat?path=notes/a.txt`
+- `DELETE /v1/sandboxes/{name}/files?path=notes&recursive=true`
+
+## Errors worth handling
+
+- `capacity_exhausted` (503) and `unavailable` (503): retry after `Retry-After` seconds.
+- `busy` (409): the sandbox already runs as many commands as allowed; wait for one to finish.
+- `payload_too_large` (413): a file, body or site beyond its limit; `detail` names it.
+- `invalid_request` (400): the `detail` member says what to fix.

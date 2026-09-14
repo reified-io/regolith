@@ -1,0 +1,77 @@
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+    labels:
+      - dependencies
+      - gradle
+    # one pull request per ecosystem per week instead of one per dependency: fewer CI runs, one
+    # merge, and no textual conflict between bumps that sit on adjacent lines of the version catalog.
+    # majors stay outside the group on purpose — ktor and koog each need their own audit before
+    # landing, which cannot happen inside a pull request that also moves five patch versions.
+    groups:
+      gradle:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # one entry per directory holding a Dockerfile, and both are part of the same release.
+  - package-ecosystem: docker
+    directory: /images/server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: images
+    ignore:
+      # the jre major is the server's jvm: the build targets 21, so a bump here is a decision, not a
+      # refresh.
+      - dependency-name: eclipse-temurin
+        update-types:
+          - version-update:semver-major
+    # no update-types here, unlike gradle above: these base images are pinned by digest, and a
+    # rebuilt image keeps its tag, so a refresh carries no semver for a filter to match on.
+    groups:
+      docker:
+        patterns:
+          - "*"
+
+  - package-ecosystem: docker
+    directory: /images/sandbox
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: images
+    ignore:
+      # a debian major changes every tool a sandbox offers at once, and the image is what a caller's
+      # commands run against.
+      - dependency-name: debian
+        update-types:
+          - version-update:semver-major
+    groups:
+      docker:
+        patterns:
+          - "*"

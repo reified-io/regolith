@@ -1,0 +1,15 @@
+.agents/
+.antigravitycli/
+.claude/
+.codex/
+.gradle/
+.idea/
+.kotlin/
+
+build/
+deploy/
+notes/
+
+CLAUDE.local.md
+
+.env

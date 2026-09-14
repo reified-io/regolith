@@ -1,0 +1,133 @@
+---
+name: regolith
+description: Run commands and keep files in Regolith sandboxes — persistent, named Linux homes on a self-hosted server — over its HTTP API, the Kotlin SDK, or the Koog shell executor. Use when an agent needs somewhere safe to execute code, install tools, build projects or keep a workspace between conversations on a Regolith server.
+---
+
+# Regolith
+
+A Regolith server gives each name a Linux sandbox with a persistent home. You create it once, run
+commands in it, move files in and out, and find it unchanged next time. The server runs on the user's own
+machine; ask the user for its URL and token, conventionally `REGOLITH_URL` and `REGOLITH_TOKEN`.
+
+`GET $REGOLITH_URL/llms.txt` returns the complete endpoint reference in plain text, without a token. Read
+it when you need a detail this file leaves out.
+
+## Rules that save you a failed attempt
+
+- **Name the sandbox after what it belongs to** — a user, a project, a task: `user-23`, `ci-build-17`.
+  1-63 lowercase letters, digits and inner hyphens.
+- **Always `PUT` first.** `PUT /v1/sandboxes/{name}` creates the sandbox or returns the existing one
+  unchanged, so it is safe at the start of every conversation. Its body only counts on creation: change
+  `network`, `lifecycle`, `env` or `labels` later with `PATCH`; image, CPUs, memory and home size stay.
+- **Keep what matters in `/home/sandbox`.** It is the only thing that survives a session. `/tmp` and
+  running processes are gone when the session stops (idle for 15 minutes by default).
+- **There is no root.** Commands run as uid 1000. Install tools into the home: a virtual environment
+  for Python (`python3 -m venv ~/venv`; there is no system `pip`, the venv has one), `npm install -g`
+  (the default image points it at the home), or binaries unpacked into `~/.local/bin`, which is on the
+  `PATH`.
+- **Nothing runs unattended for long.** A process left in the background after its command ends stops
+  with the session once it is idle, or sooner if it keeps using CPU. Keep long work inside a command.
+- **Commands get no stdin** unless you start them with `"stdin": true`. An interactive prompt ends instead
+  of hanging — pass flags like `-y` instead.
+- **Read limits from `GET /v1/info`** (timeouts, file size, memory) instead of guessing.
+- **The network may be closed.** Private addresses and the host are never reachable; with mode `none`
+  nothing is, DNS included. A download failing with a name-resolution error in a `none` sandbox is the
+  policy, not a bug.
+- **Output is kept on the server.** If a connection drops, read the output again from the last `end`
+  offset you saw; nothing is lost.
+
+## Run a command
+
+```bash
+curl -s -X PUT -H "Authorization: Bearer $REGOLITH_TOKEN" "$REGOLITH_URL/v1/sandboxes/user-23"
+
+EXEC=$(curl -s -X POST -H "Authorization: Bearer $REGOLITH_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"shell":"python3 -c \"import platform; print(platform.system())\"","timeoutSeconds":120}' \
+  "$REGOLITH_URL/v1/sandboxes/user-23/execs" | jq -r .id)
+
+curl -s -H "Authorization: Bearer $REGOLITH_TOKEN" \
+  "$REGOLITH_URL/v1/sandboxes/user-23/execs/$EXEC/output?waitSeconds=20"    # loop on nextOffset until complete
+
+curl -s -H "Authorization: Bearer $REGOLITH_TOKEN" \
+  "$REGOLITH_URL/v1/sandboxes/user-23/execs/$EXEC?waitSeconds=30" | jq .outcome
+```
+
+Reading an outcome:
+
+| `outcome` | What to do |
+|---|---|
+| `exited`, `exitCode` 0 | Done |
+| `exited` with `reason: oom_killed` | Out of memory, which is fixed per sandbox: process less at once, or create another sandbox with more `memoryMb` |
+| `exited` with `reason: pids_limited` | Too many processes: lower parallelism (`make -j2`, fewer workers) |
+| `exited`, other codes | Read the output; it is the command's own failure |
+| `timed_out` | Raise `timeoutSeconds`, up to `maxExecTimeoutSeconds` in `GET /v1/info`, or split the work |
+| `cancelled` | Someone called `cancel`; run it again only if that was not deliberate |
+| `interrupted` | The session ended under it — `reason` says why; run it again |
+
+For long work — a build, a server — start the exec and poll it rather than holding one request open.
+
+## Files
+
+```bash
+curl -s -X PUT -H "Authorization: Bearer $REGOLITH_TOKEN" --data-binary @report.csv \
+  "$REGOLITH_URL/v1/sandboxes/user-23/files/content?path=data/report.csv"
+curl -s -H "Authorization: Bearer $REGOLITH_TOKEN" \
+  "$REGOLITH_URL/v1/sandboxes/user-23/files/content?path=out/result.png" -o result.png
+```
+
+Relative paths start at `/home/sandbox`. Writes replace the file atomically and create parent
+directories.
+
+## Publishing a page to the web
+
+If `GET /v1/info` reports `"publishing": true`, one call puts a finished directory on the public
+internet:
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $REGOLITH_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"path":"dist"}' "$REGOLITH_URL/v1/sandboxes/user-23/publish"
+# {"site":"user-23","url":"https://user-23.sites.example.com","release":"...","files":12,...}
+```
+
+- It publishes a **snapshot**: build first, then publish; the site does not change when the sandbox does.
+- **Static files only.** Nothing runs there, so publish the output of a build, not a server.
+- **No dotfiles.** A file or directory whose name starts with a dot (`.git`, `.env`, `.well-known`) fails
+  the whole publish; remove it from the directory first. Symlinks are skipped.
+- The site is named after the sandbox unless you pass `"site"`. **Publishing to a name that is already
+  live replaces that site**, whoever published it.
+- The URL is **public to anyone with the link**. Say so before publishing anything personal.
+- `DELETE /v1/sandboxes/{name}/site` takes it down; `501 not_implemented` means this server publishes
+  nothing.
+
+## Network
+
+`PATCH /v1/sandboxes/{name}` changes the network of a running sandbox at once:
+
+- `{"network":{"mode":"none"}}` cuts it off — use it after installing dependencies and before running
+  code you do not trust;
+- `{"network":{"mode":"allowlist","allow":[{"cidr":"140.82.112.0/20"}]}}` allows only listed networks;
+- `{"network":{"mode":"public"}}` restores the internet.
+
+## Errors
+
+Errors are RFC 9457 problem documents. Branch on `code`, show `detail` to people:
+
+- `capacity_exhausted`, `unavailable` — retry after the `Retry-After` header.
+- `busy` — too many commands already run in this sandbox; wait for one.
+- `payload_too_large` — a file, body or site beyond the limits; `detail` names it.
+- `invalid_request` — fix what `detail` says; do not retry unchanged.
+- `not_found` — the sandbox or exec does not exist; `PUT` the sandbox first.
+
+## Kotlin
+
+```kotlin
+RegolithClient(System.getenv("REGOLITH_URL"), System.getenv("REGOLITH_TOKEN")).use { client ->
+    val sandbox = client.sandbox("user-23")
+    sandbox.getOrCreate()
+    val result = sandbox.run("python3 -c 'import platform; print(platform.system())'")
+    println("${result.exitCode}: ${result.stdout}")
+}
+```
+
+With Koog, give the agent's shell tool `RegolithShellCommandExecutor(client.sandbox("user-23"))`: every
+command then runs in the sandbox instead of on the machine running the agent.

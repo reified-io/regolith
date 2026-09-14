@@ -1,0 +1,21 @@
+# one regolith server on this docker host. configuration is in .env beside this file; see
+# docs/configuration.md. the server drives docker through its socket, which no sandbox ever sees; a
+# machine of its own is the recommended setup, see docs/security.md.
+name: regolith
+
+services:
+  regolith:
+    image: ${REGOLITH_REGISTRY:-ghcr.io/reified-io}/regolith:${REGOLITH_VERSION:?set REGOLITH_VERSION in .env}
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    ports:
+      # published ports bypass host firewalls such as ufw, so the default reaches only this machine.
+      - "${REGOLITH_PUBLISH:-127.0.0.1:8080}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - state:/var/lib/regolith
+
+volumes:
+  state:
+    name: regolith-state

@@ -1,0 +1,35 @@
+# everything is excluded; what the server image builds from is listed back in. no intermediate
+# directory is listed: re-including one would carry its whole subtree back with it, `build/` and all,
+# while a `!` pattern is enough on its own for the walk to descend into the directories above it.
+#
+# the sandbox images build from images/sandbox, a context of their own, and are not affected here.
+*
+
+!gradlew
+!settings.gradle.kts
+!build.gradle.kts
+!gradle.properties
+!detekt.yml
+!LICENSE
+!gradle/**
+
+# the convention plugins every module applies.
+!buildSrc/settings.gradle.kts
+!buildSrc/build.gradle.kts
+!buildSrc/src/main/**
+
+# the modules the server image builds: sources and build scripts only. the image runs
+# :server:installDist, so tests stay out and a change under src/test cannot invalidate its layers.
+!protocol/build.gradle.kts
+!protocol/src/main/**
+!server/build.gradle.kts
+!server/src/main/**
+!pages/build.gradle.kts
+!pages/src/main/**
+!sdk/build.gradle.kts
+!sdk/src/main/**
+!koog/build.gradle.kts
+!koog/src/main/**
+
+# the helper scripts the image carries: the server drives them from this same image.
+!images/server/scripts/**
