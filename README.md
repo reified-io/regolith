@@ -1,4 +1,15 @@
-# Regolith
+<p align="center">
+  <img src="https://reified.io/projects/regolith/lockup.svg" width="280" alt="Regolith">
+</p>
+
+<p align="center">
+  <a href="https://github.com/reified-io/regolith/actions/workflows/build.yml"><img src="https://github.com/reified-io/regolith/actions/workflows/build.yml/badge.svg" alt="build"></a>
+  <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Freified-io%2Fregolith%2Fmain%2Fgradle%2Flibs.versions.toml&query=%24.versions.kotlin&logo=kotlin&label=kotlin&color=blue" alt="Kotlin"></a>
+  <a href="https://github.com/orgs/reified-io/packages/container/package/regolith"><img src="https://img.shields.io/badge/ghcr-regolith-blue?logo=docker" alt="GHCR"></a>
+  <img src="https://img.shields.io/badge/status-pre--release-orange" alt="Status: pre-release">
+</p>
+
+<h1></h1>
 
 Self-hosted sandboxes for AI agents.
 
