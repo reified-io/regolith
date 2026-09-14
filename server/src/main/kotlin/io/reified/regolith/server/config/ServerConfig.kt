@@ -68,7 +68,7 @@ data class ServerConfig(
             version: String = serverVersion(),
         ): ServerConfig {
             val read = EnvReader(env)
-            val defaultImage = read.image("REGOLITH_IMAGE") ?: "ghcr.io/reified-io/regolith-sandbox:$version"
+            val defaultImage = read.image("REGOLITH_SANDBOX_IMAGE") ?: "ghcr.io/reified-io/regolith-sandbox:$version"
             val extraImages = read.list("REGOLITH_ALLOWED_IMAGES").onEach { requirePinned("REGOLITH_ALLOWED_IMAGES", it) }
 
             val maxCpus = read.double("REGOLITH_MAX_CPUS", 2.0)

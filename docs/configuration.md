@@ -63,7 +63,7 @@ are advertised by `GET /v1/info`.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `REGOLITH_IMAGE` | `ghcr.io/reified-io/regolith-sandbox:<server version>` | Default sandbox image |
+| `REGOLITH_SANDBOX_IMAGE` | `ghcr.io/reified-io/regolith-sandbox:<server version>` | Default sandbox image |
 | `REGOLITH_ALLOWED_IMAGES` | — | Further images a sandbox may ask for, comma-separated |
 | `REGOLITH_NETWORK` | `public` | Default network mode: `public` or `none` |
 | `REGOLITH_CPUS` / `REGOLITH_MAX_CPUS` | `1` / `2` | CPUs per session |
@@ -81,8 +81,8 @@ Two images are built from [`images/sandbox`](../images/sandbox/Dockerfile):
   installs what its task needs into its own home.
 - **`regolith-sandbox-full`** adds what nobody can install without root: FFmpeg, ImageMagick,
   Pandoc, SQLite, ripgrep, and a headless Chromium that runs without its own sandbox, because the
-  container already is one. Point `REGOLITH_IMAGE` at it for agents that convert media or render
-  pages.
+  container already is one. Point `REGOLITH_SANDBOX_IMAGE` at it for agents that convert media or
+  render pages.
 
 ## Lifecycle
 

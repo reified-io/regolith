@@ -47,9 +47,9 @@ class ServerConfigTest {
 
     @Test
     fun `images must be pinned`() {
-        assertFailsWith<IllegalStateException> { load("REGOLITH_IMAGE" to "debian") }
-        assertFailsWith<IllegalStateException> { load("REGOLITH_IMAGE" to "registry.local:5000/sandbox:latest") }
-        assertEquals("registry.local:5000/sandbox:2026.09", load("REGOLITH_IMAGE" to "registry.local:5000/sandbox:2026.09").defaults.image)
+        assertFailsWith<IllegalStateException> { load("REGOLITH_SANDBOX_IMAGE" to "debian") }
+        assertFailsWith<IllegalStateException> { load("REGOLITH_SANDBOX_IMAGE" to "registry.local:5000/sandbox:latest") }
+        assertEquals("registry.local:5000/sandbox:2026.09", load("REGOLITH_SANDBOX_IMAGE" to "registry.local:5000/sandbox:2026.09").defaults.image)
         assertEquals(2, load("REGOLITH_ALLOWED_IMAGES" to "example/sandbox@sha256:abc").limits.images.size)
     }
 
