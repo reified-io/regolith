@@ -45,6 +45,9 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: images
+    labels:
+      - dependencies
+      - docker
     ignore:
       # the jre major is the server's jvm: the build targets 21, so a bump here is a decision, not a
       # refresh.
@@ -65,6 +68,9 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: images
+    labels:
+      - dependencies
+      - docker
     ignore:
       # a debian major changes every tool a sandbox offers at once, and the image is what a caller's
       # commands run against.
