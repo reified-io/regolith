@@ -110,12 +110,16 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
             with(client) { jsonBody(PublishRequest.serializer(), PublishRequest(directory, site)) }
         }
 
-    /** What is published for this sandbox, or a `not_found` failure when nothing is. */
-    public suspend fun site(): PublishedSite = client.call(HttpMethod.Get, "$path/site", PublishedSite.serializer())
+    /**
+     * What is published under the sandbox's name, or under [site] when it was published with one; a
+     * `not_found` failure when nothing is.
+     */
+    public suspend fun site(site: String? = null): PublishedSite =
+        client.call(HttpMethod.Get, "$path/site", PublishedSite.serializer()) { site?.let { url.parameters.append("site", it) } }
 
-    /** Takes the site down; the sandbox and its files are untouched. */
-    public suspend fun unpublish() {
-        client.send(HttpMethod.Delete, "$path/site")
+    /** Takes down the site under the sandbox's name, or under [site]; the sandbox and its files are untouched. */
+    public suspend fun unpublish(site: String? = null) {
+        client.send(HttpMethod.Delete, "$path/site") { site?.let { url.parameters.append("site", it) } }
     }
 
     /** A handle to an exec started earlier, for example by a previous process. */

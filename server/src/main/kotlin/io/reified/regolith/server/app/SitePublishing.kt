@@ -60,8 +60,11 @@ class SitePublishing(
         }
     }
 
-    suspend fun published(name: SandboxName, site: String?): PublishedSite =
-        require().published(siteName(site ?: name.value).value) ?: throw RegolithError.NotFound("Nothing is published for `$name`")
+    suspend fun published(name: SandboxName, site: String?): PublishedSite {
+        val target = siteName(site ?: name.value)
+
+        return require().published(target.value) ?: throw RegolithError.NotFound("Nothing is published as `$target`")
+    }
 
     suspend fun unpublish(name: SandboxName, site: String?) {
         require().unpublish(siteName(site ?: name.value).value)

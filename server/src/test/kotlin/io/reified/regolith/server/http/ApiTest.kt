@@ -68,6 +68,13 @@ class ApiTest {
         assertEquals(published.release, sandbox.site().release)
         sandbox.unpublish()
         assertEquals("not_found", assertFailsWith<RegolithException> { sandbox.site() }.code)
+
+        val named = sandbox.publish("site", site = "field-notes")
+        assertEquals("https://field-notes.example.test", named.url)
+        assertEquals(named.release, sandbox.site("field-notes").release)
+        assertEquals("not_found", assertFailsWith<RegolithException> { sandbox.site() }.code)
+        sandbox.unpublish("field-notes")
+        assertEquals("not_found", assertFailsWith<RegolithException> { sandbox.site("field-notes") }.code)
     }
 
     @Test

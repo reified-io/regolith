@@ -53,8 +53,8 @@ Only when the server has a pages role: `GET /v1/info` reports `"publishing": tru
 answer `not_implemented`.
 
 - `POST /v1/sandboxes/{name}/publish` - `{"path":"dist","site":"optional-name"}`. Publishes a snapshot of that directory and returns `{"site","url","release","files","bytes","publishedAt"}`. The URL is public: anyone with the link sees those files. Publishing again replaces it.
-- `GET /v1/sandboxes/{name}/site` - what is published, or `not_found`.
-- `DELETE /v1/sandboxes/{name}/site` - takes it down; the sandbox keeps its files.
+- `GET /v1/sandboxes/{name}/site?site=` - what is published under the sandbox's name, or under `site` when it was published with one; `not_found` when nothing is.
+- `DELETE /v1/sandboxes/{name}/site?site=` - takes it down; the sandbox keeps its files.
 
 A site is a snapshot, not the live home: build first, then publish. Static files only - no server side
 runs there. A file or directory whose name starts with a dot (`.git`, `.env`, `.well-known`) fails the
