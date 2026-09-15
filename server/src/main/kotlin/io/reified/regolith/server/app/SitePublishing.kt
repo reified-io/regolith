@@ -36,10 +36,14 @@ class SitePublishing(
     private val publisher: SitePublisher?,
 ) {
 
+    // one publish or takedown per sandbox at a time: two first publishes would otherwise each make a
+    // label, and the one not recorded would be served with nothing left to take it down.
+    private val locks = KeyedLocks<SandboxId>()
+
     /** Whether this server publishes at all, which `GET /v1/info` reports so a client need not try. */
     val available: Boolean get() = publisher != null
 
-    suspend fun publish(id: SandboxId, path: String): PublishedSite {
+    suspend fun publish(id: SandboxId, path: String): PublishedSite = locks.withLock(id) {
         val pages = require()
         val limits = pages.limits()
         val directory = resolvePath(path)
@@ -59,7 +63,7 @@ class SitePublishing(
             // recorded only once the release is live, so a failed first publish leaves no label behind.
             if (sandbox.site != label) sandboxes.site(id, label)
             log.info { "Site published: sandbox=[$id] site=[$label] release=[${published.release}] files=[${published.files}]" }
-            return published
+            published
         } finally {
             withContext(Dispatchers.IO) { snapshot.toFile().deleteRecursively() }
         }
@@ -72,7 +76,7 @@ class SitePublishing(
         return pages.published(label.value) ?: throw RegolithError.NotFound("Nothing is published for sandbox `$id`")
     }
 
-    suspend fun unpublish(id: SandboxId) {
+    suspend fun unpublish(id: SandboxId) = locks.withLock(id) {
         val pages = require()
         val label = label(id)
         pages.unpublish(label.value)
