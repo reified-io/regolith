@@ -215,7 +215,9 @@ The body may be empty; whatever it leaves out takes the default from `GET /v1/in
   `network` is a [network policy](#network-policy). `resources` are fixed for the sandbox's life.
 - `lifecycle.retainDays: 0` makes the sandbox ephemeral: it is deleted once its session stops.
 - `env` applies to every command. Everything in the sandbox can read it, so it is no place for
-  secrets.
+  secrets. The server adds `REGOLITH_MEMORY_MB`, `REGOLITH_CPUS` and `REGOLITH_HOME_MB`, since `free`
+  and `nproc` inside a container report the whole machine rather than the sandbox's own share; an
+  `env` of your own with those names wins.
 - `labels` are yours to choose; `GET /v1/sandboxes` filters by them.
 
 The response is a `SandboxInfo`:

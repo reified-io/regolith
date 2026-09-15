@@ -21,6 +21,8 @@ file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 
   may need rebuilding. `image` is what the next session runs, `session.image` what this one started on.
 - Commands run as uid 1000 with no root, in `/home/sandbox` by default. Only `/home/sandbox` survives a
   session; `/tmp` and running processes do not.
+- `free` and `nproc` report the host, not this sandbox. Its real share is in `REGOLITH_MEMORY_MB`,
+  `REGOLITH_CPUS` and `REGOLITH_HOME_MB`; plan the work against those.
 - Install tools into the home: `python3 -m venv ~/venv` (there is no system `pip`), `npm install -g`, or
   binaries in `~/.local/bin`, which is on the `PATH`.
 - A session starts on first use and stops when idle; `lastSessionEnd.reason` says why the last one ended.

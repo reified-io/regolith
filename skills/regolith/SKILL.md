@@ -36,7 +36,9 @@ it when you need a detail this file leaves out.
   with the session once it is idle, or sooner if it keeps using CPU. Keep long work inside a command.
 - **Commands get no stdin** unless you start them with `"stdin": true`. An interactive prompt ends instead
   of hanging — pass flags like `-y` instead.
-- **Read limits from `GET /v1/info`** (timeouts, file size, memory) instead of guessing.
+- **Read limits from `GET /v1/info`** (timeouts, file size, memory) instead of guessing. Inside a
+  sandbox, `free` and `nproc` report the host: its own share is in `REGOLITH_MEMORY_MB`,
+  `REGOLITH_CPUS` and `REGOLITH_HOME_MB`.
 - **The network may be closed.** Private addresses and the host are never reachable; with mode `none`
   nothing is, DNS included. A download failing with a name-resolution error in a `none` sandbox is the
   policy, not a bug.

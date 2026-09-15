@@ -57,6 +57,17 @@ class ContainerSpecTest {
     }
 
     @Test
+    fun `a session carries its own bounds, which free and nproc cannot show it`() {
+        val args = spec.run(sandbox, HomeMount("regolith-$name-home"), "example/sandbox:1")
+        val env = args.valueAfter("--env")
+
+        assertTrue("REGOLITH_MEMORY_MB=768" in env, env.toString())
+        assertTrue("REGOLITH_CPUS=0.50" in env, env.toString())
+        assertTrue("REGOLITH_HOME_MB=4096" in env, env.toString())
+        assertTrue(env.none { it.startsWith("REGOLITH_TOKEN") || it.startsWith("REGOLITH_URL") }, env.toString())
+    }
+
+    @Test
     fun `a none sandbox starts with no network and its home device is throttled`() {
         val args = spec.run(sandbox.copy(network = NetworkPolicy.None), HomeMount("regolith-$name-home", "/dev/loop7"), "example/sandbox:1")
 

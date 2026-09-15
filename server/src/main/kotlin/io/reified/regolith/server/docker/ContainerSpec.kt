@@ -46,6 +46,7 @@ class ContainerSpec(
      */
     fun run(sandbox: Sandbox, home: HomeMount, image: String): List<String> {
         val memory = sandbox.resources.memoryMb
+        val cpus = String.format(Locale.ROOT, "%.2f", sandbox.resources.cpus)
         val args = mutableListOf(
             "run", "--detach",
             "--name", container(sandbox.id),
@@ -60,7 +61,7 @@ class ContainerSpec(
             "--memory", "${memory}m",
             // equal to --memory: no swap, so a runaway process is killed instead of thrashing the host.
             "--memory-swap", "${memory}m",
-            "--cpus", String.format(Locale.ROOT, "%.2f", sandbox.resources.cpus),
+            "--cpus", cpus,
             // a lower weight than anything else on the host, so a busy sandbox yields a contested cpu.
             "--cpu-shares", "256",
             "--pids-limit", PIDS_LIMIT.toString(),
@@ -72,6 +73,11 @@ class ContainerSpec(
             "--mount", "type=volume,src=${home.volume},dst=${SandboxLayout.HOME}",
             "--workdir", SandboxLayout.HOME,
             "--env", "HOME=${SandboxLayout.HOME}",
+            // its own bounds, nothing of the host's: `free` and `nproc` in here report the machine,
+            // so a sandbox that plans around them plans around memory and cores it does not have.
+            "--env", "REGOLITH_MEMORY_MB=$memory",
+            "--env", "REGOLITH_CPUS=$cpus",
+            "--env", "REGOLITH_HOME_MB=${sandbox.resources.homeMb}",
         )
 
         // a `none` sandbox starts with no interface at all; attaching later goes through connect.
