@@ -256,6 +256,10 @@ control plane  ──▶ intake listener ──▶ release         ──▶ act
 
 - **Content-addressed.** A release is a manifest of `path → sha-256, size, content type`, plus blobs
   named by their hash. Publishing the same file twice stores one blob, and a rollback is a pointer.
+- **A snapshot the sandbox user takes.** The control plane lists the directory, refuses what the
+  role's caps would refuse, then streams it out as a tar archive written by `tar` inside the session,
+  unpacked on the server under the same caps while it arrives. Nothing reads the home as root, and
+  nothing lands on the server's disk that the caps would not allow.
 - **Serving is a map lookup.** A request path becomes a manifest key; nothing maps it onto a
   filesystem path, so traversal, symlinks and dotfiles are not a class of bug that exists here.
 - **Two listeners.** The public one only reads. The intake takes the token and binds to the loopback

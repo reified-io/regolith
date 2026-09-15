@@ -124,15 +124,27 @@ interface SandboxRuntime {
     /** Every regular file under a directory, with its size; the pre-check before a publish copies it. */
     suspend fun tree(sandbox: SandboxId, path: String, maxFiles: Int): List<TreeFile>
 
-    /** Copies a directory out of the session into [destination] on the server, as a snapshot. */
-    suspend fun copyOut(sandbox: SandboxId, path: String, destination: Path)
+    /**
+     * Copies the regular files under a directory out of the session into [destination] on the server, as
+     * a snapshot taken by the sandbox user. Symlinks and anything else that is not a plain file are left
+     * behind. The copy is bounded while it happens: past any of [bounds] it stops and throws
+     * [io.reified.regolith.server.domain.RegolithError.TooLarge], whatever the directory looked like
+     * when it was listed.
+     */
+    suspend fun copyOut(sandbox: SandboxId, path: String, destination: Path, bounds: SnapshotBounds)
 }
 
 /** One file of a sandbox directory: where it is, relative to the directory, and how large. */
 data class TreeFile(val path: String, val size: Long)
 
+/** The most a snapshot may hold: files, bytes in one file, bytes in all of them. */
+data class SnapshotBounds(val maxFiles: Int, val maxFileBytes: Long, val maxTotalBytes: Long)
+
 /** What the pages role allows a site to hold; it owns these, the control plane only respects them. */
-data class SiteLimits(val maxFiles: Int, val maxFileBytes: Long, val maxSiteBytes: Long)
+data class SiteLimits(val maxFiles: Int, val maxFileBytes: Long, val maxSiteBytes: Long) {
+    /** The same caps, as the bound a snapshot is copied out under. */
+    val bounds: SnapshotBounds get() = SnapshotBounds(maxFiles, maxFileBytes, maxSiteBytes)
+}
 
 /** A site as the pages role reports it. */
 data class PublishedSite(

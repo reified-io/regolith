@@ -16,8 +16,6 @@ import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
-import kotlin.io.path.isRegularFile
-import kotlin.io.path.isSymbolicLink
 
 /**
  * Publishing a directory of a sandbox to the public pages role.
@@ -54,9 +52,9 @@ class SitePublishing(
             sessions.withLease(sandbox) {
                 val files = runtime.tree(id, directory, limits.maxFiles + 1)
                 check(files, limits, directory)
-                runtime.copyOut(id, directory, snapshot)
+                // bounded again as it arrives: the listing was a moment ago, and the sandbox keeps writing.
+                runtime.copyOut(id, directory, snapshot, limits.bounds)
             }
-            verify(snapshot, limits)
             val published = pages.publish(label.value, snapshot)
             // recorded only once the release is live, so a failed first publish leaves no label behind.
             if (sandbox.site != label) sandboxes.site(id, label)
@@ -97,28 +95,6 @@ class SitePublishing(
             else -> return
         }
         throw RegolithError.TooLarge(refusal)
-    }
-
-    /**
-     * What actually landed on this server. The listing was taken inside the sandbox, which keeps
-     * running: the copy is measured again here, and anything that is not a plain file — a symlink
-     * above all — is left behind rather than followed.
-     */
-    private suspend fun verify(snapshot: Path, limits: SiteLimits) = withContext(Dispatchers.IO) {
-        var bytes = 0L
-        Files.walk(snapshot).use { paths ->
-            paths.forEach { file ->
-                when {
-                    file.isSymbolicLink() -> Files.delete(file)
-                    file.isRegularFile() -> bytes += Files.size(file)
-                    else -> Unit
-                }
-            }
-        }
-
-        if (bytes > limits.maxSiteBytes) {
-            throw RegolithError.TooLarge("The snapshot grew past the ${limits.maxSiteBytes / MIB} MB a site may hold")
-        }
     }
 
     private fun require(): SitePublisher =

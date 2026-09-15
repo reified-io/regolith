@@ -13,12 +13,18 @@ import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.ports.ExecSpec
 import io.reified.regolith.server.ports.HomeMount
 import io.reified.regolith.server.ports.Signal
+import io.reified.regolith.server.ports.SnapshotBounds
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.nio.file.Files
+import kotlin.io.path.exists
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.readText
+import kotlin.io.path.relativeTo
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -96,6 +102,22 @@ class DockerRuntimeIntegrationTest {
                 assertFailsWith<RegolithError.Invalid> { runtime.write(name, "/tmp/probe/nested", "x".byteInputStream(), 1024) }
                 assertEquals(14, runtime.stat(name, "/tmp/probe/nested/file.txt").size)
                 assertEquals(listOf("file.txt"), runtime.list(name, "/tmp/probe/nested", 100).map { it.name }, "an upload left a file behind")
+
+                // a snapshot is the sandbox user's own tar, bounded as it arrives: a symlink out stays behind.
+                docker.run(listOf("exec", spec.container(name), "sh", "-c", "ln -s /etc/passwd /tmp/probe/escape && mkdir -p /tmp/probe/deep && printf js > /tmp/probe/deep/app.js"))
+                    .requireOk("preparing the snapshot")
+                assertEquals(setOf("nested/file.txt", "deep/app.js"), runtime.tree(name, "/tmp/probe", 100).map { it.path }.toSet())
+                val snapshot = Files.createTempDirectory("regolith-it-snapshot")
+                try {
+                    runtime.copyOut(name, "/tmp/probe", snapshot, SnapshotBounds(maxFiles = 10, maxFileBytes = 1024, maxTotalBytes = 4096))
+                    val copied = Files.walk(snapshot).use { paths -> paths.filter { it.isRegularFile() }.map { it.relativeTo(snapshot).joinToString("/") }.toList() }
+                    assertEquals(setOf("nested/file.txt", "deep/app.js"), copied.toSet())
+                    assertEquals("hello regolith", snapshot.resolve("nested/file.txt").readText())
+                    assertFalse(snapshot.resolve("escape").exists(), "a symlink was recreated on the server")
+                    assertFailsWith<RegolithError.TooLarge> { runtime.copyOut(name, "/tmp/probe", snapshot.resolve("again"), SnapshotBounds(maxFiles = 1, maxFileBytes = 1024, maxTotalBytes = 4096)) }
+                } finally {
+                    snapshot.toFile().deleteRecursively()
+                }
                 runtime.delete(name, "/tmp/probe", recursive = true)
                 assertFailsWith<RegolithError.NotFound> { runtime.stat(name, "/tmp/probe") }
 

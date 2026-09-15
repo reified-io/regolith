@@ -185,12 +185,14 @@ With the control plane pointed at this role, one call publishes:
 
 1. The control plane lists the directory inside the sandbox and refuses anything past
    [the caps](#what-a-site-may-hold) **before** copying a byte.
-2. It takes a snapshot out of the session and hashes every file.
-3. It sends only the files this role does not already hold.
+2. It streams the directory out of the session as a tar archive that `tar` writes inside it, as the
+   sandbox user, and unpacks it on its own disk under the same caps while it arrives: a directory
+   that grew since the listing is cut off the moment it passes one. Symlinks are left behind.
+3. It hashes every file and sends only the ones this role does not already hold.
 4. It activates the release.
 
 The sandbox is never told any of this happened. It holds no token and opens no connection; its
-files are read from the outside like any other file operation.
+files are read from the outside like any other file operation, as the sandbox user.
 
 A site name is a DNS label, and the control plane sends a random one it made for that sandbox: this
 role never learns whose sandbox published, and an address tells a visitor nothing about it.

@@ -68,6 +68,27 @@ class SitePublishingTest {
         }
     }
 
+    // the listing is a moment ago and the sandbox keeps writing: the copy itself is what is bounded
+    @Test
+    fun `a directory that grew past the caps after it was listed is still refused`() = runBlocking {
+        TestServer().use { server ->
+            val publisher = FakePublisher(SiteLimits(maxFiles = 10, maxFileBytes = 64, maxSiteBytes = 64))
+            val id = server.sandbox("growing").id
+            server.runtime.place(id, "/home/sandbox/dist/index.html", "small")
+            val runtime = object : io.reified.regolith.server.ports.SandboxRuntime by server.runtime {
+                override suspend fun tree(sandbox: io.reified.regolith.server.domain.SandboxId, path: String, maxFiles: Int) =
+                    server.runtime.tree(sandbox, path, maxFiles).also {
+                        server.runtime.place(sandbox, "/home/sandbox/dist/late.bin", "x".repeat(100))
+                    }
+            }
+            val sites = SitePublishing(server.sandboxes, server.sessions, runtime, server.config, publisher)
+
+            assertFailsWith<RegolithError.TooLarge> { sites.publish(id, "dist") }
+
+            assertEquals(emptyMap(), publisher.published)
+        }
+    }
+
     @Test
     fun `a server with no pages role says so instead of failing oddly`() = runBlocking {
         TestServer().use { server ->

@@ -14,6 +14,7 @@ import io.reified.regolith.server.ports.HomeStore
 import io.reified.regolith.server.ports.LimitEvents
 import io.reified.regolith.server.ports.PublishedSite
 import io.reified.regolith.server.ports.SiteLimits
+import io.reified.regolith.server.ports.SnapshotBounds
 import io.reified.regolith.server.ports.SitePublisher
 import io.reified.regolith.server.ports.TreeFile
 import java.nio.file.Files
@@ -210,8 +211,14 @@ class FakeRuntime : SandboxRuntime {
         files.filterKeys { it.startsWith("$sandbox:${path.trimEnd('/')}/") }
             .map { (key, bytes) -> TreeFile(key.substringAfter("$sandbox:${path.trimEnd('/')}/"), bytes.size.toLong()) }
 
-    override suspend fun copyOut(sandbox: SandboxId, path: String, destination: Path) {
-        for (file in tree(sandbox, path, Int.MAX_VALUE)) {
+    /** Copies what the session holds now, bounded as the runtime is: a file placed after the listing still counts. */
+    override suspend fun copyOut(sandbox: SandboxId, path: String, destination: Path, bounds: SnapshotBounds) {
+        var total = 0L
+        for ((index, file) in tree(sandbox, path, Int.MAX_VALUE).withIndex()) {
+            total += file.size
+            if (index >= bounds.maxFiles) throw RegolithError.TooLarge("The directory holds more than ${bounds.maxFiles} files")
+            if (file.size > bounds.maxFileBytes) throw RegolithError.TooLarge("`${file.path}` is larger than ${bounds.maxFileBytes} bytes")
+            if (total > bounds.maxTotalBytes) throw RegolithError.TooLarge("The directory holds more than ${bounds.maxTotalBytes} bytes")
             val target = destination.resolve(file.path)
             Files.createDirectories(target.parent)
             Files.write(target, files.getValue("$sandbox:${path.trimEnd('/')}/${file.path}"))

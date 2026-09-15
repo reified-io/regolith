@@ -13,6 +13,7 @@ import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.ports.ExecSpec
 import io.reified.regolith.server.ports.HomeMount
 import io.reified.regolith.server.ports.LimitEvents
+import io.reified.regolith.server.ports.SnapshotBounds
 import io.reified.regolith.server.ports.TreeFile
 import io.reified.regolith.server.ports.RunningProcess
 import io.reified.regolith.server.ports.SandboxNetwork
@@ -24,6 +25,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
+import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -279,10 +281,26 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
         }
     }
 
-    override suspend fun copyOut(sandbox: SandboxId, path: String, destination: Path) {
-        withContext(Dispatchers.IO) { Files.createDirectories(destination) }
-        val result = docker.run(spec.copyOut(sandbox, path, destination.toString()))
-        failOn(result, path)
+    override suspend fun copyOut(sandbox: SandboxId, path: String, destination: Path, bounds: SnapshotBounds) = withContext(Dispatchers.IO) {
+        Files.createDirectories(destination)
+        val process = docker.start(spec.copyOut(sandbox, path), stdin = false)
+        coroutineScope {
+            val stderr = async(Dispatchers.IO) { quietly { process.errorStream.readNBytes(MAX_STDERR).toString(StandardCharsets.UTF_8) } }
+            val ended = try {
+                process.inputStream.use { TarSnapshot.unpack(it, destination, bounds) }
+                true
+            } catch (e: EOFException) {
+                // the writer stopped before the end of the archive: its exit explains why, below.
+                log.debug(e) { "Snapshot of $path ended early" }
+                false
+            } catch (e: Exception) {
+                process.destroyForcibly()
+                throw e
+            }
+            val code = process.onExit().await().exitValue()
+            if (code != 0) failOn(DockerCli.Result(code, ByteArray(0), stderr.await()), path)
+            check(ended) { "The snapshot of $path ended before its archive did" }
+        }
     }
 
     override suspend fun delete(sandbox: SandboxId, path: String, recursive: Boolean) {
@@ -303,6 +321,9 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
             "Permission denied" in reason -> RegolithError.Invalid("Permission denied: `$path`")
             "Not a directory" in reason || "Is a directory" in reason -> RegolithError.Invalid(reason.lineSequence().first())
             "Directory not empty" in reason -> RegolithError.Conflict("`$path` is not empty; delete it recursively")
+            // gnu tar's words for a tree written under it: the snapshot is not one moment, so it is refused.
+            "changed as we read it" in reason || "removed before we read it" in reason ->
+                RegolithError.Conflict("`$path` changed while it was being copied; publish again once the build has finished")
             "cannot overwrite directory" in reason -> RegolithError.Invalid("`$path` is a directory")
             "No space left on device" in reason || "Disk quota exceeded" in reason ->
                 RegolithError.InsufficientStorage("The disk that holds `$path` is full; delete files to make room")

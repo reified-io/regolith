@@ -1,7 +1,7 @@
 # the sandbox images. `base` is the default: small, so an agent checks what its task needs and installs the
 # rest into its home. `full` adds the tools a chat agent reaches for with media and documents, which no
-# user can install without root. whatever replaces either must provide bash, coreutils, findutils and
-# grep, which the server's file and signal helpers run.
+# user can install without root. whatever replaces either must provide bash, coreutils, findutils, grep
+# and tar, which the server's file, signal and publishing helpers run.
 #
 #   docker build --target base -t regolith-sandbox images/sandbox
 #   docker build --target full -t regolith-sandbox-full images/sandbox

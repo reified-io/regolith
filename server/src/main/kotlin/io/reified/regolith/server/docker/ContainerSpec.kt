@@ -147,9 +147,13 @@ class ContainerSpec(
     fun tree(sandbox: SandboxId, path: String): List<String> =
         helper(sandbox, """find "${'$'}1" -type f -printf '%s\0%P\0'""", path)
 
-    /** Copies a directory's contents out of the session; the daemon writes them where the server asks. */
-    fun copyOut(sandbox: SandboxId, path: String, destination: String): List<String> =
-        listOf("cp", "--follow-link=false", "${container(sandbox)}:${path.trimEnd('/')}/.", destination)
+    /**
+     * Streams a directory out of the session as a tar archive written by the sandbox user, so the copy
+     * reaches exactly what a command could and the server bounds it as it arrives. `docker cp` would
+     * do neither: the daemon reads as root and hands over the whole tree before anything can stop it.
+     */
+    fun copyOut(sandbox: SandboxId, path: String): List<String> =
+        helperArgs(sandbox, listOf("tar", "-C", path, "-cf", "-", "."))
 
     /** The daemon's view of whether the session container runs; nothing is started inside it. */
     fun running(sandbox: SandboxId): List<String> = listOf("inspect", "--format", "{{.State.Running}}", container(sandbox))

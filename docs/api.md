@@ -591,8 +591,11 @@ stops, and the site stays exactly as it was published.
 - Publishing again replaces the site atomically; earlier releases are kept on the pages side for
   rollback.
 - The pages role's caps — files, file size, total size — are checked before anything is copied out
-  of the sandbox.
-- A file or directory whose name starts with a dot fails the whole publish with `invalid_request`.
+  of the sandbox, and again while it is: a directory that grows under the copy is refused the moment
+  it passes a cap. A directory whose files change while they are copied is refused with `conflict`;
+  publish once the build has finished.
+- The files are read as the sandbox user, so the snapshot holds exactly what a command could read.
+  A file or directory whose name starts with a dot fails the whole publish with `invalid_request`.
   Symlinks are left behind, not followed.
 - A sandbox has one site, and a site belongs to one sandbox: there is no name to collide over, and
   nothing can replace a site it did not publish.

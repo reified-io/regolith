@@ -56,6 +56,17 @@ class ContainerSpecTest {
         assertEquals(listOf("1.1.1.1", "9.9.9.9"), args.valueAfter("--dns"))
     }
 
+    // the daemon would read as root: a snapshot comes from a process the sandbox user runs, and no other way
+    @Test
+    fun `a snapshot leaves the session as a tar stream written by the sandbox user`() {
+        val args = spec.copyOut(name, "/home/sandbox/dist")
+
+        assertEquals("exec", args.first())
+        assertEquals(listOf("1000:1000"), args.valueAfter("--user"))
+        assertEquals(listOf("tar", "-C", "/home/sandbox/dist", "-cf", "-", "."), args.takeLast(6))
+        assertTrue(args.none { it == "cp" })
+    }
+
     @Test
     fun `a session carries its own bounds, which free and nproc cannot show it`() {
         val args = spec.run(sandbox, HomeMount("regolith-$name-home"), "example/sandbox:1")
