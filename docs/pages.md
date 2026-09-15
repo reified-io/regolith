@@ -129,7 +129,7 @@ accident far more often than anything needs them.
 ## Publishing from a sandbox
 
 With the control plane pointed at this role, one call publishes:
-`POST /v1/sandboxes/{id}/publish` with `{"path": "dist"}` ([API](api.md#publishing)).
+`POST /v1/sandboxes/{id}/site` with `{"path": "dist"}` ([API](api.md#publishing)).
 
 1. The control plane lists the directory inside the sandbox and refuses anything past
    [the caps](#what-a-site-may-hold) **before** copying a byte.
