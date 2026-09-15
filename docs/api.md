@@ -213,7 +213,10 @@ The body may be empty; whatever it leaves out takes the default from `GET /v1/in
   [`PATCH`](#patch-v1sandboxesid).
 - `imagePolicy` picks which image the sandbox runs — see [below](#which-image-a-sandbox-runs).
   `network` is a [network policy](#network-policy). `resources` are fixed for the sandbox's life.
-- `lifecycle.retainDays: 0` makes the sandbox ephemeral: it is deleted once its session stops.
+- `lifecycle.retainDays: 0` makes the sandbox ephemeral: the lifecycle sweep deletes it once no
+  session runs and `idleStopSeconds` have passed since it was last used — right after an idle stop,
+  and up to that window after an explicit `stop`, so one created just before its first command is
+  not swept in between.
 - `env` applies to every command. Everything in the sandbox can read it, so it is no place for
   secrets. The server adds `REGOLITH_MEMORY_MB`, `REGOLITH_CPUS` and `REGOLITH_HOME_MB`, since `free`
   and `nproc` inside a container report the whole machine rather than the sandbox's own share; an
