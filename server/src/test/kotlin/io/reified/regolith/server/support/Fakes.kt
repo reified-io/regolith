@@ -348,27 +348,32 @@ class FakeHomes(var freeBytes: Long = Long.MAX_VALUE) : HomeStore {
 
     override suspend fun recover() = Unit
 
+    /** Home volumes whose name holds no sandbox id, as a server from before ids left them. */
+    val unrecognized = CopyOnWriteArrayList<String>()
+
     override suspend fun list(): List<SandboxId> = disks.keys.toList()
 
-    override suspend fun sizeMb(name: SandboxId): Int? = disks[name]
+    override suspend fun unrecognized(): List<String> = unrecognized.toList()
+
+    override suspend fun sizeMb(sandbox: SandboxId): Int? = disks[sandbox]
 
     val open: MutableSet<SandboxId> = ConcurrentHashMap.newKeySet()
     val destroyed = CopyOnWriteArrayList<SandboxId>()
 
-    override suspend fun open(name: SandboxId, sizeMb: Int): HomeMount {
-        open += name
-        disks.putIfAbsent(name, sizeMb)
+    override suspend fun open(sandbox: SandboxId, sizeMb: Int): HomeMount {
+        open += sandbox
+        disks.putIfAbsent(sandbox, sizeMb)
 
-        return HomeMount("home-$name")
+        return HomeMount("home-$sandbox")
     }
 
-    override suspend fun close(name: SandboxId) {
-        open -= name
+    override suspend fun close(sandbox: SandboxId) {
+        open -= sandbox
     }
 
-    override suspend fun destroy(name: SandboxId) {
-        destroyed += name
-        disks.remove(name)
+    override suspend fun destroy(sandbox: SandboxId) {
+        destroyed += sandbox
+        disks.remove(sandbox)
     }
 
     override suspend fun hostFreeBytes(): Long = freeBytes

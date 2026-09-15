@@ -6,18 +6,25 @@ import io.reified.regolith.server.ports.HomeStore
 
 /**
  * Homes no sandbox record claims. They appear when the state directory is lost or points somewhere
- * else, and they are dangerous twice over: retention walks records, so they are never deleted, and
- * opening a home reuses a disk of the same id, so a new sandbox that happens to take an old id
- * would get the previous owner's files. The server therefore refuses to start while any exist, and
- * only an explicit, one-shot command resolves them.
+ * else, and each holds somebody's files that no call can reach and retention never deletes, because
+ * retention walks records. The server therefore refuses to start while any exist, and only an
+ * explicit, one-shot command resolves them.
+ *
+ * A home whose name holds no sandbox id is refused the same way, though no command can resolve it:
+ * it comes from a server older than ids, and nothing but an operator can decide what it held.
  */
 class OrphanHomes(private val sandboxes: Sandboxes, private val homes: HomeStore) {
     suspend fun find(): List<SandboxId> = homes.list().filter { sandboxes.find(it) == null }.sortedBy { it.value }
 
-    /** Throws when any orphaned home exists, naming them and the commands that resolve them. */
+    /** Homes whose name holds no sandbox id at all; see [HomeStore.unrecognized]. */
+    suspend fun unrecognized(): List<String> = homes.unrecognized().sorted()
+
+    /** Throws when any orphaned or unrecognized home exists, naming them and the way to resolve them. */
     suspend fun requireNone() {
         val orphans = find()
         check(orphans.isEmpty()) { message(orphans.map { it.value }) }
+        val unrecognized = unrecognized()
+        check(unrecognized.isEmpty()) { unrecognizedMessage(unrecognized) }
     }
 
     /** Recreates a record for every orphaned home, keeping its files and its size. */
@@ -30,10 +37,16 @@ class OrphanHomes(private val sandboxes: Sandboxes, private val homes: HomeStore
     suspend fun delete(): List<SandboxId> = find().onEach { homes.destroy(it) }
 
     companion object {
+        fun unrecognizedMessage(volumes: List<String>): String =
+            "Home disks whose name holds no sandbox id: ${volumes.joinToString()}. They come from a server older " +
+                "than sandbox ids, or were made by hand: no record can claim them, retention never deletes them, and " +
+                "nothing here can adopt them. With the server stopped, keep what you need from them and remove each " +
+                "with `docker volume rm`."
+
         fun message(orphans: List<String>): String =
             "Homes with no sandbox record: ${orphans.joinToString()}. The state directory may be lost or wrong, and " +
-                "serving now would hand these homes to any new sandbox that takes one of their names. With the " +
-                "server stopped, run `orphans` to review them, then `orphans adopt` to give them records again " +
-                "or `orphans delete` to delete them and their files."
+                "serving now would leave their files where no call reaches them and retention never deletes them. " +
+                "With the server stopped, run `orphans` to review them, then `orphans adopt` to give them records " +
+                "again or `orphans delete` to delete them and their files."
     }
 }

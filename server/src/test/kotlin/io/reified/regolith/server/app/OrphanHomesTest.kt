@@ -44,4 +44,19 @@ class OrphanHomesTest {
             server.orphans().requireNone()
         }
     }
+
+    // ids are random, so such a home is taken over by nobody; it is refused so it is not forgotten either
+    @Test
+    fun `a home from before sandbox ids stops startup, and nothing here touches it`() = runBlocking {
+        TestServer().use { server ->
+            server.homes.unrecognized += "regolith-user-23-disk"
+
+            val refusal = assertFailsWith<IllegalStateException> { server.orphans().requireNone() }
+
+            assertTrue("regolith-user-23-disk" in refusal.message.orEmpty() && "docker volume rm" in refusal.message.orEmpty())
+            assertEquals(emptyList(), server.orphans().adopt())
+            assertEquals(emptyList(), server.orphans().delete())
+            assertTrue(server.homes.destroyed.isEmpty())
+        }
+    }
 }

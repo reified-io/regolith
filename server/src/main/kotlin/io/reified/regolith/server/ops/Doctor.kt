@@ -172,14 +172,16 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
     }
 
     private suspend fun orphanHomes(helpers: Helpers): Check {
-        val homes = HomeDisks(docker, helpers, config.namespace, config.stateDir, config.minFreeMb).list().map { it.value }
+        val disks = HomeDisks(docker, helpers, config.namespace, config.stateDir, config.minFreeMb)
+        val homes = disks.list().map { it.value }
+        val unrecognized = disks.unrecognized()
         val recorded = withContext(Dispatchers.IO) { FileStateStore.recordedIds(config.stateDir) }.toSet()
         val orphans = homes.filterNot { it in recorded }
 
-        return if (orphans.isEmpty()) {
-            ok("orphan-homes", "${homes.size} homes, every one recorded")
-        } else {
-            fail("orphan-homes", OrphanHomes.message(orphans))
+        return when {
+            orphans.isNotEmpty() -> fail("orphan-homes", OrphanHomes.message(orphans))
+            unrecognized.isNotEmpty() -> fail("orphan-homes", OrphanHomes.unrecognizedMessage(unrecognized))
+            else -> ok("orphan-homes", "${homes.size} homes, every one recorded")
         }
     }
 

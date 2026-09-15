@@ -89,12 +89,9 @@ class HomeDisks(
 
     override suspend fun hostFreeBytes(): Long = withContext(Dispatchers.IO) { Files.getFileStore(stateDir).usableSpace }
 
-    override suspend fun list(): List<SandboxId> = volumes(ROLE_DISK).mapNotNull { volume ->
-        val raw = volume.removePrefix("$namespace-").removeSuffix("-disk")
-        runCatching { SandboxId.parse(raw) }
-            .onFailure { log.warn { "Ignoring a home disk volume whose name is not a sandbox: volume=[$volume]" } }
-            .getOrNull()
-    }
+    override suspend fun list(): List<SandboxId> = volumes(ROLE_DISK).mapNotNull(::sandboxOf)
+
+    override suspend fun unrecognized(): List<String> = volumes(ROLE_DISK).filter { sandboxOf(it) == null }
 
     override suspend fun sizeMb(sandbox: SandboxId): Int? {
         val disk = diskVolume(sandbox)
@@ -128,6 +125,9 @@ class HomeDisks(
     private suspend fun volumes(role: String): List<String> =
         docker.run(listOf("volume", "ls", "--quiet", "--filter", "label=$namespaceLabel", "--filter", "label=$ROLE_LABEL=$role"))
             .requireOk("Listing $role volumes").text.lines().filter { it.isNotBlank() }
+
+    private fun sandboxOf(volume: String): SandboxId? =
+        runCatching { SandboxId.parse(volume.removePrefix("$namespace-").removeSuffix("-disk")) }.getOrNull()
 
     private fun diskVolume(sandbox: SandboxId) = "$namespace-$sandbox-disk"
 

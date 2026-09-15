@@ -180,9 +180,13 @@ private fun orphans(config: ServerConfig, action: String?): Int {
             when (action) {
                 "adopt" -> app.orphans.adopt().forEach { println("adopted  ${it.id}  ${it.resources.homeMb} MB") }
                 "delete" -> app.orphans.delete().forEach { println("deleted  $it") }
-                else -> app.orphans.find().also { found ->
-                    if (found.isEmpty()) println("no orphaned homes")
+                else -> {
+                    val found = app.orphans.find()
+                    val unrecognized = app.orphans.unrecognized()
+                    if (found.isEmpty() && unrecognized.isEmpty()) println("no orphaned homes")
                     found.forEach { println("orphan   $it  ${app.homes.sizeMb(it) ?: "?"} MB") }
+                    // nothing here can adopt or delete these: only an operator knows what they held.
+                    unrecognized.forEach { println("unknown  $it  (no sandbox id; remove with docker volume rm)") }
                 }
             }
         }

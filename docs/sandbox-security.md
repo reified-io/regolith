@@ -167,9 +167,10 @@ TLS for the domains it brokers, documented with the same honesty about what it d
 
 Each sandbox's home is a preallocated ext4 image of its own size (`HomeDisks`).
 
-- **Two volumes.** `<ns>-<name>-disk` holds the image. `<ns>-<name>-home` is a local-driver volume
-  of the loop device the image is attached to, mounted by the Docker daemon itself when a session
-  starts. A sandbox never sees the image, so it cannot resize or corrupt it.
+- **Two volumes.** `<ns>-<id>-disk` holds the image. `<ns>-<id>-home` is a local-driver volume of
+  the loop device the image is attached to, mounted by the Docker daemon itself when a session
+  starts. Both are named by the sandbox's id, never by anything a caller chose. A sandbox never sees
+  the image, so it cannot resize or corrupt it.
 - **The home disk helper** attaches and detaches loop devices. It is the server's image with only
   `SYS_ADMIN` and `MKNOD`, access to block-major-7 devices, the daemon's `/dev`, that one disk
   volume, and no network. It runs one fixed script and never sees a mounted home.
@@ -185,12 +186,16 @@ Each sandbox's home is a preallocated ext4 image of its own size (`HomeDisks`).
   afterwards.
 - **Detached when the session ends.** Attachments left by a crash are released at startup.
 - **I/O throttled** per home device (`REGOLITH_HOME_READ_BPS`, `REGOLITH_HOME_WRITE_BPS`).
-- **Never handed to a stranger.** A home is found by its sandbox's name, and retention only walks
-  records. If the state directory is lost or points somewhere else, a new sandbox taking an old name
-  would open the previous owner's files, and old homes would never be deleted. So the server refuses
-  to start while a home disk exists that no record claims, and says which. An operator decides, with
-  the server stopped: `orphans adopt` gives each home a record again (label
-  `regolith.adopted=true`), and `orphans delete` deletes them.
+- **Never forgotten.** A home is found by its sandbox's id, and retention only walks records. If the
+  state directory is lost or points somewhere else, every home keeps somebody's files where no call
+  reaches them and retention never deletes them. So the server refuses to start while a home disk
+  exists that no record claims, and says which. An operator decides, with the server stopped:
+  `orphans adopt` gives each home a record again (label `regolith.adopted=true`), and
+  `orphans delete` deletes them.
+- **Nothing it cannot name.** A home disk whose name holds no sandbox id — one from a server older
+  than ids, or made by hand — stops startup the same way. No record can claim it and no command here
+  adopts or deletes it, since only an operator knows what it held: `orphans` lists it, and it is
+  removed with `docker volume rm`.
 
 ## Resources outside any cgroup
 

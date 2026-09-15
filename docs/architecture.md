@@ -190,8 +190,9 @@ Startup runs its preconditions before the API listens, and any failure exits:
 4. Initialize the runtime: remove containers left by a previous run of this namespace, and ensure
    the sandbox network exists.
 5. Release home attachments left by a previous run.
-6. Refuse to start while a home exists that no sandbox record claims (see
-   [security](sandbox-security.md#homes)); `orphans` resolves it.
+6. Refuse to start while a home exists that no sandbox record claims, or whose name holds no
+   sandbox id (see [security](sandbox-security.md#homes)); `orphans` resolves the first, and an
+   operator the second.
 7. Install the network floor, and prove it with a control listener and a throwaway probe.
 8. Check host storage.
 
@@ -223,7 +224,7 @@ The server image runs one program, which takes a command:
 | `serve` (the default) | Runs the control plane API |
 | `pages` | Runs the public role: serves published sites and takes releases in (see [pages](pages.md)) |
 | `doctor` | Checks the host against every startup precondition and prints each check with its fix; exits 1 if one would stop the server |
-| `orphans` | Lists homes that no sandbox record claims |
+| `orphans` | Lists homes that no sandbox record claims, and homes whose name holds no sandbox id |
 | `orphans adopt` | Gives each orphaned home a record again: default settings, its own size, label `regolith.adopted=true` |
 | `orphans delete` | Deletes orphaned homes and their files |
 

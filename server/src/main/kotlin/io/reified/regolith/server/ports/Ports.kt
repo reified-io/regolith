@@ -170,6 +170,12 @@ interface HomeStore {
     /** Every sandbox this namespace holds a home for, whether or not a record still claims it. */
     suspend fun list(): List<SandboxId>
 
+    /**
+     * Homes of this namespace whose name holds no sandbox id — left by a server from before ids, or
+     * made by hand. No record can claim one and nothing here can open, adopt or delete it.
+     */
+    suspend fun unrecognized(): List<String>
+
     /** Size of the sandbox's existing home in MB, or null when it has none. */
     suspend fun sizeMb(sandbox: SandboxId): Int?
 }
