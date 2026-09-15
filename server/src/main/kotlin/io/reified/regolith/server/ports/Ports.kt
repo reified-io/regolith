@@ -146,7 +146,7 @@ data class SiteLimits(val maxFiles: Int, val maxFileBytes: Long, val maxSiteByte
     val bounds: SnapshotBounds get() = SnapshotBounds(maxFiles, maxFileBytes, maxSiteBytes)
 }
 
-/** A site as the pages role reports it. */
+/** A site as the pages role reports it; [hasIndex] is whether its top holds an `index.html`. */
 data class PublishedSite(
     val site: String,
     val url: String,
@@ -154,6 +154,7 @@ data class PublishedSite(
     val files: Int,
     val bytes: Long,
     val publishedAt: Instant,
+    val hasIndex: Boolean,
 )
 
 /**

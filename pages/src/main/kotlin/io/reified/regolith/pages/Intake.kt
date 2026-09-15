@@ -118,6 +118,7 @@ private fun info(config: PagesConfig, site: SiteName, release: Release) = SiteIn
     files = release.manifest.files.size,
     bytes = release.manifest.bytes,
     publishedAt = release.createdAt,
+    hasIndex = release.manifest.find(SitePaths.requested("/")) != null,
 )
 
 private class IntakeAuthConfig {

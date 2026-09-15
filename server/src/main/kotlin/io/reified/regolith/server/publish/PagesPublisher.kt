@@ -137,7 +137,7 @@ class PagesPublisher(
         }
     }
 
-    private fun SiteInfo.toDomain() = PublishedSite(name, url, release, files, bytes, publishedAt)
+    private fun SiteInfo.toDomain() = PublishedSite(name, url, release, files, bytes, publishedAt, hasIndex)
 
     private fun sha256(file: Path): String {
         val digest = MessageDigest.getInstance("SHA-256")

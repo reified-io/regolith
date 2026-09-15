@@ -226,7 +226,7 @@ are in [`protocol.pages`](../protocol/src/main/kotlin/io/reified/regolith/protoc
 | `POST /v1/sites/{site}/releases` | Starts a release. The body lists every file as `{"path","hash","size"}`; the answer is `{"release","missing"}`, where `missing` holds only the hashes this server does not have yet |
 | `PUT /v1/blobs/{hash}` | Stores one file's bytes, hashed as they arrive and refused if they do not match the name |
 | `POST /v1/sites/{site}/releases/{release}/activate` | Makes the release the one visitors see; refused while any of its files is missing |
-| `GET /v1/sites`, `GET /v1/sites/{site}` | What is published: release, files, bytes, URL |
+| `GET /v1/sites`, `GET /v1/sites/{site}` | What is published: release, files, bytes, URL, and whether the release serves an `index.html` at its top |
 | `DELETE /v1/sites/{site}` | Takes the site down and forgets its releases |
 | `GET /v1/health` | Health; no token |
 

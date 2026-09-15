@@ -223,6 +223,10 @@ public data class PublishRequest(
  *
  * [url] is the server's to choose and the only address the site has: it is built from a label made
  * for this site alone, so it says nothing about the sandbox or the caller behind it.
+ *
+ * [hasIndex] says whether the snapshot holds an `index.html` at its top, the page [url] itself
+ * opens; without one the address answers with nothing, which is the one publishing mistake the
+ * numbers above cannot show.
  */
 @Serializable
 public data class PublishedSite(
@@ -231,4 +235,5 @@ public data class PublishedSite(
     val files: Int,
     val bytes: Long,
     val publishedAt: Instant,
+    val hasIndex: Boolean = true,
 )

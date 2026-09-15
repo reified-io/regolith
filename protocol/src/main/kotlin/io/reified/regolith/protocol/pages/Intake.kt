@@ -5,7 +5,8 @@ import kotlin.time.Instant
 
 /**
  * What the intake listener of the pages role reports about a site: the body of `GET /v1/sites/{site}`
- * and the answer to activating a release.
+ * and the answer to activating a release. [hasIndex] is whether the release serves an `index.html`
+ * at its top, the page [url] opens.
  */
 @Serializable
 public data class SiteInfo(
@@ -15,6 +16,7 @@ public data class SiteInfo(
     val files: Int,
     val bytes: Long,
     val publishedAt: Instant,
+    val hasIndex: Boolean = true,
 )
 
 /** Body of `GET /v1/sites`: every site the pages role serves. */

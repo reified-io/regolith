@@ -380,7 +380,15 @@ class FakePublisher(private val limits: SiteLimits = SiteLimits(100, 1024 * 1024
                 .associate { it.relativeTo(snapshot).joinToString("/") to it.readText() }
         }
         published[site] = files
-        val info = PublishedSite(site, "https://$site.example.test", "r${published.size}", files.size, files.values.sumOf { it.length.toLong() }, Instant.parse("2026-09-13T12:00:00Z"))
+        val info = PublishedSite(
+            site,
+            "https://$site.example.test",
+            "r${published.size}",
+            files.size,
+            files.values.sumOf { it.length.toLong() },
+            Instant.parse("2026-09-13T12:00:00Z"),
+            hasIndex = "index.html" in files,
+        )
         sites[site] = info
 
         return info

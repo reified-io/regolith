@@ -576,9 +576,14 @@ a `PublishedSite`:
   "release": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   "files": 12,
   "bytes": 48213,
-  "publishedAt": "2026-09-13T12:00:00Z"
+  "publishedAt": "2026-09-13T12:00:00Z",
+  "hasIndex": true
 }
 ```
+
+`hasIndex` says whether the directory held an `index.html` at its top, the page the address opens.
+A directory without one publishes fine and its link then shows nothing, which is the one mistake
+the other numbers cannot reveal: publish the directory that holds the page, not the one above it.
 
 The address is the server's to choose, and it is random on purpose: it is public, so an address built
 from the sandbox or from a caller's own identity would hand that identity to everyone with the link

@@ -69,6 +69,7 @@ class ApiTest {
         val site = server.siteOf(SandboxId.parse(sandbox.id))
         assertEquals("https://$site.example.test", published.url)
         assertEquals(1, published.files)
+        assertTrue(published.hasIndex)
         assertEquals("<h1>hi</h1>", server.publisher.published.getValue(site)["index.html"])
 
         assertEquals(true, client.info().publishing)

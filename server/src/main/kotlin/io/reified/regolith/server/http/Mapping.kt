@@ -253,4 +253,5 @@ internal fun PublishedSite.toWire(): WirePublishedSite = WirePublishedSite(
     files = files,
     bytes = bytes,
     publishedAt = publishedAt,
+    hasIndex = hasIndex,
 )

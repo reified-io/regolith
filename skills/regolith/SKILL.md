@@ -98,10 +98,12 @@ internet:
 ```bash
 curl -s -X POST -H "Authorization: Bearer $REGOLITH_TOKEN" -H 'Content-Type: application/json' \
   -d '{"path":"dist"}' "$REGOLITH_URL/v1/sandboxes/$BOX/site"
-# {"url":"https://k7m2q9xwtp.sites.example.com","release":"...","files":12,...}
+# {"url":"https://k7m2q9xwtp.sites.example.com","release":"...","files":12,...,"hasIndex":true}
 ```
 
 - It publishes a **snapshot**: build first, then publish; the site does not change when the sandbox does.
+- `"hasIndex": false` means the directory has no `index.html` at its top, so the link opens nothing.
+  Publish the directory that holds the page, not the one above it.
 - **Static files only.** Nothing runs there, so publish the output of a build, not a server.
 - **No dotfiles.** A file or directory whose name starts with a dot (`.git`, `.env`, `.well-known`) fails
   the whole publish; remove it from the directory first. Symlinks are skipped.

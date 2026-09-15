@@ -58,7 +58,7 @@ page carries the finished exec, `outcome` and all.
 Only when the server has a pages role: `GET /v1/info` reports `"publishing": true`. Without one these
 answer `not_implemented`.
 
-- `POST /v1/sandboxes/{id}/site` - `{"path":"dist"}`. Publishes a snapshot of that directory and returns `{"url","release","files","bytes","publishedAt"}`. The address is the server's: it is random, so it says nothing about the sandbox, and it stays the same every time you publish again. The URL is public: anyone with the link sees those files.
+- `POST /v1/sandboxes/{id}/site` - `{"path":"dist"}`. Publishes a snapshot of that directory and returns `{"url","release","files","bytes","publishedAt","hasIndex"}`. The address is the server's: it is random, so it says nothing about the sandbox, and it stays the same every time you publish again. The URL is public: anyone with the link sees those files. `hasIndex: false` means no `index.html` at the top of that directory, so the link opens nothing: publish the directory that holds the page.
 - `GET /v1/sandboxes/{id}/site` - what this sandbox has published, or `not_found`.
 - `DELETE /v1/sandboxes/{id}/site` - takes it down; the sandbox keeps its files. Publishing after that is a new site at a new address.
 

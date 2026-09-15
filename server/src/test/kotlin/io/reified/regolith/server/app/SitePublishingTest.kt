@@ -11,6 +11,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 
 class SitePublishingTest {
@@ -86,6 +87,18 @@ class SitePublishingTest {
             assertFailsWith<RegolithError.TooLarge> { sites.publish(id, "dist") }
 
             assertEquals(emptyMap(), publisher.published)
+        }
+    }
+
+    @Test
+    fun `a site without an index page says so, since the numbers cannot`() = runBlocking {
+        TestServer().use { server ->
+            val id = server.sandbox("pageless").id
+            server.runtime.place(id, "/home/sandbox/dist/docs/index.html", "<h1>nested</h1>")
+
+            assertFalse(server.sites.publish(id, "dist").hasIndex)
+            server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>top</h1>")
+            assertTrue(server.sites.publish(id, "dist").hasIndex)
         }
     }
 
