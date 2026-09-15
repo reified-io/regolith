@@ -447,12 +447,18 @@ past a frame larger than its bound.
     {"kind": "stderr", "text": "warning: unused variable\n", "end": 51}
   ],
   "nextOffset": 51,
-  "complete": false
+  "complete": false,
+  "exec": {"id": "5b0c3b2e9f7d4c1a8e6f0a1b2c3d4e5f", "status": "running", "outputEnd": 51, "...": "..."}
 }
 ```
 
 Ask again with `offset` set to `nextOffset` until `complete` is `true`: the exec has finished and
 nothing more will appear.
+
+`exec` is the exec as the server saw it while it built the page — the same document
+[`GET .../execs/{exec}`](#get-v1sandboxesidexecsexec) returns. A client following a command reads its
+status, its outcome and its exit code from the page it is already asking for, rather than a second
+request after every one.
 
 **As a stream**, with `Accept: text/event-stream`. Each frame is one event, whose `id` is the offset
 to resume from, and an `end` event closes the stream with the finished `ExecInfo`:

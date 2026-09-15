@@ -73,18 +73,20 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
         val stderr = BoundedText(maxOutputChars)
         val combined = BoundedText(maxOutputChars)
         var serverTruncated = false
-        exec.output().collect { frame ->
-            when (frame.kind) {
-                OutputKind.STDOUT -> stdout.append(frame.text)
-                OutputKind.STDERR -> stderr.append(frame.text)
-                OutputKind.GAP -> serverTruncated = true
+        // the page that completes the exec carries it, so there is nothing left to ask for afterwards.
+        val last = exec.pages(fromOffset = 0) { page ->
+            page.frames.forEach { frame ->
+                when (frame.kind) {
+                    OutputKind.STDOUT -> stdout.append(frame.text)
+                    OutputKind.STDERR -> stderr.append(frame.text)
+                    OutputKind.GAP -> serverTruncated = true
+                }
+                if (frame.kind != OutputKind.GAP) combined.append(frame.text)
             }
-            if (frame.kind != OutputKind.GAP) combined.append(frame.text)
         }
-        val info = exec.await()
 
         return ExecResult(
-            info = info,
+            info = last.exec,
             stdout = stdout.toString(),
             stderr = stderr.toString(),
             combined = combined.toString(),

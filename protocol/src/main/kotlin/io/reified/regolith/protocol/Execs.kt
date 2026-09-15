@@ -151,10 +151,14 @@ public data class OutputFrame(
 /**
  * One page of `GET .../output`. [complete] means the exec has finished and every frame up to
  * [nextOffset] has been delivered: nothing more will ever appear.
+ *
+ * [exec] is the exec as the server saw it while it built this page, so a client that follows a
+ * command sees its status, its outcome and its exit code without asking again between pages.
  */
 @Serializable
 public data class OutputPage(
     val frames: List<OutputFrame>,
     val nextOffset: Long,
     val complete: Boolean,
+    val exec: ExecInfo,
 )

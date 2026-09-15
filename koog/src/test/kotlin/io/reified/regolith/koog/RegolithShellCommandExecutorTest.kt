@@ -42,10 +42,13 @@ class RegolithShellCommandExecutorTest {
                     requests += RegolithJson.strict.decodeFromString(ExecRequest.serializer(), body)
                     json(ExecInfo.serializer(), info)
                 }
-                path == "/v1/sandboxes/$SANDBOX/execs/$EXEC/output" ->
-                    json(OutputPage.serializer(), OutputPage(listOf(OutputFrame(OutputKind.STDOUT, output, end = 1)), nextOffset = 1, complete = true))
-                path == "/v1/sandboxes/$SANDBOX/execs/$EXEC" ->
-                    json(ExecInfo.serializer(), info.copy(status = ExecStatus.FINISHED, outcome = outcome, outputEnd = 1))
+                path == "/v1/sandboxes/$SANDBOX/execs/$EXEC/output" -> {
+                    val finished = info.copy(status = ExecStatus.FINISHED, outcome = outcome, outputEnd = 1)
+                    json(
+                        OutputPage.serializer(),
+                        OutputPage(listOf(OutputFrame(OutputKind.STDOUT, output, end = 1)), nextOffset = 1, complete = true, exec = finished),
+                    )
+                }
                 else -> error("Unexpected request ${request.method.value} $path")
             }
         }

@@ -15,6 +15,7 @@ import io.reified.regolith.protocol.RegolithJson
 import io.reified.regolith.protocol.CreateSandboxRequest
 import io.reified.regolith.protocol.ErrorCodes
 import io.reified.regolith.protocol.ExecRequest
+import io.reified.regolith.protocol.ExecStatus
 import io.reified.regolith.protocol.HealthStatus
 import io.reified.regolith.protocol.ImageMode
 import io.reified.regolith.protocol.ImagePolicy
@@ -22,6 +23,7 @@ import io.reified.regolith.protocol.NetworkAllow
 import io.reified.regolith.protocol.NetworkMode
 import io.reified.regolith.protocol.NetworkPolicy
 import io.reified.regolith.protocol.OutcomeType
+import io.reified.regolith.protocol.PROTOCOL_VERSION
 import io.reified.regolith.protocol.OutputKind
 import io.reified.regolith.protocol.SandboxState
 import io.reified.regolith.protocol.UpdateSandboxRequest
@@ -31,6 +33,8 @@ import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.support.TEST_TOKEN
 import io.reified.regolith.server.support.apiTest
 import kotlinx.coroutines.flow.toList
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -53,7 +57,7 @@ class ApiTest {
         assertEquals(PROBLEM_JSON, wrong.contentType()?.withoutParameters()?.toString())
         val problem = RegolithJson.lenient.decodeFromString(ErrorBody.serializer(), wrong.bodyAsText())
         assertEquals(ErrorBody("urn:regolith:error:unauthorized", "Unauthorized", 401, "A valid bearer token is required", ErrorCodes.UNAUTHORIZED), problem)
-        assertEquals(1, client.info().protocol)
+        assertEquals(PROTOCOL_VERSION, client.info().protocol)
     }
 
     @Test
@@ -195,6 +199,47 @@ class ApiTest {
         assertFalse(first.complete)
         assertTrue(rest.complete)
         assertEquals(40000, (first.frames + rest.frames).sumOf { it.text.length })
+    }
+
+    // a client that follows a running command needed a second request for its status after every page
+    @Test
+    fun `every page of output carries the exec it came from`() = apiTest { _, client ->
+        val sandbox = client.getOrCreate("state-on-page")
+        val exec = sandbox.startExec(ExecRequest(shell = "bytes 40000"))
+        exec.await()
+
+        val first = exec.readOutput(maxBytes = 1)
+        val rest = exec.readOutput(offset = first.nextOffset)
+
+        assertEquals(exec.id, first.exec.id)
+        assertEquals(ExecStatus.FINISHED, rest.exec.status)
+        assertEquals(0, rest.exec.outcome?.exitCode)
+        assertEquals(rest.nextOffset, rest.exec.outputEnd)
+    }
+
+    // the whole of a read a caller works to a deadline for: output, where to resume, and how it ended
+    @Test
+    fun `a budgeted read stops at the end of the output and reports the exec with it`() = apiTest { _, client ->
+        val sandbox = client.getOrCreate("budgeted")
+        val running = sandbox.startExec(ExecRequest(shell = "sleep"))
+
+        val nothing = running.readWithin(budget = Duration.ZERO, maxChars = 1024)
+
+        assertEquals("", nothing.text)
+        assertFalse(nothing.complete)
+        assertEquals(ExecStatus.RUNNING, nothing.exec.status)
+        running.cancel()
+
+        val done = sandbox.startExec(ExecRequest(shell = "bytes 40000"))
+        // a page carries a whole frame whatever the bound, so this stops asking at 100 rather than cutting
+        val bounded = done.readWithin(budget = 5.seconds, maxChars = 100)
+        val onwards = done.readWithin(offset = bounded.nextOffset, budget = 5.seconds, maxChars = 100_000)
+
+        assertTrue(bounded.text.isNotEmpty() && bounded.text.length < 40_000)
+        assertFalse(bounded.complete)
+        assertEquals(40_000, bounded.text.length + onwards.text.length)
+        assertTrue(onwards.complete)
+        assertEquals(ExecStatus.FINISHED, onwards.exec.status)
     }
 
     @Test

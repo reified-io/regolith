@@ -82,9 +82,9 @@ internal fun Route.sandboxRoutes(services: Services) = route("/sandboxes") {
             call.respond(info(services.sandboxes.start(call.sandboxId())))
         }
         post("/stop") {
-            val name = call.sandboxId()
-            services.sandboxes.stop(name)
-            call.respond(info(services.sandboxes.require(name)))
+            val id = call.sandboxId()
+            services.sandboxes.stop(id)
+            call.respond(info(services.sandboxes.require(id)))
         }
         post("/site") {
             val request = call.jsonBody(PublishRequest.serializer())
@@ -110,9 +110,9 @@ internal fun Route.execRoutes(services: Services) = route("/sandboxes/{id}/execs
         call.respond(HttpStatusCode.Created, exec.toInfo(execs.stdinOpen(exec.id)))
     }
     get {
-        val name = call.sandboxId()
-        services.sandboxes.require(name)
-        call.respond(ExecPage(execs.list(name).map { it.toInfo(execs.stdinOpen(it.id)) }))
+        val sandbox = call.sandboxId()
+        services.sandboxes.require(sandbox)
+        call.respond(ExecPage(execs.list(sandbox).map { it.toInfo(execs.stdinOpen(it.id)) }))
     }
 
     route("/{exec}") {
@@ -137,12 +137,12 @@ internal fun Route.execRoutes(services: Services) = route("/sandboxes/{id}/execs
             // explicit text/event-stream selects it: a client sending */* keeps getting json pages.
             createChild(EventStreamRequested).apply {
                 sse {
-                    val name = call.sandboxId()
+                    val sandbox = call.sandboxId()
                     val id = call.execId()
                     var offset = (call.request.headers["Last-Event-ID"] ?: call.request.queryParameters["offset"])
                         ?.let { it.toLongOrNull() ?: throw RegolithError.Invalid("offset must be a whole number") } ?: 0L
                     while (true) {
-                        val slice = execs.read(name, id, offset, PAGE_BYTES, MAX_WAIT)
+                        val slice = execs.read(sandbox, id, offset, PAGE_BYTES, MAX_WAIT)
                         for (frame in slice.frames) {
                             val wire = frame.toWire()
                             send(ServerSentEvent(RegolithJson.strict.encodeToString(OutputFrame.serializer(), wire), wire.kind.name.lowercase(), frame.end.toString()))
@@ -162,7 +162,8 @@ internal fun Route.execRoutes(services: Services) = route("/sandboxes/{id}/execs
                 val offset = query["offset"]?.let { it.toLongOrNull() ?: throw RegolithError.Invalid("offset must be a whole number") } ?: 0L
                 val maxBytes = call.maxBytesParameter()?.coerceAtMost(PAGE_BYTES.toLong())?.toInt() ?: PAGE_BYTES
                 val slice = execs.read(call.sandboxId(), call.execId(), offset, maxBytes, call.waitParameter())
-                call.respond(OutputPage(slice.frames.map { it.toWire() }, slice.nextOffset, slice.complete))
+                val exec = slice.exec.toInfo(execs.stdinOpen(slice.exec.id))
+                call.respond(OutputPage(slice.frames.map { it.toWire() }, slice.nextOffset, slice.complete, exec))
             }
         }
     }
@@ -175,10 +176,10 @@ internal fun Route.fileRoutes(services: Services) = route("/sandboxes/{id}/files
         request.queryParameters["path"] ?: throw RegolithError.Invalid("The path query parameter is required")
 
     get("/content") {
-        val name = call.sandboxId()
+        val sandbox = call.sandboxId()
         val path = call.pathParameter()
-        val limit = files.openForRead(name, path, call.maxBytesParameter())
-        call.respondOutputStream(ContentType.Application.OctetStream, HttpStatusCode.OK) { files.read(name, path, this, limit) }
+        val limit = files.openForRead(sandbox, path, call.maxBytesParameter())
+        call.respondOutputStream(ContentType.Application.OctetStream, HttpStatusCode.OK) { files.read(sandbox, path, this, limit) }
     }
     put("/content") {
         val entry = files.write(call.sandboxId(), call.pathParameter(), call.receiveStream(), call.request.contentLength())

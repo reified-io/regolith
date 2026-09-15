@@ -43,13 +43,13 @@ file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 
 
 - `POST /v1/sandboxes/{id}/execs` - `{"shell":"npm test","cwd":"app","env":{},"timeoutSeconds":600,"stdin":false}` or `{"argv":["python3","main.py"]}`. Returns 201 with `id` at once. Send `Idempotency-Key` to make a retry safe.
 - `GET /v1/sandboxes/{id}/execs/{exec}?waitSeconds=30` - status and, when finished, `outcome`: `exited` with `exitCode` (and `reason` `oom_killed` or `pids_limited` when a limit explains it), `timed_out`, `cancelled`, or `interrupted` with `reason`.
-- `GET /v1/sandboxes/{id}/execs/{exec}/output?offset=0&waitSeconds=20&maxBytes=65536` - `{"frames":[{"kind":"stdout","text":"...","end":42}],"nextOffset":42,"complete":false}`. Loop with `offset = nextOffset` until `complete`; `maxBytes` bounds a page, which still carries at least one frame. Output is kept on the server: after a disconnect, resume from the last offset. With `Accept: text/event-stream` the same output arrives as server-sent events, ending with `event: end`.
+- `GET /v1/sandboxes/{id}/execs/{exec}/output?offset=0&waitSeconds=20&maxBytes=65536` - `{"frames":[{"kind":"stdout","text":"...","end":42}],"nextOffset":42,"complete":false,"exec":{...}}`. Loop with `offset = nextOffset` until `complete`; `maxBytes` bounds a page, which still carries at least one frame. `exec` is the exec as of this page, so following a command needs no second request for its status. Output is kept on the server: after a disconnect, resume from the last offset. With `Accept: text/event-stream` the same output arrives as server-sent events, ending with `event: end`.
 - `POST /v1/sandboxes/{id}/execs/{exec}/stdin?close=true` - raw bytes; only for execs started with `"stdin":true`.
 - `POST /v1/sandboxes/{id}/execs/{exec}/cancel`
 - `GET /v1/sandboxes/{id}/execs` - recent execs, newest first.
 
-To run a command and wait for its result: start it, loop over `output` until `complete`, then read the
-exec for its `outcome`.
+To run a command and wait for its result: start it, then loop over `output` until `complete`. The last
+page carries the finished exec, `outcome` and all.
 
 ## Publishing to the web
 

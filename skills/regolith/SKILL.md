@@ -14,9 +14,9 @@ it when you need a detail this file leaves out.
 
 ## Rules that save you a failed attempt
 
-- **Name the sandbox after what it belongs to** — a user, a project, a task: `user-23`,
-  `ci-build-17`. That name is the sandbox's `alias`, any text you like; the server answers with the
-  `id` that addresses it everywhere else, and `GET /v1/sandboxes?alias=user-23` finds it again.
+- **File the sandbox under what it belongs to** — a user, a project, a task: `user-23`,
+  `ci-build-17`. That is the sandbox's `alias`, any text you like; the server answers with the `id`
+  that addresses it everywhere else, and `GET /v1/sandboxes?alias=user-23` finds it again.
 - **Always create first.** `POST /v1/sandboxes` with `{"alias":"user-23"}` creates the sandbox or
   returns the existing one unchanged, so it is safe at the start of every conversation. The rest of the
   body only counts on creation: change `imagePolicy`, `network`, `lifecycle`, `env` or `labels` later
@@ -42,6 +42,8 @@ it when you need a detail this file leaves out.
   policy, not a bug.
 - **Output is kept on the server.** If a connection drops, read the output again from the last `end`
   offset you saw; nothing is lost.
+- **A page of output says how the command is doing.** Its `exec` is the exec as of that page, so
+  following a command needs no second request for its status between pages.
 
 ## Run a command
 
@@ -53,11 +55,9 @@ EXEC=$(curl -s -X POST -H "Authorization: Bearer $REGOLITH_TOKEN" -H 'Content-Ty
   -d '{"shell":"python3 -c \"import platform; print(platform.system())\"","timeoutSeconds":120}' \
   "$REGOLITH_URL/v1/sandboxes/$BOX/execs" | jq -r .id)
 
+# loop on nextOffset until complete; the last page carries the finished exec in `exec`
 curl -s -H "Authorization: Bearer $REGOLITH_TOKEN" \
-  "$REGOLITH_URL/v1/sandboxes/$BOX/execs/$EXEC/output?waitSeconds=20"    # loop on nextOffset until complete
-
-curl -s -H "Authorization: Bearer $REGOLITH_TOKEN" \
-  "$REGOLITH_URL/v1/sandboxes/$BOX/execs/$EXEC?waitSeconds=30" | jq .outcome
+  "$REGOLITH_URL/v1/sandboxes/$BOX/execs/$EXEC/output?waitSeconds=20" | jq '.exec.outcome'
 ```
 
 Reading an outcome:
