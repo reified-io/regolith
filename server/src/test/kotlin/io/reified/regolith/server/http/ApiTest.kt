@@ -72,9 +72,10 @@ class ApiTest {
         assertEquals("<h1>hi</h1>", server.publisher.published.getValue(site)["index.html"])
 
         assertEquals(true, client.info().publishing)
-        assertEquals(published.release, sandbox.site().release)
-        sandbox.unpublish()
-        assertEquals("not_found", assertFailsWith<RegolithException> { sandbox.site() }.code)
+        assertEquals(published.release, sandbox.siteOrNull()?.release)
+        assertTrue(sandbox.unpublish())
+        assertNull(sandbox.siteOrNull())
+        assertFalse(sandbox.unpublish(), "taking down a site that is not there is not a failure")
 
         // a site taken down is gone: publishing again is a new site, at an address of its own
         val again = sandbox.publish("site")

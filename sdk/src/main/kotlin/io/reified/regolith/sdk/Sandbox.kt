@@ -110,13 +110,16 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
             with(client) { jsonBody(PublishRequest.serializer(), PublishRequest(directory)) }
         }
 
-    /** What this sandbox has published, or a `not_found` failure when it has nothing. */
-    public suspend fun site(): PublishedSite = client.call(HttpMethod.Get, "$path/site", PublishedSite.serializer())
+    /** What this sandbox has published, or null when it has published nothing. */
+    public suspend fun siteOrNull(): PublishedSite? =
+        absentAsNull { client.call(HttpMethod.Get, "$path/site", PublishedSite.serializer()) }
 
-    /** Takes the site down; the sandbox and its files are untouched. */
-    public suspend fun unpublish() {
-        client.send(HttpMethod.Delete, "$path/site")
-    }
+    /**
+     * Takes the site down and returns whether there was one; the sandbox and its files are untouched.
+     * Its address goes with it, and the next publish gets a new one.
+     */
+    public suspend fun unpublish(): Boolean =
+        absentAsNull { client.send(HttpMethod.Delete, "$path/site") } != null
 
     /** A handle to an exec started earlier, for example by a previous process. */
     public fun exec(id: String): Exec {
@@ -207,6 +210,18 @@ public class SandboxFiles internal constructor(private val client: RegolithClien
         const val CHUNK_BYTES = 64 * 1024
     }
 }
+
+/**
+ * A `not_found` from a call that asks about one thing means that thing is absent. Nothing is
+ * published is an answer about a sandbox, not a failure of the call, and every caller would
+ * otherwise write this out to tell the two apart.
+ */
+private inline fun <T : Any> absentAsNull(block: () -> T): T? =
+    try {
+        block()
+    } catch (e: RegolithException) {
+        if (e.code == ErrorCodes.NOT_FOUND) null else throw e
+    }
 
 internal class BoundedText(private val max: Int) {
     private val builder = StringBuilder()
