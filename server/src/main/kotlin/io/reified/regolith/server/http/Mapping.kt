@@ -21,6 +21,7 @@ import io.reified.regolith.server.app.SandboxPatch
 import io.reified.regolith.server.app.SandboxRequest
 import io.reified.regolith.server.app.Sessions
 import io.reified.regolith.server.config.ServerConfig
+import io.reified.regolith.server.domain.Alias
 import io.reified.regolith.server.domain.Cidr
 import io.reified.regolith.server.domain.EntryType
 import io.reified.regolith.server.domain.Exec
@@ -139,6 +140,7 @@ internal fun WireCreateSandbox.toDomain() = SandboxRequest(
 )
 
 internal fun WireUpdateSandbox.toDomain() = SandboxPatch(
+    alias = alias?.let(Alias::parse),
     imagePolicy = imagePolicy?.toDomain(),
     network = network?.toDomain(),
     lifecycle = lifecycle?.toDomain(),

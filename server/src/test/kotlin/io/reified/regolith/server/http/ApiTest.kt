@@ -111,6 +111,25 @@ class ApiTest {
     }
 
     @Test
+    fun `an alias belongs to one sandbox at a time`() = apiTest { _, client ->
+        val held = client.getOrCreate("shared-alias")
+        val other = client.create()
+
+        val taken = assertFailsWith<RegolithException> { other.update(UpdateSandboxRequest(alias = "shared-alias")) }
+
+        assertEquals(ErrorCodes.INVALID_REQUEST, taken.code)
+        assertEquals(held.id, client.byAlias("shared-alias")?.id)
+        assertNull(other.get().alias)
+
+        // moving one leaves the sandbox it came from with no alias to be found by
+        held.update(UpdateSandboxRequest(alias = "moved"))
+        other.update(UpdateSandboxRequest(alias = "shared-alias"))
+
+        assertEquals(other.id, client.byAlias("shared-alias")?.id)
+        assertEquals(held.id, client.byAlias("moved")?.id)
+    }
+
+    @Test
     fun `a sandbox follows the server image, or the one it pins`() = apiTest(
         mapOf("REGOLITH_ALLOWED_IMAGES" to FULL_IMAGE),
     ) { server, client ->

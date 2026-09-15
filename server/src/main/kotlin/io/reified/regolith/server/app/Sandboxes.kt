@@ -163,7 +163,11 @@ class Sandboxes(
         sandbox
     }
 
-    suspend fun update(id: SandboxId, patch: SandboxPatch): Sandbox = locks.withLock(id) {
+    /** An alias moves under its own lock, the one [create] holds, so two patches cannot both claim it. */
+    suspend fun update(id: SandboxId, patch: SandboxPatch): Sandbox =
+        patch.alias?.let { alias -> aliasLocks.withLock(alias) { patched(id, patch) } } ?: patched(id, patch)
+
+    private suspend fun patched(id: SandboxId, patch: SandboxPatch): Sandbox = locks.withLock(id) {
         val current = require(id)
         patch.imagePolicy?.let(config.images::requireAllowed)
         patch.env?.let(Metadata::requireEnv)
