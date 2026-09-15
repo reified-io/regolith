@@ -3,14 +3,18 @@ package io.reified.regolith.sdk
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.reified.regolith.protocol.ErrorCodes
 import kotlinx.coroutines.runBlocking
+import java.net.ConnectException
+import java.nio.channels.UnresolvedAddressException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.time.Duration.Companion.seconds
 
@@ -44,6 +48,28 @@ class RegolithClientTest {
             assertEquals("http_502", refused.code)
             assertEquals("Bad gateway", refused.detail)
             assertNull(refused.retryAfter)
+        }
+    }
+
+    @Test
+    fun `no answer is one exception whatever the engine threw, and it names no address`() = runBlocking {
+        val failures = listOf(
+            ConnectException("Connection refused: 10.0.0.4:8080"),
+            UnresolvedAddressException(),
+            HttpRequestTimeoutException("http://10.0.0.4:8080/v1/sandboxes/user-23/files/content", 120_000),
+        )
+
+        for (failure in failures) {
+            RegolithClient("http://10.0.0.4:8080", "test-token", HttpClient(MockEngine { throw failure })).use { client ->
+                val sandbox = client.sandbox("user-23")
+                val operations = listOf<suspend () -> Unit>({ client.info() }, { sandbox.delete() }, { sandbox.files.read("notes/today.txt", 16) })
+
+                for (operation in operations) {
+                    val unanswered = assertFailsWith<RegolithConnectionException> { operation() }
+                    assertEquals(failure::class, unanswered.cause?.let { it::class })
+                    assertFalse("10.0.0.4" in unanswered.message.orEmpty(), unanswered.message)
+                }
+            }
         }
     }
 }

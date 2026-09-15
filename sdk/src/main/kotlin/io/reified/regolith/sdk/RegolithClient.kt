@@ -24,6 +24,8 @@ import io.reified.regolith.protocol.SandboxPage
 import io.reified.regolith.protocol.ServerInfo
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
+import java.io.IOException
+import java.nio.channels.UnresolvedAddressException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -33,6 +35,9 @@ import kotlin.time.Duration.Companion.seconds
  * Pass an [httpClient] to share connections or to test against an in-process server; the client
  * never relies on its plugins, and closing this client leaves a passed one open. Redirects are
  * never followed, so the bearer token cannot be relayed to another origin.
+ *
+ * Every operation fails in one of two ways: [RegolithException] when the server answered with a
+ * refusal, and [RegolithConnectionException] when no answer came, whichever engine [httpClient] runs.
  */
 public class RegolithClient(
     baseUrl: String,
@@ -68,10 +73,9 @@ public class RegolithClient(
     public suspend fun info(): ServerInfo = call(HttpMethod.Get, "/v1/info", ServerInfo.serializer())
 
     /** Health, readable with a failing status too: a failing server answers 503 with the same body. */
-    public suspend fun health(): HealthInfo {
+    public suspend fun health(): HealthInfo = exchange {
         val response = http.request("$base/v1/health") { method = HttpMethod.Get }
-
-        return RegolithJson.lenient.decodeFromString(HealthInfo.serializer(), response.bodyAsText())
+        RegolithJson.lenient.decodeFromString(HealthInfo.serializer(), response.bodyAsText())
     }
 
     override fun close() {
@@ -85,13 +89,12 @@ public class RegolithClient(
         response: KSerializer<T>,
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         configure: HttpRequestBuilder.() -> Unit = {},
-    ): T {
-        val result = send(method, path, timeoutMillis) {
+    ): T = exchange {
+        val result = answer(method, path, timeoutMillis) {
             accept(ContentType.Application.Json)
             configure()
         }
-
-        return RegolithJson.lenient.decodeFromString(response, result.bodyAsText())
+        RegolithJson.lenient.decodeFromString(response, result.bodyAsText())
     }
 
     internal suspend fun send(
@@ -99,12 +102,7 @@ public class RegolithClient(
         path: String,
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         configure: HttpRequestBuilder.() -> Unit = {},
-    ): HttpResponse {
-        val response = http.request("$base$path") { authorized(method, timeoutMillis, configure) }
-        if (!response.status.isSuccess()) throw failure(response)
-
-        return response
-    }
+    ): HttpResponse = exchange { answer(method, path, timeoutMillis, configure) }
 
     /**
      * Like [send], but hands the response to [read] while its body is still arriving, so a body that is
@@ -115,9 +113,35 @@ public class RegolithClient(
         path: String,
         configure: HttpRequestBuilder.() -> Unit,
         read: suspend (HttpResponse) -> T,
-    ): T = http.prepareRequest("$base$path") { authorized(method, DEFAULT_TIMEOUT_MILLIS, configure) }.execute { response ->
+    ): T = exchange {
+        http.prepareRequest("$base$path") { authorized(method, DEFAULT_TIMEOUT_MILLIS, configure) }.execute { response ->
+            if (!response.status.isSuccess()) throw failure(response)
+            read(response)
+        }
+    }
+
+    private suspend fun answer(
+        method: HttpMethod,
+        path: String,
+        timeoutMillis: Long,
+        configure: HttpRequestBuilder.() -> Unit,
+    ): HttpResponse {
+        val response = http.request("$base$path") { authorized(method, timeoutMillis, configure) }
         if (!response.status.isSuccess()) throw failure(response)
-        read(response)
+
+        return response
+    }
+
+    /**
+     * One exchange with the server. Every engine fails to connect, resolve or finish in time in its own
+     * exception types, and names the address in them; a caller gets one type, and no address.
+     */
+    private inline fun <T> exchange(block: () -> T): T = try {
+        block()
+    } catch (e: IOException) {
+        throw RegolithConnectionException(e)
+    } catch (e: UnresolvedAddressException) {
+        throw RegolithConnectionException(e)
     }
 
     private fun HttpRequestBuilder.authorized(method: HttpMethod, timeoutMillis: Long, configure: HttpRequestBuilder.() -> Unit) {
@@ -171,3 +195,11 @@ public class RegolithException(
     public val detail: String,
     public val retryAfter: Duration? = null,
 ) : RuntimeException("$code: $detail")
+
+/**
+ * No answer came from the server: it could not be reached, or it did not respond in time. The message
+ * never names the server's address, so it can be shown as it is; [cause] holds what the HTTP engine
+ * threw.
+ */
+public class RegolithConnectionException(cause: Throwable) :
+    IOException("No answer from the Regolith server: it could not be reached or did not respond in time", cause)
