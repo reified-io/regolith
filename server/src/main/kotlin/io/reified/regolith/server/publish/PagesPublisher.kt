@@ -31,6 +31,7 @@ import kotlinx.serialization.KSerializer
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.GeneralSecurityException
 import java.security.MessageDigest
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.readBytes
@@ -116,6 +117,9 @@ class PagesPublisher(
         throw e
     } catch (e: IOException) {
         throw RegolithError.Unavailable("The pages role does not answer: ${e.message}")
+    } catch (e: GeneralSecurityException) {
+        // the client reports an untrusted or mismatched certificate as a security exception, not an io one.
+        throw RegolithError.Unavailable("The pages role's certificate is not trusted: ${e.message}")
     }
 
     /** Its problems are this project's problems, so a caller sees the reason rather than a status code. */
