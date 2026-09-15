@@ -17,7 +17,6 @@ class SandboxFiles(
     private val sandboxes: Sandboxes,
     private val sessions: Sessions,
     private val runtime: SandboxRuntime,
-    private val health: Health,
     private val config: ServerConfig,
 ) {
 
@@ -54,8 +53,8 @@ class SandboxFiles(
     suspend fun write(id: SandboxId, path: String, source: InputStream, declaredBytes: Long?): FileEntry {
         val max = config.limits.maxFileBytes
         if (declaredBytes != null && declaredBytes > max) throw RegolithError.TooLarge("Files are limited to $max bytes")
-        health.require(Health.STORAGE)
 
+        // no storage gate here: the body lands in the home, a disk of its own size, and takes no host space.
         return withSession(id) { runtime.write(id, resolvePath(path), source, max) }
     }
 

@@ -98,8 +98,9 @@ private class Application(val config: ServerConfig, val store: FileStateStore) {
     // optional: without a pages role configured, the publish endpoints answer `not_implemented`.
     val publisher = config.pagesUrl?.let { PagesPublisher(it, checkNotNull(config.pagesToken)) }
     val sandboxes = Sandboxes(store, sessions, execs, homes, publisher, config, clock)
-    val files = SandboxFiles(sandboxes, sessions, runtime, health, config)
+    val files = SandboxFiles(sandboxes, sessions, runtime, config)
     val orphans = OrphanHomes(sandboxes, homes)
+    val orphanSites = OrphanSites(publisher)
     val sites = SitePublishing(sandboxes, sessions, runtime, config, publisher)
 }
 

@@ -52,7 +52,7 @@ How much of the host sandboxes may take, and what else on its network they must 
 | Variable | Default | Meaning |
 |---|---|---|
 | `REGOLITH_MAX_SESSIONS` | `2` | Sessions running at once. When the pool is full, the least recently active idle session is stopped; when none is idle, a new one is refused |
-| `REGOLITH_MIN_FREE_MB` | `2048` | Host disk space kept free. A home is created only if this much remains afterwards, and below it new sessions and uploads are refused |
+| `REGOLITH_MIN_FREE_MB` | `2048` | Host disk space kept free. A home is created only if this much remains afterwards, and below it new sessions are refused |
 | `REGOLITH_HOME_READ_BPS` | `100mb` | Read rate per home device, as a Docker byte rate, or `none` |
 | `REGOLITH_HOME_WRITE_BPS` | `50mb` | Write rate per home device, the same way |
 | `REGOLITH_BLOCKED_CIDRS` | — | Extra IPv4 addresses or networks no sandbox may reach, comma-separated — typically the public address a router forwards back to this host |

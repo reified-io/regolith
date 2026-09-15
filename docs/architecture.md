@@ -201,7 +201,7 @@ Then four loops run in the background:
 | Loop | Every | Does |
 |---|---|---|
 | Lifecycle sweep | 15 s | Ends sessions whose container has exited, stops idle and expired sessions, deletes sandboxes past retention — never one whose site is up |
-| Storage guard | 10 s | Fails the `storage` health check, and with it new sessions and uploads, while free space is below the reserve |
+| Storage guard | 10 s | Fails the `storage` health check, and with it new sessions, while free space is below the reserve; an upload lands in a home, which takes no host space |
 | CPU guard | 30 s | Stops sessions that burn CPU with nothing of their own running, and idle sessions it could not read on two ticks running |
 | Network guard | 5 min | Re-reads the firewall and repairs drift in place |
 
