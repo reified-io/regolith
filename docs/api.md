@@ -128,17 +128,17 @@ hard-coding them.
 
 ```json
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "protocol": 1,
   "defaults": {
-    "image": "ghcr.io/reified-io/regolith-sandbox:0.2.0",
+    "image": "ghcr.io/reified-io/regolith-sandbox:0.2.1",
     "resources": {"cpus": 1.0, "memoryMb": 1024, "homeMb": 4096},
     "network": {"mode": "public", "allow": []},
     "lifecycle": {"idleStopSeconds": 900, "maxSessionSeconds": 86400, "retainDays": 30},
     "execTimeoutSeconds": 120
   },
   "limits": {
-    "images": ["ghcr.io/reified-io/regolith-sandbox:0.2.0"],
+    "images": ["ghcr.io/reified-io/regolith-sandbox:0.2.1"],
     "maxCpus": 2.0,
     "maxMemoryMb": 4096,
     "maxHomeMb": 16384,
@@ -214,7 +214,7 @@ The response is a `SandboxInfo`:
 ```json
 {
   "name": "user-23",
-  "image": "ghcr.io/reified-io/regolith-sandbox:0.2.0",
+  "image": "ghcr.io/reified-io/regolith-sandbox:0.2.1",
   "imagePolicy": {"mode": "default"},
   "resources": {"cpus": 1.0, "memoryMb": 1024, "homeMb": 4096},
   "network": {"mode": "public", "allow": []},
@@ -226,7 +226,7 @@ The response is a `SandboxInfo`:
     "startedAt": "2026-09-13T12:00:00Z",
     "lastActiveAt": "2026-09-13T12:04:10Z",
     "expiresAt": "2026-09-14T12:00:00Z",
-    "image": "ghcr.io/reified-io/regolith-sandbox:0.1.0"
+    "image": "ghcr.io/reified-io/regolith-sandbox:0.2.0"
   },
   "lastSessionEnd": {"reason": "idle", "at": "2026-09-13T11:40:00Z"},
   "createdAt": "2026-09-01T09:30:00Z",
@@ -254,7 +254,7 @@ touching a home.
 ```json
 {"mode": "default"}
 {"mode": "track", "image": "ghcr.io/reified-io/regolith-sandbox-full"}
-{"mode": "pin", "image": "ghcr.io/reified-io/regolith-sandbox-full:0.2.0"}
+{"mode": "pin", "image": "ghcr.io/reified-io/regolith-sandbox-full:0.2.1"}
 ```
 
 - `default` — the server's default image, whichever that is when a session starts. This is what a
@@ -301,7 +301,7 @@ Changes `imagePolicy`, `network`, `lifecycle`, `env` or `labels`; fields left ou
 
 ```json
 {"network": {"mode": "none"}}
-{"imagePolicy": {"mode": "pin", "image": "ghcr.io/reified-io/regolith-sandbox:0.2.0"}}
+{"imagePolicy": {"mode": "pin", "image": "ghcr.io/reified-io/regolith-sandbox:0.2.1"}}
 {"imagePolicy": {"mode": "default"}}
 ```
 
