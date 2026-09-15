@@ -106,6 +106,11 @@ class DomainTest {
     fun `commands and metadata are bounded`() {
         assertFailsWith<RegolithError.Invalid> { ExecCommand.Shell(" ") }
         assertFailsWith<RegolithError.Invalid> { ExecCommand.Argv(emptyList()) }
+        // within the character limit, past what one argument to execve may carry in bytes.
+        val wide = "\uD83D\uDE00".repeat(40_000)
+        assertFailsWith<RegolithError.Invalid> { ExecCommand.Shell(wide) }
+        assertFailsWith<RegolithError.Invalid> { ExecCommand.Argv(listOf("echo", wide)) }
+        ExecCommand.Shell("x".repeat(ExecCommand.MAX_COMMAND_CHARS))
         assertFailsWith<RegolithError.Invalid> { Metadata.requireEnv(mapOf("1BAD" to "x")) }
         assertFailsWith<RegolithError.Invalid> { Metadata.requireEnv(mapOf("NUL" to "a${Char(0)}b")) }
         assertFailsWith<RegolithError.Invalid> { Metadata.requireLabels(mapOf("Key" to "x"), maxLabels = 4) }

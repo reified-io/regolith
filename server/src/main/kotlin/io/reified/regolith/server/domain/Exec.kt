@@ -14,6 +14,7 @@ sealed interface ExecCommand {
         init {
             requireValid(script.isNotBlank()) { "The shell script is empty" }
             requireValid(script.length <= MAX_COMMAND_CHARS) { "The shell script is longer than $MAX_COMMAND_CHARS characters" }
+            requireArgument(script, "The shell script")
         }
     }
 
@@ -24,11 +25,23 @@ sealed interface ExecCommand {
         init {
             requireValid(args.isNotEmpty() && args.first().isNotBlank()) { "argv needs a program" }
             requireValid(args.sumOf { it.length } <= MAX_COMMAND_CHARS) { "argv is longer than $MAX_COMMAND_CHARS characters" }
+            args.forEach { requireArgument(it, "An argv entry") }
         }
     }
 
     companion object {
         const val MAX_COMMAND_CHARS = 64_000
+
+        /** What the kernel takes as one argument to `execve`, less the NUL that ends it (`MAX_ARG_STRLEN`). */
+        const val MAX_ARGUMENT_BYTES = 128 * 1024 - 1
+
+        // the limit above is in characters, the kernel's in bytes: text of wide characters can pass one and
+        // fail the other, and then the command dies in the container with a message nobody asked for.
+        private fun requireArgument(text: String, what: String) {
+            requireValid(text.toByteArray(Charsets.UTF_8).size <= MAX_ARGUMENT_BYTES) {
+                "$what is longer than $MAX_ARGUMENT_BYTES bytes in UTF-8, the most one argument may carry"
+            }
+        }
     }
 }
 
