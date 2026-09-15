@@ -167,13 +167,13 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
             pin.exists() && pin.readText().trim() != config.namespace ->
                 fail("state", "$root belongs to namespace `${pin.readText().trim()}`, not `${config.namespace}`")
             FileStateStore.inUse(root) -> ok("state", "$root is in use by a running server")
-            else -> ok("state", "$root holds ${FileStateStore.recordedNames(root).size} sandboxes; no server is using it")
+            else -> ok("state", "$root holds ${FileStateStore.recordedIds(root).size} sandboxes; no server is using it")
         }
     }
 
     private suspend fun orphanHomes(helpers: Helpers): Check {
         val homes = HomeDisks(docker, helpers, config.namespace, config.stateDir, config.minFreeMb).list().map { it.value }
-        val recorded = withContext(Dispatchers.IO) { FileStateStore.recordedNames(config.stateDir) }.toSet()
+        val recorded = withContext(Dispatchers.IO) { FileStateStore.recordedIds(config.stateDir) }.toSet()
         val orphans = homes.filterNot { it in recorded }
 
         return if (orphans.isEmpty()) {

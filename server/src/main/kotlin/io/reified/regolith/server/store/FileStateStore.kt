@@ -98,13 +98,13 @@ class FileStateStore private constructor(private val root: Path, private val loc
 
     companion object {
         /** Version of the persisted records; see the class comment. */
-        const val SCHEMA = 2
+        const val SCHEMA = 3
 
         private const val SANDBOX_FILE = "sandbox.json"
         private val json = Json { encodeDefaults = true }
 
-        /** Names of the sandboxes recorded under [root], read without taking the lock. */
-        fun recordedNames(root: Path): List<String> {
+        /** Ids of the sandboxes recorded under [root], read without taking the lock. */
+        fun recordedIds(root: Path): List<String> {
             val dir = root.resolve("sandboxes")
             if (!dir.exists()) return emptyList()
 
