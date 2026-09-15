@@ -356,6 +356,18 @@ class ApiTest {
     }
 
     @Test
+    fun `a file the sandbox user cannot read is refused before any of it is sent`() = apiTest { server, client ->
+        val files = client.getOrCreate("files").files
+        files.write("notes/today.txt", "remember the milk")
+        server.runtime.unreadable += "/home/sandbox/notes/today.txt"
+
+        val refused = assertFailsWith<RegolithException> { files.readText("notes/today.txt") }
+
+        assertEquals(ErrorCodes.INVALID_REQUEST, refused.code)
+        assertEquals(400, refused.status)
+    }
+
+    @Test
     fun `a full disk refuses a write with a code of its own`() = apiTest { server, client ->
         val files = client.getOrCreate("files").files
         server.runtime.diskFull = true

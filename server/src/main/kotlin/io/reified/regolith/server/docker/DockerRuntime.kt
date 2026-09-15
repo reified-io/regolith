@@ -161,6 +161,14 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
         }.sortedBy { it.name }
     }
 
+    override suspend fun readable(sandbox: SandboxId, path: String): Boolean {
+        val result = docker.run(spec.readable(sandbox, path))
+        // `test` answers by exit code alone, so anything on stderr is docker failing, not its answer.
+        if (!result.ok && result.stderr.isNotBlank()) failOn(result, path)
+
+        return result.ok
+    }
+
     override suspend fun read(sandbox: SandboxId, path: String, sink: OutputStream, maxBytes: Long) = withContext(Dispatchers.IO) {
         val process = docker.start(spec.read(sandbox, path), stdin = false)
         coroutineScope {

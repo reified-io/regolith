@@ -64,6 +64,9 @@ class FakeRuntime : SandboxRuntime {
     @Volatile
     var diskFull = false
 
+    /** Paths the sandbox user may not read, whatever put them there. */
+    val unreadable: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
     private val processes = ConcurrentHashMap<ExecId, Pair<SandboxId, FakeProcess>>()
     private val files = ConcurrentHashMap<String, ByteArray>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -142,6 +145,12 @@ class FakeRuntime : SandboxRuntime {
         return files.entries.filter { it.key.startsWith(prefix) && '/' !in it.key.removePrefix(prefix) }
             .map { entry(it.key.substringAfter(':'), it.value) }
             .sortedBy { it.name }
+    }
+
+    override suspend fun readable(sandbox: SandboxId, path: String): Boolean {
+        stat(sandbox, path)
+
+        return path !in unreadable
     }
 
     override suspend fun read(sandbox: SandboxId, path: String, sink: OutputStream, maxBytes: Long) {

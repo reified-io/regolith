@@ -134,6 +134,9 @@ class ContainerSpec(
 
     fun read(sandbox: SandboxId, path: String): List<String> = helperArgs(sandbox, listOf("cat", "--", path))
 
+    /** Whether the sandbox user can open [path]; its mode alone does not decide, ownership does too. */
+    fun readable(sandbox: SandboxId, path: String): List<String> = helper(sandbox, """test -r "${'$'}1"""", path)
+
     /** Every regular file under a directory, as size and path relative to it, NUL-terminated. */
     fun tree(sandbox: SandboxId, path: String): List<String> =
         helper(sandbox, """find "${'$'}1" -type f -printf '%s\0%P\0'""", path)

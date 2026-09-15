@@ -527,8 +527,9 @@ A `FileEntry`:
 
 Files are capped at `maxFileBytes`. A read may set a lower bound of its own with `maxBytes`: a file
 larger than that is refused with `payload_too_large` before any of it is sent, just as one past
-`maxFileBytes` is. A file that grows past the bound while it is sent ends the response early. The
-home itself cannot be replaced or deleted — delete the sandbox for that.
+`maxFileBytes` is. A file that grows past the bound while it is sent ends the response early. A file
+the sandbox user cannot open is refused with `invalid_request` the same way, before the response
+starts. The home itself cannot be replaced or deleted — delete the sandbox for that.
 
 A write lands only once its whole body has arrived: a failed upload leaves the file as it was. A home
 is a fixed-size disk, and a write it has no room for is refused with `insufficient_storage`; deleting

@@ -103,6 +103,9 @@ interface SandboxRuntime {
 
     suspend fun stat(sandbox: SandboxId, path: String): FileEntry
 
+    /** Whether the sandbox user can open [path] for reading, which its mode alone does not decide. */
+    suspend fun readable(sandbox: SandboxId, path: String): Boolean
+
     suspend fun list(sandbox: SandboxId, path: String, maxEntries: Int): List<FileEntry>
 
     suspend fun read(sandbox: SandboxId, path: String, sink: OutputStream, maxBytes: Long)

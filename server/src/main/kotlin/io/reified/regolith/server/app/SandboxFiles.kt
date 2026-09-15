@@ -30,16 +30,21 @@ class SandboxFiles(
      * Checks that [path] is a readable regular file within [maxBytes], or the server's own limit when that is
      * lower or no bound is given, before any byte is sent. Returns the bound the read itself must keep to.
      */
-    suspend fun openForRead(id: SandboxId, path: String, maxBytes: Long?): Long {
+    suspend fun openForRead(id: SandboxId, path: String, maxBytes: Long?): Long = withSession(id) {
         val limit = minOf(maxBytes ?: Long.MAX_VALUE, config.limits.maxFileBytes)
-        val entry = stat(id, path)
+        val resolved = resolvePath(path)
+        val entry = runtime.stat(id, resolved)
         if (entry.type == EntryType.DIRECTORY) throw RegolithError.Invalid("`${entry.path}` is a directory")
 
         if (entry.size > limit) {
             throw RegolithError.TooLarge("`${entry.path}` is larger than $limit bytes")
         }
 
-        return limit
+        // the status is committed before the first byte, so a read the sandbox user cannot do has to be
+        // refused here: afterwards the only way left to report it is breaking the body off.
+        if (!runtime.readable(id, resolved)) throw RegolithError.Invalid("Permission denied: `${entry.path}`")
+
+        limit
     }
 
     /** Streams the file into [sink], stopping the read the moment it grows past [maxBytes]. */
