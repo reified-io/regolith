@@ -76,4 +76,5 @@ Paths are absolute or relative to `/home/sandbox`.
 - `capacity_exhausted` (503) and `unavailable` (503): retry after `Retry-After` seconds.
 - `busy` (409): the sandbox already runs as many commands as allowed; wait for one to finish.
 - `payload_too_large` (413): a file, body or site beyond its limit; `detail` names it.
+- `insufficient_storage` (507): the home is full. Delete files from it before writing again.
 - `invalid_request` (400): the `detail` member says what to fix.

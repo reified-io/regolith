@@ -11,6 +11,7 @@ sealed class RegolithError(message: String) : RuntimeException(message) {
     class Busy(message: String) : RegolithError(message)
     class CapacityExhausted(message: String) : RegolithError(message)
     class TooLarge(message: String) : RegolithError(message)
+    class InsufficientStorage(message: String) : RegolithError(message)
     class Unavailable(message: String) : RegolithError(message)
     class NotImplemented(message: String) : RegolithError(message)
 }

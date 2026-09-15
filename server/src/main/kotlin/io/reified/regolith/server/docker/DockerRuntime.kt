@@ -289,7 +289,7 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
             "Directory not empty" in reason -> RegolithError.Conflict("`$path` is not empty; delete it recursively")
             "cannot overwrite directory" in reason -> RegolithError.Invalid("`$path` is a directory")
             "No space left on device" in reason || "Disk quota exceeded" in reason ->
-                RegolithError.TooLarge("The sandbox home is full")
+                RegolithError.InsufficientStorage("The disk that holds `$path` is full; delete files to make room")
             else -> IllegalStateException("File operation on $path failed (exit ${result.exitCode}): $reason")
         }
     }

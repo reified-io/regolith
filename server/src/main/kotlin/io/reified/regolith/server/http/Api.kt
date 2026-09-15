@@ -132,6 +132,7 @@ private fun errorFor(cause: Throwable): Triple<HttpStatusCode, String, String> =
     is RegolithError.Busy -> Triple(HttpStatusCode.Conflict, ErrorCodes.BUSY, cause.message.orEmpty())
     is RegolithError.CapacityExhausted -> Triple(HttpStatusCode.ServiceUnavailable, ErrorCodes.CAPACITY_EXHAUSTED, cause.message.orEmpty())
     is RegolithError.TooLarge -> Triple(HttpStatusCode.PayloadTooLarge, ErrorCodes.PAYLOAD_TOO_LARGE, cause.message.orEmpty())
+    is RegolithError.InsufficientStorage -> Triple(HttpStatusCode.InsufficientStorage, ErrorCodes.INSUFFICIENT_STORAGE, cause.message.orEmpty())
     is RegolithError.Unavailable -> Triple(HttpStatusCode.ServiceUnavailable, ErrorCodes.UNAVAILABLE, cause.message.orEmpty())
     is RegolithError.NotImplemented -> Triple(HttpStatusCode.NotImplemented, ErrorCodes.NOT_IMPLEMENTED, cause.message.orEmpty())
     is SerializationException, is BadRequestException ->
@@ -147,6 +148,7 @@ private val PROBLEM_TITLES = mapOf(
     ErrorCodes.BUSY to "Sandbox busy",
     ErrorCodes.CAPACITY_EXHAUSTED to "No session capacity",
     ErrorCodes.PAYLOAD_TOO_LARGE to "Payload too large",
+    ErrorCodes.INSUFFICIENT_STORAGE to "Insufficient storage",
     ErrorCodes.UNAVAILABLE to "Unavailable",
     ErrorCodes.NOT_IMPLEMENTED to "Not implemented",
     ErrorCodes.INTERNAL to "Internal error",

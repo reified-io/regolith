@@ -98,6 +98,7 @@ problem; `detail` explains this occurrence, for people.
 | 409 | `conflict` | The request contradicts current state: stdin already closed, a directory not empty |
 | 409 | `busy` | The sandbox already runs as many commands as allowed |
 | 413 | `payload_too_large` | A body, file or output beyond its limit |
+| 507 | `insufficient_storage` | The disk a file is written to is full, usually the sandbox's home |
 | 500 | `internal` | A server fault, logged on the server |
 | 501 | `not_implemented` | A capability this server does not have |
 | 503 | `capacity_exhausted` | Every session slot is busy; retry after `Retry-After` |
@@ -509,6 +510,10 @@ Files are capped at `maxFileBytes`. A read may set a lower bound of its own with
 larger than that is refused with `payload_too_large` before any of it is sent, just as one past
 `maxFileBytes` is. A file that grows past the bound while it is sent ends the response early. The
 home itself cannot be replaced or deleted — delete the sandbox for that.
+
+A write lands only once its whole body has arrived: a failed upload leaves the file as it was. A home
+is a fixed-size disk, and a write it has no room for is refused with `insufficient_storage`; deleting
+files makes room, while a larger `payload_too_large` limit would not.
 
 ## Publishing
 

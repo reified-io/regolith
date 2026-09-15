@@ -93,6 +93,7 @@ public object ErrorCodes {
     public const val BUSY: String = "busy"
     public const val CAPACITY_EXHAUSTED: String = "capacity_exhausted"
     public const val PAYLOAD_TOO_LARGE: String = "payload_too_large"
+    public const val INSUFFICIENT_STORAGE: String = "insufficient_storage"
     public const val UNAVAILABLE: String = "unavailable"
     public const val NOT_IMPLEMENTED: String = "not_implemented"
     public const val INTERNAL: String = "internal"

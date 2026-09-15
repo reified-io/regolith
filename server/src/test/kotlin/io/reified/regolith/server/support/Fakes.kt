@@ -59,6 +59,11 @@ class FakeRuntime : SandboxRuntime {
 
     /** CPU microseconds each session reports; a test moves it by hand. */
     val cpu = ConcurrentHashMap<SandboxName, Long>()
+
+    /** When set, every file write fails the way a full disk makes it. */
+    @Volatile
+    var diskFull = false
+
     private val processes = ConcurrentHashMap<ExecId, Pair<SandboxName, FakeProcess>>()
     private val files = ConcurrentHashMap<String, ByteArray>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -146,6 +151,7 @@ class FakeRuntime : SandboxRuntime {
     override suspend fun write(name: SandboxName, path: String, source: InputStream, maxBytes: Long): FileEntry {
         val bytes = runInterruptible { source.readAllBytes() }
         if (bytes.size > maxBytes) throw RegolithError.TooLarge("Files are limited to $maxBytes bytes")
+        if (diskFull) throw RegolithError.InsufficientStorage("The disk that holds `$path` is full; delete files to make room")
         files["$name:$path"] = bytes
 
         return entry(path, bytes)

@@ -121,6 +121,7 @@ Errors are RFC 9457 problem documents. Branch on `code`, show `detail` to people
 - `capacity_exhausted`, `unavailable` — retry after the `Retry-After` header.
 - `busy` — too many commands already run in this sandbox; wait for one.
 - `payload_too_large` — a file, body or site beyond the limits; `detail` names it.
+- `insufficient_storage` — the home is full: delete what is no longer needed, then write again.
 - `invalid_request` — fix what `detail` says; do not retry unchanged.
 - `not_found` — the sandbox or exec does not exist; `PUT` the sandbox first.
 

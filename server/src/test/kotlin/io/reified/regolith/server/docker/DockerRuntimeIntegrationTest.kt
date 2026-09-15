@@ -86,7 +86,7 @@ class DockerRuntimeIntegrationTest {
                 // a body that breaks off looks finished from inside the container; the old file must stay.
                 assertFailsWith<IOException> { runtime.write(name, "/tmp/probe/nested/file.txt", breakingAfter(100 * 1024), 1024L * 1024) }
                 // /tmp holds half the session's 256 MB, so 200 MB fills it before the body ends.
-                assertFailsWith<RegolithError.TooLarge> { runtime.write(name, "/tmp/probe/nested/huge", zeros(200L * 1024 * 1024), 512L * 1024 * 1024) }
+                assertFailsWith<RegolithError.InsufficientStorage> { runtime.write(name, "/tmp/probe/nested/huge", zeros(200L * 1024 * 1024), 512L * 1024 * 1024) }
                 assertFailsWith<RegolithError.Invalid> { runtime.write(name, "/tmp/probe/nested", "x".byteInputStream(), 1024) }
                 assertEquals(14, runtime.stat(name, "/tmp/probe/nested/file.txt").size)
                 assertEquals(listOf("file.txt"), runtime.list(name, "/tmp/probe/nested", 100).map { it.name }, "an upload left a file behind")

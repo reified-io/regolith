@@ -280,6 +280,17 @@ class ApiTest {
     }
 
     @Test
+    fun `a full disk refuses a write with a code of its own`() = apiTest { server, client ->
+        val files = client.sandbox("files").also { it.getOrCreate() }.files
+        server.runtime.diskFull = true
+
+        val refused = assertFailsWith<RegolithException> { files.write("notes/today.txt", "remember the milk") }
+
+        assertEquals(ErrorCodes.INSUFFICIENT_STORAGE, refused.code)
+        assertEquals(507, refused.status)
+    }
+
+    @Test
     fun `a network change reaches the running session and private space is refused`() = apiTest { server, client ->
         val sandbox = client.sandbox("network").also { it.getOrCreate() }
         sandbox.start()
