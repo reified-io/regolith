@@ -214,7 +214,8 @@ sites/<site>/current
 - Activation writes `current` through an atomic rename: a visitor sees the old release or the new
   one, never a mixture.
 - Rolling back is activating an earlier release that is still kept.
-- Blobs no release names any more are swept up after every publish and every takedown.
+- A release started and never activated is dropped six hours later, whichever site it belongs to,
+  and blobs no release names any more are swept up after every publish and every takedown.
 
 ## The intake API
 

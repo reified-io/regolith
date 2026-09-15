@@ -14,11 +14,24 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 
 private val LIMITS = PagesConfig.Limits(maxFiles = 10, maxFileBytes = 1024, maxSiteBytes = 4096, releasesKept = 2, maxSites = 3)
 
 internal fun sha256(text: String): String =
     MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+
+/** A clock a test moves by hand. */
+private class MutableClock(private var current: Instant = Instant.parse("2026-09-13T12:00:00Z")) : Clock {
+    override fun now(): Instant = current
+
+    fun advance(by: Duration) {
+        current += by
+    }
+}
 
 class ReleaseStoreTest {
     private val root: Path = Files.createTempDirectory("regolith-pages-test")
@@ -84,6 +97,26 @@ class ReleaseStoreTest {
         assertEquals(LIMITS.releasesKept, kept.size)
         assertTrue(!store.blobPath(sha256("one")).exists(), "a blob no release names any more is deleted")
         assertTrue(store.blobPath(sha256("four")).exists(), "the live release keeps its files")
+    }
+
+    // a publisher that gave up on one site never publishes it again, so its leftovers go with anyone's next publish
+    @Test
+    fun `a release started and never activated is swept up with the next publish of any site`() = runBlocking {
+        val clock = MutableClock()
+        val store = ReleaseStore(root, LIMITS, clock)
+        val other = SiteName.parse("abandoned")
+        val started = store.startRelease(other, listOf(ReleaseFile("index.html", sha256("half"), 4)))
+        store.putBlob(sha256("half"), "half".byteInputStream())
+
+        clock.advance(7.hours)
+        val entries = listOf(ReleaseFile("index.html", sha256("live"), 4))
+        val live = store.startRelease(site, entries)
+        store.putBlob(sha256("live"), "live".byteInputStream())
+        store.activate(site, ReleaseId.parse(live.release))
+
+        assertTrue(!root.resolve("sites/abandoned/releases/${started.release}.json").exists(), "the abandoned release stayed")
+        assertTrue(!store.blobPath(sha256("half")).exists(), "the blob only the abandoned release named stayed")
+        assertTrue(store.blobPath(sha256("live")).exists())
     }
 
     @Test

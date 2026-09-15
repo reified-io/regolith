@@ -154,32 +154,51 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
         dir.listDirectoryEntries().filter { it.isDirectory() }.mapNotNull { runCatching { SiteName.parse(it.name) }.getOrNull() }
     }.sortedBy { it.value }
 
-    /** Keeps the newest releases and the active one, drops abandoned uploads, then sweeps unused blobs. */
+    /** Keeps the newest releases and the active one, then sweeps abandoned releases and unused blobs. */
     private suspend fun prune(site: SiteName, keep: Release) {
-        val cutoff = clock.now() - STALE_RELEASE
         io {
             val releases = releasesDir(site).takeIf { it.exists() }?.listDirectoryEntries("*.json").orEmpty()
                 .mapNotNull { file -> runCatching { read(file, Release.serializer()) }.getOrNull()?.let { file to it } }
             val ordered = releases.sortedByDescending { it.second.createdAt }
             val retained = ordered.take(limits.releasesKept).map { it.second.id }.toSet() + keep.id
             for ((file, release) in ordered) {
-                val abandoned = release.createdAt < cutoff && release.id != keep.id
-                if (release.id !in retained || abandoned) Files.deleteIfExists(file)
+                if (release.id !in retained) Files.deleteIfExists(file)
             }
         }
         collect()
     }
 
-    /** Deletes blobs no release names any more. Cheap: a manifest is small and there are few of them. */
+    /**
+     * Drops releases that were started and never activated, across every site, then deletes blobs no
+     * release names any more. Cheap: a manifest is small and there are few of them.
+     *
+     * An abandoned release is one older than [STALE_RELEASE] that is not the site's current one. Every
+     * site is looked at, not only the one that was just published, because a site whose publisher gave
+     * up is exactly the one that will not be published again. A site whose lock is held is skipped: its
+     * releases are being changed by the holder, and the next sweep gets it.
+     */
     private suspend fun collect() = blobs.withLock {
+        val cutoff = clock.now() - STALE_RELEASE
         io {
             val referenced = mutableSetOf<String>()
             val sites = root.resolve("sites")
             if (sites.exists()) {
                 for (site in sites.listDirectoryEntries().filter { it.isDirectory() }) {
-                    val releases = site.resolve("releases").takeIf { it.exists() }?.listDirectoryEntries("*.json").orEmpty()
-                    for (file in releases) {
-                        runCatching { read(file, Release.serializer()) }.getOrNull()?.manifest?.files?.forEach { referenced += it.hash }
+                    val lock = locks.computeIfAbsent(site.name) { Mutex() }
+                    val sweeping = lock.tryLock()
+                    try {
+                        val current = site.resolve("current").takeIf { it.exists() }?.readText()?.trim()
+                        val releases = site.resolve("releases").takeIf { it.exists() }?.listDirectoryEntries("*.json").orEmpty()
+                        for (file in releases) {
+                            val release = runCatching { read(file, Release.serializer()) }.getOrNull() ?: continue
+                            if (sweeping && release.id != current && release.createdAt < cutoff) {
+                                Files.deleteIfExists(file)
+                                continue
+                            }
+                            release.manifest.files.forEach { referenced += it.hash }
+                        }
+                    } finally {
+                        if (sweeping) lock.unlock()
                     }
                 }
             }
