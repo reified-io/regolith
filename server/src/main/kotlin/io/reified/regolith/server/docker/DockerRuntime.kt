@@ -192,34 +192,63 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
             coroutineScope {
                 val stderr = async(Dispatchers.IO) { quietly { process.errorStream.readNBytes(MAX_STDERR).toString(StandardCharsets.UTF_8) } }
                 val drainStdout = async(Dispatchers.IO) { quietly { process.inputStream.use { it.readAllBytes() }.size.toString() } }
-                var total = 0L
-                try {
-                    process.outputStream.use { stdin ->
-                        val buffer = ByteArray(COPY_CHUNK)
-                        while (true) {
-                            val count = source.read(buffer)
-                            if (count < 0) break
-                            total += count
-                            if (total > maxBytes) {
-                                process.destroyForcibly()
-                                throw RegolithError.TooLarge("Files are limited to $maxBytes bytes")
-                            }
-                            stdin.write(buffer, 0, count)
-                        }
-                    }
+                val delivered = try {
+                    copyBody(source, process.outputStream, maxBytes)
                 } catch (e: Exception) {
-                    // a killed writer never runs its trap, so its temporary file is removed from outside.
-                    val directory = path.substringBeforeLast('/', SandboxLayout.HOME).ifEmpty { "/" }
-                    docker.run(spec.delete(name, "$directory/$temporaryName", recursive = false, directory = false))
+                    // a body that failed or ran past its limit: nothing renames the temporary file, so it goes.
+                    process.destroyForcibly()
+                    runCatching { process.outputStream.close() }
+                    removeUpload(name, path, temporaryName)
                     throw e
                 }
+                runCatching { process.outputStream.close() }
                 val code = process.onExit().await().exitValue()
                 drainStdout.await()
+                // a writer that stopped taking the body, a full disk most often, explains itself in its exit.
                 if (code != 0) failOn(DockerCli.Result(code, ByteArray(0), stderr.await()), path)
+                if (!delivered) {
+                    removeUpload(name, path, temporaryName)
+                    error("The writer of $path exited before the body ended")
+                }
+            }
+
+            val moved = docker.run(spec.move(name, path, temporaryName))
+            if (!moved.ok) {
+                removeUpload(name, path, temporaryName)
+                failOn(moved, path)
             }
         }
 
         return stat(name, path)
+    }
+
+    /** Copies [source] into a writer's stdin and closes it; false when the writer stopped taking it first. */
+    private fun copyBody(source: InputStream, stdin: OutputStream, maxBytes: Long): Boolean {
+        val buffer = ByteArray(COPY_CHUNK)
+        var total = 0L
+
+        while (true) {
+            val count = source.read(buffer)
+            if (count < 0) break
+            total += count
+            if (total > maxBytes) throw RegolithError.TooLarge("Files are limited to $maxBytes bytes")
+            if (!writerTakes { stdin.write(buffer, 0, count) }) return false
+        }
+
+        return writerTakes { stdin.close() }
+    }
+
+    /** A write to a writer that has exited breaks its pipe, which is the writer's failure, not the body's. */
+    private inline fun writerTakes(write: () -> Unit): Boolean = try {
+        write()
+        true
+    } catch (_: IOException) {
+        false
+    }
+
+    private suspend fun removeUpload(name: SandboxName, path: String, temporaryName: String) {
+        val directory = path.substringBeforeLast('/', SandboxLayout.HOME).ifEmpty { "/" }
+        docker.run(spec.delete(name, "$directory/$temporaryName", recursive = false, directory = false))
     }
 
     override suspend fun tree(name: SandboxName, path: String, maxFiles: Int): List<TreeFile> {
@@ -258,6 +287,7 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
             "Permission denied" in reason -> RegolithError.Invalid("Permission denied: `$path`")
             "Not a directory" in reason || "Is a directory" in reason -> RegolithError.Invalid(reason.lineSequence().first())
             "Directory not empty" in reason -> RegolithError.Conflict("`$path` is not empty; delete it recursively")
+            "cannot overwrite directory" in reason -> RegolithError.Invalid("`$path` is a directory")
             "No space left on device" in reason || "Disk quota exceeded" in reason ->
                 RegolithError.TooLarge("The sandbox home is full")
             else -> IllegalStateException("File operation on $path failed (exit ${result.exitCode}): $reason")

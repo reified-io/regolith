@@ -149,13 +149,21 @@ class ContainerSpec(
     fun limitEvents(name: SandboxName): List<String> =
         helper(name, "cat /sys/fs/cgroup/memory.events; echo --; cat /sys/fs/cgroup/pids.events")
 
-    /** Streams stdin into a temporary sibling and renames it over [path], so a reader never sees half a file. */
+    /**
+     * Streams stdin into a temporary sibling of [path], removing it when the write itself fails. It never
+     * renames the file: an input that ends early looks like a finished one from in here, so only the
+     * server, which knows the whole body arrived, puts it in place with [move].
+     */
     fun write(name: SandboxName, path: String, temporaryName: String): List<String> = listOf(
         "exec", "--interactive", "--user", "${SandboxLayout.UID}:${SandboxLayout.UID}", container(name),
         "/bin/sh", "-c",
-        """set -e; dir=${'$'}(dirname -- "${'$'}1"); mkdir -p -- "${'$'}dir"; trap 'rm -f -- "${'$'}dir/${'$'}2"' EXIT; cat > "${'$'}dir/${'$'}2"; mv -f -- "${'$'}dir/${'$'}2" "${'$'}1"""",
+        """set -e; dir=${'$'}(dirname -- "${'$'}1"); mkdir -p -- "${'$'}dir"; if ! cat > "${'$'}dir/${'$'}2"; then rm -f -- "${'$'}dir/${'$'}2"; exit 1; fi""",
         "regolith-write", path, temporaryName,
     )
+
+    /** Renames the temporary sibling [write] filled over [path], so a reader never sees half a file. */
+    fun move(name: SandboxName, path: String, temporaryName: String): List<String> =
+        helper(name, """dir=${'$'}(dirname -- "${'$'}1"); mv -fT -- "${'$'}dir/${'$'}2" "${'$'}1"""", path, temporaryName)
 
     fun delete(name: SandboxName, path: String, recursive: Boolean, directory: Boolean): List<String> = helperArgs(
         name,

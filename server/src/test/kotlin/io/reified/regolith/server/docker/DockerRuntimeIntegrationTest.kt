@@ -17,6 +17,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -79,6 +81,15 @@ class DockerRuntimeIntegrationTest {
                 assertEquals(listOf("file.txt"), runtime.list(name, "/tmp/probe/nested", 100).map { it.name })
                 assertEquals(EntryType.DIRECTORY, runtime.stat(name, "/tmp/probe").type)
                 assertFailsWith<RegolithError.TooLarge> { runtime.write(name, "/tmp/probe/big", ByteArray(4096).inputStream(), 1024) }
+                assertFailsWith<RegolithError.NotFound> { runtime.stat(name, "/tmp/probe/big") }
+
+                // a body that breaks off looks finished from inside the container; the old file must stay.
+                assertFailsWith<IOException> { runtime.write(name, "/tmp/probe/nested/file.txt", breakingAfter(100 * 1024), 1024L * 1024) }
+                // /tmp holds half the session's 256 MB, so 200 MB fills it before the body ends.
+                assertFailsWith<RegolithError.TooLarge> { runtime.write(name, "/tmp/probe/nested/huge", zeros(200L * 1024 * 1024), 512L * 1024 * 1024) }
+                assertFailsWith<RegolithError.Invalid> { runtime.write(name, "/tmp/probe/nested", "x".byteInputStream(), 1024) }
+                assertEquals(14, runtime.stat(name, "/tmp/probe/nested/file.txt").size)
+                assertEquals(listOf("file.txt"), runtime.list(name, "/tmp/probe/nested", 100).map { it.name }, "an upload left a file behind")
                 runtime.delete(name, "/tmp/probe", recursive = true)
                 assertFailsWith<RegolithError.NotFound> { runtime.stat(name, "/tmp/probe") }
 
@@ -104,5 +115,37 @@ class DockerRuntimeIntegrationTest {
                 docker.run(listOf("network", "rm", spec.network))
             }
         }
+    }
+}
+
+/** A body of [count] zero bytes, without holding them. */
+private fun zeros(count: Long): InputStream = object : InputStream() {
+    private var left = count
+
+    override fun read(): Int = if (left-- > 0) 0 else -1
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (left <= 0) return -1
+        val count = minOf(len.toLong(), left).toInt()
+        b.fill(0, off, off + count)
+        left -= count
+
+        return count
+    }
+}
+
+/** A body whose client goes away after [bytes] bytes. */
+private fun breakingAfter(bytes: Int): InputStream = object : InputStream() {
+    private var sent = 0
+
+    override fun read(): Int = read(ByteArray(1), 0, 1)
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (sent >= bytes) throw IOException("The client went away")
+        val count = minOf(len, bytes - sent)
+        b.fill('y'.code.toByte(), off, off + count)
+        sent += count
+
+        return count
     }
 }
