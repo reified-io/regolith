@@ -138,14 +138,8 @@ public enum class SandboxState {
     @SerialName("stopped")
     STOPPED,
 
-    @SerialName("starting")
-    STARTING,
-
     @SerialName("running")
     RUNNING,
-
-    @SerialName("stopping")
-    STOPPING,
 }
 
 /**

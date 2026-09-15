@@ -250,8 +250,7 @@ The response is a `SandboxInfo`:
 }
 ```
 
-- `state` is `stopped`, `starting`, `running` or `stopping`. `session` is present only while there
-  is one.
+- `state` is `stopped` or `running`. `session` is present only while there is one.
 - `image` is the exact reference the sandbox's next session runs, `session.image` the one the
   running session started on, and `imagePolicy` the rule that picked them. The first two differ, as
   above, when the server has been offered a newer image since that session started.
