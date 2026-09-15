@@ -7,8 +7,9 @@ it — start from [`.env.example`](../.env.example).
 A pair such as `REGOLITH_CPUS` / `REGOLITH_MAX_CPUS` gives the default a sandbox or command gets and
 the ceiling it may ask for.
 
-The `pages` role has settings of its own, `REGOLITH_PAGES_*`, in the `.env` of its own deployment;
-they are listed in [the pages guide](pages.md). The two roles never share a file.
+The `pages` role has settings of its own, `REGOLITH_PAGES_*`, listed in [the pages guide](pages.md).
+On a machine of its own it has an `.env` of its own; on the control plane's machine the two roles run
+as one project from one `.env`.
 
 ## Required
 
@@ -142,7 +143,7 @@ the server holds no registry credentials of its own.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `REGOLITH_PAGES_URL` | — | Address of the pages role's intake listener; unset, `publish` answers `not_implemented` |
+| `REGOLITH_PAGES_URL` | — | Address of the pages role's intake listener: `http://pages:8082` on the same machine, `https://pages.example.com:8443` over the internet, or a private address; unset, `publish` answers `not_implemented` |
 | `REGOLITH_PAGES_TOKEN` | — | The intake token: the value that role was started with |
 | `REGOLITH_PAGES_TOKEN_FILE` | — | A file holding it, instead of `REGOLITH_PAGES_TOKEN` |
 

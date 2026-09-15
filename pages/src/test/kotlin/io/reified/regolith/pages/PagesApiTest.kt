@@ -26,7 +26,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-private const val TOKEN = "pages-test-token-that-is-long-enough"
+internal const val TOKEN = "pages-test-token-that-is-long-enough"
 
 internal fun config(dir: Path, domain: String = "example.test"): PagesConfig = PagesConfig(
     bind = "127.0.0.1",

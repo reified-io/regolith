@@ -8,7 +8,8 @@ import java.nio.file.Path
  *
  * There are two listeners on purpose. The public one answers visitors and never accepts a write; the
  * intake one takes releases and binds to the loopback address by default, so publishing has no public
- * endpoint at all unless an operator deliberately gives it one.
+ * endpoint at all unless an operator deliberately gives it one — a private network, a tunnel, or TLS
+ * of its own.
  */
 data class PagesConfig(
     val bind: String,
@@ -23,12 +24,15 @@ data class PagesConfig(
     val csp: String,
     val limits: Limits,
     val tls: Tls? = null,
+    val apiTls: Tls? = null,
 ) {
 
     /**
-     * TLS for the public listener: a certificate chain and its PKCS#8 key as PEM files, and optionally
-     * the CA whose client certificates are required — a CDN's origin-pull CA, so a visitor who finds the
-     * machine's address cannot reach it except through the CDN.
+     * TLS for one listener: a certificate chain and its PKCS#8 key as PEM files, and optionally the CA
+     * whose client certificates are required — a CDN's origin-pull CA, so a visitor who finds the
+     * machine's address cannot reach it except through the CDN. Each listener has its own, since the
+     * intake is usually reached under another name, and directly by a control plane that presents no
+     * client certificate.
      */
     data class Tls(val certificate: Path, val key: Path, val clientCa: Path?)
 
@@ -88,7 +92,8 @@ data class PagesConfig(
                 reserved = RESERVED + text("REGOLITH_PAGES_RESERVED").split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() },
                 // a site cannot be framed, and its forms cannot post credentials to another origin.
                 csp = text("REGOLITH_PAGES_CSP").ifEmpty { "frame-ancestors 'none'; form-action 'self'" },
-                tls = readTls(::text),
+                tls = readTls("REGOLITH_PAGES_TLS", ::text),
+                apiTls = readTls("REGOLITH_PAGES_API_TLS", ::text),
                 limits = Limits(
                     maxFiles = number("REGOLITH_PAGES_MAX_FILES", 2000),
                     maxFileBytes = number("REGOLITH_PAGES_MAX_FILE_MB", 25) * MIB,
@@ -101,17 +106,18 @@ data class PagesConfig(
 
         private val DOMAIN = Regex("[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+", RegexOption.IGNORE_CASE)
 
-        private fun readTls(text: (String) -> String): Tls? {
-            val certificate = text("REGOLITH_PAGES_TLS_CERT")
-            val key = text("REGOLITH_PAGES_TLS_KEY")
-            val clientCa = text("REGOLITH_PAGES_TLS_CLIENT_CA")
+        /** One listener's TLS settings under [prefix]: none of them means plain HTTP. */
+        private fun readTls(prefix: String, text: (String) -> String): Tls? {
+            val certificate = text("${prefix}_CERT")
+            val key = text("${prefix}_KEY")
+            val clientCa = text("${prefix}_CLIENT_CA")
 
             if (certificate.isEmpty() && key.isEmpty()) {
-                check(clientCa.isEmpty()) { "REGOLITH_PAGES_TLS_CLIENT_CA needs REGOLITH_PAGES_TLS_CERT and REGOLITH_PAGES_TLS_KEY" }
+                check(clientCa.isEmpty()) { "${prefix}_CLIENT_CA needs ${prefix}_CERT and ${prefix}_KEY" }
                 return null
             }
 
-            check(certificate.isNotEmpty() && key.isNotEmpty()) { "Set both REGOLITH_PAGES_TLS_CERT and REGOLITH_PAGES_TLS_KEY, or neither" }
+            check(certificate.isNotEmpty() && key.isNotEmpty()) { "Set both ${prefix}_CERT and ${prefix}_KEY, or neither" }
 
             return Tls(Path.of(certificate), Path.of(key), clientCa.ifEmpty { null }?.let { Path.of(it) })
         }

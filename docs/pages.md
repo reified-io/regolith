@@ -11,47 +11,94 @@ takes a token.
 
 ## Setting it up
 
-On the machine that will serve the sites:
-
-```bash
-mkdir regolith-pages && cd regolith-pages
-curl -fsSLO https://raw.githubusercontent.com/reified-io/regolith/main/compose.pages.yaml
-curl -fsSL https://raw.githubusercontent.com/reified-io/regolith/main/.env.pages.example -o .env
-```
-
-Fill in the domain and a token in `.env`:
+The role needs a domain of its own, a wildcard DNS record for it — `*.sites.example.com` — pointing at
+the machine that serves the sites, and a token, the same value the control plane publishes with:
 
 ```dotenv
 REGOLITH_PAGES_DOMAIN=sites.example.com
 REGOLITH_PAGES_TOKEN=<openssl rand -hex 32>
 ```
 
-The intake listener starts on the container's loopback address, where nothing outside reaches it.
-Open it to the control plane on an address only the control plane can use — a private network or a
-tunnel, where the pages machine is `10.0.0.5` here:
+> **Use a domain that carries nothing else.** Published sites are other people's content, and a
+> browser treats every name under one registrable domain as one site. An API, a dashboard or a login
+> page under that domain shares cookies and trust with whatever a model just published. Put those on
+> a different domain — not on a different label of this one.
+
+How visitors reach it is under [TLS](#tls). What is left is how the control plane reaches the intake,
+the listener that takes releases, and there are three ways. Each is complete on its own: pick the one
+that fits the machines you have.
+
+### On the same machine as the control plane
+
+Put `compose.pages.yaml` beside the control plane's `compose.yaml` and let Compose run both as one
+project from one `.env`, holding the control plane's settings and these:
+
+```dotenv
+COMPOSE_FILE=compose.yaml:compose.pages.yaml
+COMPOSE_PROJECT_NAME=regolith
+
+REGOLITH_PAGES_DOMAIN=sites.example.com
+REGOLITH_PAGES_TOKEN=<openssl rand -hex 32>
+REGOLITH_PAGES_API_BIND=0.0.0.0
+REGOLITH_PAGES_URL=http://pages:8082
+```
+
+`docker compose up -d` starts both. The control plane reaches the intake by its service name, on the
+project's own network, so nothing is published for it, and both roles read the one token. Sandboxes
+never reach it: they run on a network of their own, where private addresses are refused. Leave
+`JAVA_OPTS` unset here — both containers would take it, and the flags for a small machine starve the
+control plane.
+
+### Over the internet, with HTTPS and the token
+
+On the machine that serves the sites, take `compose.pages.yaml` and `.env.pages.example` as `.env`,
+and give the intake TLS of its own:
+
+```dotenv
+REGOLITH_PAGES_API_BIND=0.0.0.0
+REGOLITH_PAGES_API_PUBLISH=0.0.0.0:8443
+REGOLITH_PAGES_API_TLS_CERT=/etc/regolith-pages/certs/pages.pem
+REGOLITH_PAGES_API_TLS_KEY=/etc/regolith-pages/certs/pages.key
+```
+
+and tell the control plane, in its own `.env`:
+
+```dotenv
+REGOLITH_PAGES_URL=https://pages.example.com:8443
+REGOLITH_PAGES_TOKEN=<the same token>
+```
+
+The certificate has to be one the control plane trusts for that name: from a public certificate
+authority, or a CDN's own at its edge. The intake keeps a port of its own because the two listeners
+never share one, and the public listener has 443. For an address without a port, put a reverse proxy
+or a CDN in front that sends `pages.example.com` to it. The intake takes a bearer token and never a
+cookie, so any name will do — the domain note above is about what a browser carries.
+
+### Over a private network or a tunnel
+
+When the two machines share a private network — a provider's, or a tunnel such as WireGuard — the
+intake needs no TLS. Publish it on the private address, where only the control plane reaches it:
 
 ```dotenv
 REGOLITH_PAGES_API_BIND=0.0.0.0
 REGOLITH_PAGES_API_PUBLISH=10.0.0.5:8082
 ```
 
-Start it, and point a wildcard DNS record — `*.sites.example.com` — at the machine:
-
-```bash
-docker compose -f compose.pages.yaml up -d
-```
-
-Last, tell the control plane where to publish, in its own `.env`:
-
 ```dotenv
 REGOLITH_PAGES_URL=http://10.0.0.5:8082
 REGOLITH_PAGES_TOKEN=<the same token>
 ```
 
-> **Use a domain that carries nothing else.** Published sites are other people's content, and a
-> browser treats every name under one registrable domain as one site. An API, a dashboard or a login
-> page under that domain shares cookies and trust with whatever a model just published. Put those on
-> a different domain — not on a different label of this one.
+A tunnel's address exists only once the tunnel is up, and a container started before it cannot
+publish there, so start Docker after the tunnel. A tunnel also carries more than this port: let the
+control plane's end reach the intake and nothing else of the machine or of the other peers.
+
+### Starting it and checking it
+
+On its own machine, `docker compose -f compose.pages.yaml up -d` starts the role; on the control
+plane's, `docker compose up -d` starts both. Then, from the control plane,
+`docker compose run --rm regolith doctor` says whether the intake answers, trusts the certificate and
+takes the token.
 
 ## Two listeners
 
@@ -66,7 +113,8 @@ one. `REGOLITH_PAGES_BIND` and `REGOLITH_PAGES_PORT` move the public listener,
 
 ## TLS
 
-The public listener either terminates TLS itself or speaks plain HTTP to something in front of it.
+Each listener either terminates TLS itself or speaks plain HTTP. The public one does it for visitors;
+the intake does it only when it is reached [over the internet](#over-the-internet-with-https-and-the-token).
 
 ### Terminating it here
 
@@ -77,6 +125,10 @@ The role takes PEM files, the form a certificate authority hands out:
 | `REGOLITH_PAGES_TLS_CERT` | The certificate chain, leaf first |
 | `REGOLITH_PAGES_TLS_KEY` | Its unencrypted PKCS#8 key (`BEGIN PRIVATE KEY`); a PKCS#1 key is refused with the command that converts it |
 | `REGOLITH_PAGES_TLS_CLIENT_CA` | Optional: the CA whose client certificates are **required** |
+
+The intake takes the same three as `REGOLITH_PAGES_API_TLS_CERT`, `REGOLITH_PAGES_API_TLS_KEY` and
+`REGOLITH_PAGES_API_TLS_CLIENT_CA`, independently of the public listener: a certificate for the
+intake's own name, and a client CA only when a CDN sits in front of the intake as well.
 
 The files are read before anything listens. The role refuses to start on a key that belongs to
 another certificate, or on a certificate that has expired. No keystore is written to disk and no
@@ -196,8 +248,9 @@ Compose reads a few of its own:
 | `REGOLITH_VERSION` | — | The image tag; required |
 | `REGOLITH_REGISTRY` | `ghcr.io/reified-io` | Where the image comes from |
 | `REGOLITH_PAGES_PUBLISH` | `127.0.0.1:8081` | Host address of the public listener; `0.0.0.0:443` when the role terminates TLS itself |
-| `REGOLITH_PAGES_API_PUBLISH` | `127.0.0.1:8082` | Host address of the intake listener |
+| `REGOLITH_PAGES_API_PUBLISH` | `127.0.0.1:8082` | Host address of the intake listener: a private address, or `0.0.0.0:8443` with TLS of its own |
 | `REGOLITH_PAGES_CERT_DIR` | `./certs` | Directory mounted read-only at `/etc/regolith-pages/certs`, for the TLS files |
 
 On a small machine, `JAVA_OPTS` caps the JVM, which otherwise sizes its heap from the host's memory;
-`.env.pages.example` has a set of flags that keeps the role at about 140 MB.
+`.env.pages.example` has a set of flags that keeps the role at about 140 MB. Not on a machine that
+runs the control plane from the same `.env`, which would take them too.
