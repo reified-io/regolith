@@ -100,6 +100,9 @@ class HostIntegrationTest {
                 }
 
                 sessions.stop(name, StopReason.STOPPED)
+                // the volume name is read back as the id it was made from, and nothing else is left over.
+                assertEquals(listOf(name), homes.list())
+                assertEquals(emptyList(), homes.unrecognized())
                 sessions.withLease(sandbox) {
                     assertEquals("kept", sh("cat /home/sandbox/kept.txt"), "the home survives its session")
                 }
