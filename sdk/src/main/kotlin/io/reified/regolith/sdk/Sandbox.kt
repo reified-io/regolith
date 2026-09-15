@@ -18,6 +18,7 @@ import io.reified.regolith.protocol.ExecPage
 import io.reified.regolith.protocol.ExecRequest
 import io.reified.regolith.protocol.FileEntry
 import io.reified.regolith.protocol.IDEMPOTENCY_KEY_HEADER
+import io.reified.regolith.protocol.Ids
 import io.reified.regolith.protocol.OutputKind
 import io.reified.regolith.protocol.PublishRequest
 import io.reified.regolith.protocol.PublishedSite
@@ -116,7 +117,11 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
     }
 
     /** A handle to an exec started earlier, for example by a previous process. */
-    public fun exec(id: String): Exec = Exec(client, path, id)
+    public fun exec(id: String): Exec {
+        require(Ids.isId(id)) { "`$id` is not an exec id: ids are ${Ids.LENGTH} hex characters" }
+
+        return Exec(client, path, id)
+    }
 
     /** Recent execs, newest first. */
     public suspend fun execs(): List<ExecInfo> = client.call(HttpMethod.Get, "$path/execs", ExecPage.serializer()).execs

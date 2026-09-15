@@ -178,9 +178,10 @@ A **sandbox** is the durable part: an id, a configuration and a home. Its runnin
 **session**. A session starts on first use and ends when idle, at its maximum lifetime, on `stop`,
 or when the server restarts. Files in the home survive every session; processes do not.
 
-The **id** is the server's, and addresses the sandbox everywhere. The **alias** is the caller's: the
-identity the sandbox stands for in its own world — `user-23`, `ci-run-9913`, `telegram:123456789` —
-so an application finds its sandbox again without keeping a table of ids. It is opaque text of up to
+The **id** is the server's, 32 hex characters, and addresses the sandbox everywhere; an exec and a
+release are named the same way. The **alias** is the caller's: the identity the sandbox stands for in
+its own world — `user-23`, `ci-run-9913`, `telegram:123456789` — so an application finds its sandbox
+again without keeping a table of ids. It is opaque text of up to
 200 characters, with no control characters and no space at either end, and no two sandboxes share
 one. Nothing public is built from either.
 

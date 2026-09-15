@@ -1,5 +1,6 @@
 package io.reified.regolith.server.domain
 
+import io.reified.regolith.protocol.Ids
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -22,6 +23,11 @@ class DomainTest {
         listOf("", " padded ", "with\u0000nul", "x".repeat(Alias.MAX_CHARS + 1)).forEach { raw ->
             assertFailsWith<RegolithError.Invalid>(raw) { Alias.parse(raw) }
         }
+
+        // the domain names no wire type, so the shape clients check lives apart and has to agree
+        assertEquals(Ids.LENGTH, id.value.length)
+        assertTrue(Ids.isId(id.value) && Ids.isId(ExecId.random().value))
+        assertFalse(Ids.isId(SiteLabel.random().value))
 
         // a label is read aloud, typed by hand and seen by anyone with the link
         val label = SiteLabel.random()

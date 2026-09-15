@@ -14,12 +14,10 @@ value class SandboxId private constructor(val value: String) {
     override fun toString(): String = value
 
     companion object {
-        private val shape = Regex("[0-9a-f]{32}")
-
-        fun random(): SandboxId = SandboxId(UUID.randomUUID().toString().replace("-", ""))
+        fun random(): SandboxId = SandboxId(randomId())
 
         fun parse(raw: String): SandboxId {
-            requireValid(shape.matches(raw)) { "Unknown sandbox id" }
+            requireValid(ID_SHAPE.matches(raw)) { "Unknown sandbox id" }
 
             return SandboxId(raw)
         }
@@ -83,14 +81,20 @@ value class ExecId private constructor(val value: String) {
     override fun toString(): String = value
 
     companion object {
-        private val shape = Regex("[0-9a-f]{32}")
-
-        fun random(): ExecId = ExecId(UUID.randomUUID().toString().replace("-", ""))
+        fun random(): ExecId = ExecId(randomId())
 
         fun parse(raw: String): ExecId {
-            requireValid(shape.matches(raw)) { "Unknown exec id" }
+            requireValid(ID_SHAPE.matches(raw)) { "Unknown exec id" }
 
             return ExecId(raw)
         }
     }
 }
+
+/*
+ * one shape for every identifier the server makes. the domain names no wire type, so `protocol.Ids`
+ * states the same shape for clients and `DomainTest` holds the two together.
+ */
+private val ID_SHAPE = Regex("[0-9a-f]{32}")
+
+private fun randomId(): String = UUID.randomUUID().toString().replace("-", "")

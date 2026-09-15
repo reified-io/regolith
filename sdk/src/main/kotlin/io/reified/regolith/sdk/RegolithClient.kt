@@ -19,6 +19,7 @@ import io.ktor.http.content.TextContent
 import io.ktor.http.isSuccess
 import io.reified.regolith.protocol.ErrorBody
 import io.reified.regolith.protocol.HealthInfo
+import io.reified.regolith.protocol.Ids
 import io.reified.regolith.protocol.RegolithJson
 import io.reified.regolith.protocol.CreateSandboxRequest
 import io.reified.regolith.protocol.SandboxInfo
@@ -60,8 +61,16 @@ public class RegolithClient(
         require(token.isNotBlank()) { "A Regolith API token is required" }
     }
 
-    /** A handle to the sandbox [id]; nothing is sent until one of its operations is called. */
-    public fun sandbox(id: String): Sandbox = Sandbox(this, id)
+    /**
+     * A handle to the sandbox [id]; nothing is sent until one of its operations is called. The id is
+     * the server's, from a previous answer — an alias is not one, and neither is anything else that
+     * would end up in a request path unchecked.
+     */
+    public fun sandbox(id: String): Sandbox {
+        require(Ids.isId(id)) { "`$id` is not a sandbox id: ids are ${Ids.LENGTH} hex characters, and an alias is found with byAlias" }
+
+        return Sandbox(this, id)
+    }
 
     /**
      * The sandbox filed under [alias], created with [request] when the server has none yet. An alias is

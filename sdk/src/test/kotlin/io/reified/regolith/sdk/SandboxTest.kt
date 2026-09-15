@@ -10,6 +10,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
+private const val SANDBOX = "5f2b9c7d1e3a4f6b8c0d2e4f6a8b0c1d"
+
 class SandboxTest {
     // a server of a release that does not know the bound sends the whole file, so the client has to hold the line itself.
     @Test
@@ -17,7 +19,7 @@ class SandboxTest {
         val engine = MockEngine { respond(ByteArray(64) { 'x'.code.toByte() }, HttpStatusCode.OK) }
 
         RegolithClient("http://localhost", "test-token", HttpClient(engine)).use { client ->
-            val files = client.sandbox("user-23").files
+            val files = client.sandbox(SANDBOX).files
 
             val refused = assertFailsWith<RegolithException> { files.read("notes/today.txt", maxBytes = 16) }
 

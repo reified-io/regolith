@@ -18,6 +18,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.time.Duration.Companion.seconds
 
+private const val SANDBOX = "5f2b9c7d1e3a4f6b8c0d2e4f6a8b0c1d"
+
 class RegolithClientTest {
     @Test
     fun `a refusal keeps the server's sentence and how long to wait`() = runBlocking {
@@ -56,12 +58,12 @@ class RegolithClientTest {
         val failures = listOf(
             ConnectException("Connection refused: 10.0.0.4:8080"),
             UnresolvedAddressException(),
-            HttpRequestTimeoutException("http://10.0.0.4:8080/v1/sandboxes/user-23/files/content", 120_000),
+            HttpRequestTimeoutException("http://10.0.0.4:8080/v1/sandboxes/5f2b9c7d1e3a4f6b8c0d2e4f6a8b0c1d/files/content", 120_000),
         )
 
         for (failure in failures) {
             RegolithClient("http://10.0.0.4:8080", "test-token", HttpClient(MockEngine { throw failure })).use { client ->
-                val sandbox = client.sandbox("user-23")
+                val sandbox = client.sandbox(SANDBOX)
                 val operations = listOf<suspend () -> Unit>({ client.info() }, { sandbox.delete() }, { sandbox.files.read("notes/today.txt", 16) })
 
                 for (operation in operations) {
@@ -70,6 +72,18 @@ class RegolithClientTest {
                     assertFalse("10.0.0.4" in unanswered.message.orEmpty(), unanswered.message)
                 }
             }
+        }
+    }
+
+    // an alias reached this call before ids existed, and nothing stopped it from landing in a path.
+    @Test
+    fun `anything but an id is refused before it reaches a request path`() {
+        RegolithClient("http://localhost", "test-token", HttpClient(MockEngine { respond("", HttpStatusCode.OK) })).use { client ->
+            listOf("user-23", "", "../info", SANDBOX.uppercase(), SANDBOX + "0").forEach { raw ->
+                assertFailsWith<IllegalArgumentException>(raw) { client.sandbox(raw) }
+            }
+            assertFailsWith<IllegalArgumentException> { client.sandbox(SANDBOX).exec("user-23") }
+            assertEquals(SANDBOX, client.sandbox(SANDBOX).id)
         }
     }
 }

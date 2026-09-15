@@ -4,6 +4,8 @@ import kotlinx.serialization.SerializationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.time.Instant
 
 class JsonShapeTest {
@@ -46,5 +48,16 @@ class JsonShapeTest {
 
         assertFailsWith<SerializationException> { RegolithJson.strict.decodeFromString(ExecRequest.serializer(), body) }
         assertEquals("true", RegolithJson.lenient.decodeFromString(ExecRequest.serializer(), body).shell)
+    }
+
+    @Test
+    fun `an id is hex of one fixed length and nothing else`() {
+        val id = "5f2b9c7d1e3a4f6b8c0d2e4f6a8b0c1d"
+
+        assertTrue(Ids.isId(id))
+        assertEquals(Ids.LENGTH, id.length)
+        listOf("", "user-23", "telegram:42", id.uppercase(), id + "0", id.dropLast(1)).forEach {
+            assertFalse(Ids.isId(it), it)
+        }
     }
 }

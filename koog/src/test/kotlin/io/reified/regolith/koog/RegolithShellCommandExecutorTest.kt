@@ -24,31 +24,34 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
 
+private const val SANDBOX = "5f2b9c7d1e3a4f6b8c0d2e4f6a8b0c1d"
+private const val EXEC = "9b7f0d2c4e6a418d93f5c0b1a2d3e4f5"
+
 class RegolithShellCommandExecutorTest {
     private val started = Instant.parse("2026-09-13T12:00:00Z")
 
     private fun executor(output: String, outcome: ExecOutcome, requests: MutableList<ExecRequest> = mutableListOf()): RegolithShellCommandExecutor {
-        val info = ExecInfo(id = "e1", shell = "make", status = ExecStatus.RUNNING, startedAt = started, outputEnd = 0, outputTruncated = false, stdinOpen = false)
+        val info = ExecInfo(id = EXEC, shell = "make", status = ExecStatus.RUNNING, startedAt = started, outputEnd = 0, outputTruncated = false, stdinOpen = false)
         val engine = MockEngine { request ->
             val path = request.url.encodedPath
             fun <T> json(serializer: KSerializer<T>, value: T) =
                 respond(RegolithJson.strict.encodeToString(serializer, value), headers = headersOf(HttpHeaders.ContentType, "application/json"))
             when {
-                request.method == HttpMethod.Post && path == "/v1/sandboxes/box/execs" -> {
+                request.method == HttpMethod.Post && path == "/v1/sandboxes/$SANDBOX/execs" -> {
                     val body = (request.body as io.ktor.http.content.TextContent).text
                     requests += RegolithJson.strict.decodeFromString(ExecRequest.serializer(), body)
                     json(ExecInfo.serializer(), info)
                 }
-                path == "/v1/sandboxes/box/execs/e1/output" ->
+                path == "/v1/sandboxes/$SANDBOX/execs/$EXEC/output" ->
                     json(OutputPage.serializer(), OutputPage(listOf(OutputFrame(OutputKind.STDOUT, output, end = 1)), nextOffset = 1, complete = true))
-                path == "/v1/sandboxes/box/execs/e1" ->
+                path == "/v1/sandboxes/$SANDBOX/execs/$EXEC" ->
                     json(ExecInfo.serializer(), info.copy(status = ExecStatus.FINISHED, outcome = outcome, outputEnd = 1))
                 else -> error("Unexpected request ${request.method.value} $path")
             }
         }
         val client = RegolithClient("http://regolith.test", "token", HttpClient(engine))
 
-        return RegolithShellCommandExecutor(client.sandbox("box"), maxOutputChars = 1_000)
+        return RegolithShellCommandExecutor(client.sandbox(SANDBOX), maxOutputChars = 1_000)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package io.reified.regolith.pages
 
+import io.reified.regolith.protocol.Ids
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
@@ -22,8 +23,9 @@ internal inline fun requireValid(value: Boolean, message: () -> String) {
 }
 
 /**
- * The name of one site. It is the label of its hostname, so the same rules as a sandbox name apply:
- * a site built in sandbox `user-23` is published at `user-23.<domain>` without a second encoding.
+ * The name of one site: the label its files are served under, `<name>.<domain>`, and the key the
+ * intake files a release by. It is a DNS label and nothing else — the control plane chooses it, and
+ * chooses one that says nothing about the sandbox behind it.
  */
 @JvmInline
 value class SiteName private constructor(val value: String) {
@@ -46,12 +48,10 @@ value class ReleaseId private constructor(val value: String) {
     override fun toString(): String = value
 
     companion object {
-        private val shape = Regex("[0-9a-f]{32}")
-
         fun random(): ReleaseId = ReleaseId(java.util.UUID.randomUUID().toString().replace("-", ""))
 
         fun parse(raw: String): ReleaseId {
-            requireValid(shape.matches(raw)) { "Unknown release" }
+            requireValid(Ids.isId(raw)) { "Unknown release" }
 
             return ReleaseId(raw)
         }
