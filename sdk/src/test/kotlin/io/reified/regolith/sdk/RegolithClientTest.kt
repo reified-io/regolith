@@ -20,6 +20,14 @@ import kotlin.time.Duration.Companion.seconds
 
 private const val SANDBOX = "5f2b9c7d1e3a4f6b8c0d2e4f6a8b0c1d"
 
+private const val INFO =
+    """{"version":"test","protocol":2,"defaults":{"image":"ghcr.io/example/sandbox:1.0",""" +
+        """"resources":{"cpus":1.0,"memoryMb":1024,"homeMb":4096},"network":{"mode":"public","allow":[]},""" +
+        """"lifecycle":{"idleStopSeconds":900,"maxSessionSeconds":86400,"retainDays":30},"execTimeoutSeconds":120},""" +
+        """"limits":{"images":[],"maxCpus":2.0,"maxMemoryMb":4096,"maxHomeMb":16384,"maxSessionSeconds":86400,""" +
+        """"maxRetainDays":90,"maxExecTimeoutSeconds":3600,"maxFileBytes":1,"maxOutputBytes":1,"maxLabels":32,""" +
+        """"unattendedCpuSeconds":600}}"""
+
 class RegolithClientTest {
     @Test
     fun `a refusal keeps the server's sentence and how long to wait`() = runBlocking {
@@ -84,6 +92,24 @@ class RegolithClientTest {
             }
             assertFailsWith<IllegalArgumentException> { client.sandbox(SANDBOX).exec("user-23") }
             assertEquals(SANDBOX, client.sandbox(SANDBOX).id)
+        }
+    }
+
+    @Test
+    fun `what the server says about itself is read once and can be read again on purpose`() = runBlocking {
+        var reads = 0
+        val engine = MockEngine {
+            reads++
+            respond(INFO, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+
+        RegolithClient("http://localhost", "test-token", HttpClient(engine)).use { client ->
+            repeat(3) { client.info() }
+            assertEquals(1, reads)
+
+            client.refreshInfo()
+
+            assertEquals(2, reads)
         }
     }
 }

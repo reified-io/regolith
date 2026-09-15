@@ -57,6 +57,10 @@ public class RegolithClient(
         install(HttpTimeout)
     }
 
+    // two callers racing for the first read both fetch, which costs a request and settles on the same answer.
+    @Volatile
+    private var known: ServerInfo? = null
+
     init {
         require(token.isNotBlank()) { "A Regolith API token is required" }
     }
@@ -104,8 +108,16 @@ public class RegolithClient(
             cursor?.let { url.parameters.append("cursor", it) }
         }
 
-    /** Server version, defaults and limits. */
-    public suspend fun info(): ServerInfo = call(HttpMethod.Get, "/v1/info", ServerInfo.serializer())
+    /**
+     * Server version, defaults and limits, read once and kept: a running server does not change them,
+     * and a client that trims what it asks for to a limit would otherwise fetch them before every call.
+     * Call [refreshInfo] after a server has been upgraded under a long-lived client.
+     */
+    public suspend fun info(): ServerInfo = known ?: refreshInfo()
+
+    /** Reads the server's answer again and replaces what [info] hands out. */
+    public suspend fun refreshInfo(): ServerInfo =
+        call(HttpMethod.Get, "/v1/info", ServerInfo.serializer()).also { known = it }
 
     /** Health, readable with a failing status too: a failing server answers 503 with the same body. */
     public suspend fun health(): HealthInfo = exchange {
