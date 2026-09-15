@@ -115,6 +115,25 @@ class DockerRuntimeIntegrationTest {
                 assertEquals("1", entrypoint, "the probe must see the session's own processes")
                 assertEquals("0", survivors, "detached children survived the signal")
                 sleeping.detach()
+
+                // leftovers that fill the pids limit leave the container running with nothing startable in it:
+                // every read from inside fails, and only the daemon can still say the session is there.
+                val flood = runtime.exec(name, ExecSpec(ExecId.random(), ExecCommand.Shell("for i in \$(seq 1 700); do sleep 300 & done 2>/dev/null; true"), "/tmp", emptyMap(), stdin = false))
+                withTimeout(60.seconds) { flood.awaitExit() }
+                flood.detach()
+                assertFailsWith<IllegalStateException> { runtime.cpuMicros(name) }
+                assertFailsWith<IllegalStateException> { runtime.limitEvents(name) }
+                assertTrue(runtime.isRunning(name), "a full session still runs")
+
+                runtime.stopSession(name)
+                assertFalse(runtime.isRunning(name), "a removed session is not running")
+                runtime.startSession(sandbox, HomeMount(volume), image)
+                assertTrue(runtime.isRunning(name))
+                // a command can end the idle entrypoint it shares a uid with, and the container goes with it.
+                val killer = runtime.exec(name, ExecSpec(ExecId.random(), ExecCommand.Shell("for p in /proc/[0-9]*; do [ \"\$(tr '\\0' ' ' < \$p/cmdline 2>/dev/null)\" = 'sleep infinity ' ] && kill \${p#/proc/}; done; sleep 5"), "/tmp", emptyMap(), stdin = false))
+                withTimeout(30.seconds) { killer.awaitExit() }
+                killer.detach()
+                assertFalse(runtime.isRunning(name), "killing the entrypoint ends the container")
             } finally {
                 runtime.stopSession(name)
                 docker.run(listOf("volume", "rm", "--force", volume))

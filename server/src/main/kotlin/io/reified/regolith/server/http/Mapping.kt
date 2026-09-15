@@ -193,6 +193,8 @@ internal fun StopReason.toWire(): String = when (this) {
     StopReason.CAPACITY -> Reasons.CAPACITY
     StopReason.CPU_LIMIT -> Reasons.CPU_LIMIT
     StopReason.POLICY_FAILED -> Reasons.POLICY_FAILED
+    StopReason.CONTAINER_EXITED -> Reasons.CONTAINER_EXITED
+    StopReason.UNRESPONSIVE -> Reasons.UNRESPONSIVE
     StopReason.SANDBOX_DELETED -> Reasons.SANDBOX_DELETED
     StopReason.SERVER_RESTARTED -> Reasons.SERVER_RESTARTED
 }

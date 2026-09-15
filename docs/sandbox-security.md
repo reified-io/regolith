@@ -34,7 +34,7 @@ yet.
 | Memory | A hard limit with no swap: a runaway is killed, not paged |
 | CPU | A CPU quota and a low scheduling weight, so the host keeps a contested core |
 | Processes | A pids limit and an open-files limit |
-| Unattended CPU | A process left running after its command ended is stopped with its session once it has burned `REGOLITH_UNATTENDED_CPU_SECONDS` while nothing else ran |
+| Unattended CPU | A process left running after its command ended is stopped with its session once it has burned `REGOLITH_UNATTENDED_CPU_SECONDS` while nothing else ran. Leftovers that fill the process limit hide the counter, so an idle session unreadable on two ticks running is stopped as well |
 | Neighbours | A bridge with inter-container traffic disabled |
 | Network | The host floor and the sandbox's policy — [below](#the-network-floor) |
 | Home size | A fixed-size filesystem per sandbox — [below](#homes) |

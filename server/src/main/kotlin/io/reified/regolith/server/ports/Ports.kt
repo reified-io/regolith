@@ -92,6 +92,12 @@ interface SandboxRuntime {
 
     suspend fun exec(sandbox: SandboxId, spec: ExecSpec): RunningProcess
 
+    /**
+     * Whether the session's container still runs, asked of the daemon. It needs nothing started inside the
+     * session, so it still answers when the session itself cannot.
+     */
+    suspend fun isRunning(sandbox: SandboxId): Boolean
+
     /** CPU time the whole session has used since it started, in microseconds, from its cgroup. */
     suspend fun cpuMicros(sandbox: SandboxId): Long
 

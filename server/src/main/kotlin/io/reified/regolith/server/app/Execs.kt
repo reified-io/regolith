@@ -278,6 +278,35 @@ class Execs(
         }
     }
 
+    /**
+     * A failed command may not have failed at all: its session may have. A container that is gone ended
+     * the session, and one in which not even the limit counters could be read, before or after, with
+     * nothing else of the caller's running, has leftovers holding its pids limit — no command will start
+     * there until the session is ended. A busy session is left alone: what fills it may be a real build.
+     */
+    private suspend fun endIfSessionFailed(run: Running, limitsAtEnd: LimitEvents?) {
+        val sandbox = run.exec.sandbox
+        val session = run.lease.session
+
+        when {
+            exited(sandbox) -> endUnreachable(sandbox, session, StopReason.CONTAINER_EXITED)
+            limitsAtEnd == null && run.limitsAtStart.await() == null &&
+                running.values.none { it !== run && it.lease.session === session } ->
+                endUnreachable(sandbox, session, StopReason.UNRESPONSIVE)
+        }
+    }
+
+    /**
+     * Ends [session] if its container has exited under it — a process inside can end the idle entrypoint —
+     * so the next use starts a fresh one instead of failing against a container that is gone.
+     */
+    suspend fun endIfExited(sandbox: SandboxId, session: Sessions.Session): Boolean {
+        if (!exited(sandbox)) return false
+        endUnreachable(sandbox, session, StopReason.CONTAINER_EXITED)
+
+        return true
+    }
+
     /** Waits for the execs of a stopped session to finish recording. */
     suspend fun awaitNone(sandbox: SandboxId) {
         withTimeoutOrNull(SETTLE) { running.values.filter { it.exec.sandbox == sandbox }.forEach { it.done.await() } }
@@ -300,12 +329,17 @@ class Execs(
         run.process.detach()
         pumps.joinAll()
 
+        // one that was cancelled or timed out already says why, even when ending it took the container down.
+        val failed = code != null && code != 0 && run.interruptedBy == null && !run.cancelled && !timedOut
+        val limitsAtEnd = if (failed) limitEventsOrNull(exec.sandbox) else null
+        if (failed) endIfSessionFailed(run, limitsAtEnd)
+
         val outcome = when {
             run.interruptedBy != null -> ExecOutcome.Interrupted(checkNotNull(run.interruptedBy))
             run.cancelled -> ExecOutcome.Cancelled
             timedOut || code == null -> ExecOutcome.TimedOut
             code == 0 -> ExecOutcome.Exited(0)
-            else -> ExecOutcome.Exited(code, exitCause(run))
+            else -> ExecOutcome.Exited(code, exitCause(run, limitsAtEnd))
         }
         val finished = withContext(NonCancellable) {
             val (end, truncated) = run.writeLock.withLock {
@@ -331,9 +365,9 @@ class Execs(
      * share the counters, so each failure that overlapped the event reports it — for all of them the session
      * was out of memory or processes.
      */
-    private suspend fun exitCause(run: Running): ExitCause? {
+    private suspend fun exitCause(run: Running, after: LimitEvents?): ExitCause? {
         val before = run.limitsAtStart.await() ?: return null
-        val after = limitEventsOrNull(run.exec.sandbox) ?: return null
+        after ?: return null
 
         return when {
             after.oomKills > before.oomKills -> ExitCause.OOM_KILLED
@@ -368,15 +402,54 @@ class Execs(
         }
     }
 
+    /**
+     * Signals the exec's processes, then kills them after the grace period. The signal is a script run inside
+     * the session, so when even that cannot start — its pids limit full, or its container gone — the
+     * processes are out of reach, and ending the session is the only way left to stop them.
+     */
     private suspend fun terminate(run: Running) {
         val exec = run.exec
-        runCatching { runtime.signal(exec.sandbox, exec.id, Signal.TERM) }
-            .onFailure { log.warn(it) { "SIGTERM failed: exec=[${exec.id}]" } }
+        val reached = signal(exec, Signal.TERM) &&
+            (withTimeoutOrNull(GRACE) { run.process.awaitExit() } != null || signal(exec, Signal.KILL))
 
-        if (withTimeoutOrNull(GRACE) { run.process.awaitExit() } == null) {
-            runCatching { runtime.signal(exec.sandbox, exec.id, Signal.KILL) }
-                .onFailure { log.warn(it) { "SIGKILL failed: exec=[${exec.id}]" } }
+        if (!reached) {
+            val reason = if (exited(exec.sandbox)) StopReason.CONTAINER_EXITED else StopReason.UNRESPONSIVE
+            endUnreachable(exec.sandbox, run.lease.session, reason, except = run)
         }
+    }
+
+    private suspend fun signal(exec: Exec, signal: Signal): Boolean = try {
+        runtime.signal(exec.sandbox, exec.id, signal)
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.warn(e) { "SIG$signal failed: exec=[${exec.id}]" }
+        false
+    }
+
+    /**
+     * Stops a session the server can no longer reach, marking the commands still running in it first. Only
+     * that session's commands are marked and only that session is stopped, so one started since is untouched;
+     * [except] is the command that asked, whose own outcome already says why it ended.
+     */
+    private suspend fun endUnreachable(sandbox: SandboxId, session: Sessions.Session, reason: StopReason, except: Running? = null) {
+        running.values.filter { it.lease.session === session && it !== except && it.interruptedBy == null }
+            .forEach { it.interruptedBy = reason }
+
+        if (sessions.stopIfCurrent(sandbox, session, reason)) {
+            log.warn { "Session ended, unreachable: sandbox=[$sandbox] reason=[$reason]" }
+        }
+    }
+
+    /** Whether the session's container is gone. A check that fails answers no: doubt never ends a session. */
+    private suspend fun exited(sandbox: SandboxId): Boolean = try {
+        !runtime.isRunning(sandbox)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.warn(e) { "Checking the session container failed: sandbox=[$sandbox]" }
+        false
     }
 
     private suspend fun find(sandbox: SandboxId, key: String): Exec? =

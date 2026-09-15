@@ -88,6 +88,12 @@ public object Reasons {
     /** The network floor could not be restored. */
     public const val POLICY_FAILED: String = "policy_failed"
 
+    /** The session's container exited on its own: a process inside ended its idle entrypoint. */
+    public const val CONTAINER_EXITED: String = "container_exited"
+
+    /** Nothing more could be started in the session, typically because its pids limit was full. */
+    public const val UNRESPONSIVE: String = "unresponsive"
+
     /** The sandbox was deleted under the command. */
     public const val SANDBOX_DELETED: String = "sandbox_deleted"
 

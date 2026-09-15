@@ -73,6 +73,8 @@ Reading an outcome:
 | `timed_out` | Raise `timeoutSeconds`, up to `maxExecTimeoutSeconds` in `GET /v1/info`, or split the work |
 | `cancelled` | Someone called `cancel`; run it again only if that was not deliberate |
 | `interrupted` | The session ended under it — `reason` says why; run it again |
+| `interrupted` with `reason: container_exited` | A command killed the session's own idle process (`pkill sleep`, `kill -9 -1`); the retry gets a fresh session with the home intact. Kill processes by what you started, not by name |
+| `interrupted` with `reason: unresponsive` | Processes left behind filled the process limit; the retry starts clean. Wait for background jobs instead of leaving hundreds running |
 
 For long work — a build, a server — start the exec and poll it rather than holding one request open.
 

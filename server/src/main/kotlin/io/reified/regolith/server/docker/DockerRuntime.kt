@@ -105,6 +105,14 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
         DockerProcess(docker.start(this@DockerRuntime.spec.exec(sandbox, spec), stdin = spec.stdin), spec.stdin)
     }
 
+    override suspend fun isRunning(sandbox: SandboxId): Boolean {
+        val result = docker.run(spec.running(sandbox))
+        // the client words it `Error: No such object` or, since docker 29, `error: no such object`.
+        if (!result.ok && result.stderr.contains("no such object", ignoreCase = true)) return false
+
+        return result.requireOk("Inspecting session $sandbox").text.trim() == "true"
+    }
+
     override suspend fun cpuMicros(sandbox: SandboxId): Long {
         val stat = docker.run(spec.cpuStat(sandbox)).requireOk("Reading the cpu usage of session $sandbox").text
         val usage = stat.lineSequence().firstOrNull { it.startsWith("usage_usec ") }?.substringAfter(' ')?.trim()?.toLongOrNull()

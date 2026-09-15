@@ -200,9 +200,9 @@ Then four loops run in the background:
 
 | Loop | Every | Does |
 |---|---|---|
-| Lifecycle sweep | 15 s | Stops idle and expired sessions, deletes sandboxes past retention |
+| Lifecycle sweep | 15 s | Ends sessions whose container has exited, stops idle and expired sessions, deletes sandboxes past retention |
 | Storage guard | 10 s | Fails the `storage` health check, and with it new sessions and uploads, while free space is below the reserve |
-| CPU guard | 30 s | Stops sessions that burn CPU with nothing of their own running |
+| CPU guard | 30 s | Stops sessions that burn CPU with nothing of their own running, and idle sessions it could not read on two ticks running |
 | Network guard | 5 min | Re-reads the firewall and repairs drift in place |
 
 Once, alongside them, the server pulls every image in its catalogue. A session start would pull what

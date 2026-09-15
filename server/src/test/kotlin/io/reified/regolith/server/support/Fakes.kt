@@ -67,6 +67,12 @@ class FakeRuntime : SandboxRuntime {
     /** Paths the sandbox user may not read, whatever put them there. */
     val unreadable: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
+    /** Sessions whose container exited under them, the way `pkill sleep` inside one ends it. */
+    val exited: MutableSet<SandboxId> = ConcurrentHashMap.newKeySet()
+
+    /** Sessions in which nothing more can be started, the way leftovers filling the pids limit leave one. */
+    val unreachable: MutableSet<SandboxId> = ConcurrentHashMap.newKeySet()
+
     private val processes = ConcurrentHashMap<ExecId, Pair<SandboxId, FakeProcess>>()
     private val files = ConcurrentHashMap<String, ByteArray>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -78,6 +84,8 @@ class FakeRuntime : SandboxRuntime {
     }
 
     override suspend fun startSession(sandbox: Sandbox, home: HomeMount, image: String): SessionHandle {
+        exited -= sandbox.id
+        unreachable -= sandbox.id
         sessions += sandbox.id
         started += sandbox.id
         startedOn[sandbox.id] = image
@@ -103,23 +111,51 @@ class FakeRuntime : SandboxRuntime {
         processes.values.filter { it.first == sandbox }.forEach { it.second.kill(137) }
     }
 
+    /** Ends a session's container from inside, as `pkill sleep` would: every command in it dies with it. */
+    fun exitContainer(sandbox: SandboxId) {
+        exited += sandbox
+        processes.values.filter { it.first == sandbox }.forEach { it.second.kill(137) }
+    }
+
     override suspend fun exec(sandbox: SandboxId, spec: ExecSpec): RunningProcess {
         check(sandbox in sessions) { "No session for $sandbox" }
         val process = FakeProcess(spec.stdin) { limits.merge(sandbox, LimitEvents(1, 0)) { a, b -> LimitEvents(a.oomKills + b.oomKills, a.forksRefused) } }
         processes[spec.id] = sandbox to process
-        scope.launch { process.run(spec.command) }
+        // like the docker client: the command line starts, and fails at once with the daemon's own words.
+        val command = when (sandbox) {
+            in exited -> ExecCommand.Shell("err Error response from daemon: container is not running; exit 1")
+            in unreachable -> ExecCommand.Shell("err OCI runtime exec failed: unable to start container process; exit 126")
+            else -> spec.command
+        }
+        scope.launch { process.run(command) }
 
         return process
     }
 
-    override suspend fun cpuMicros(sandbox: SandboxId): Long = cpu[sandbox] ?: 0
+    override suspend fun isRunning(sandbox: SandboxId): Boolean = sandbox in sessions && sandbox !in exited
+
+    /** Throws the way a `docker exec` into the session does when nothing can be started in it. */
+    private fun requireReachable(sandbox: SandboxId) {
+        check(sandbox !in exited && sandbox !in unreachable) { "Nothing can be started in session $sandbox" }
+    }
+
+    override suspend fun cpuMicros(sandbox: SandboxId): Long {
+        requireReachable(sandbox)
+
+        return cpu[sandbox] ?: 0
+    }
 
     /** Limit counters each session reports; a fake command `oom` bumps them the way the kernel would. */
     val limits = ConcurrentHashMap<SandboxId, LimitEvents>()
 
-    override suspend fun limitEvents(sandbox: SandboxId): LimitEvents = limits[sandbox] ?: LimitEvents(0, 0)
+    override suspend fun limitEvents(sandbox: SandboxId): LimitEvents {
+        requireReachable(sandbox)
+
+        return limits[sandbox] ?: LimitEvents(0, 0)
+    }
 
     override suspend fun signal(sandbox: SandboxId, exec: ExecId, signal: Signal) {
+        requireReachable(sandbox)
         processes[exec]?.second?.kill(if (signal == Signal.TERM) 143 else 137)
     }
 

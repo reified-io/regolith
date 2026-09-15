@@ -106,6 +106,12 @@ enum class StopReason {
 
     /** The network floor could not be restored. */
     POLICY_FAILED,
+
+    /** Its container exited on its own: something inside ended the idle process that keeps it alive. */
+    CONTAINER_EXITED,
+
+    /** Nothing more could be started inside it, typically because leftover processes filled its pids limit. */
+    UNRESPONSIVE,
     SANDBOX_DELETED,
     SERVER_RESTARTED,
 }

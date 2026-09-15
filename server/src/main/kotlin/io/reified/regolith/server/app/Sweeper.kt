@@ -8,8 +8,8 @@ import io.reified.regolith.server.ports.SandboxNetwork
 import kotlin.time.Clock
 
 /**
- * Applies lifecycles: stops sessions past their maximum lifetime or idle window and deletes
- * sandboxes past retention.
+ * Applies lifecycles: ends sessions whose container has exited, stops sessions past their maximum
+ * lifetime or idle window, and deletes sandboxes past retention.
  *
  * Idle means no lease — no running exec and no file transfer. A background server started by a
  * finished command holds no lease, so it ends with the idle session; that is the price of not
@@ -18,6 +18,7 @@ import kotlin.time.Clock
 class Sweeper(
     private val sandboxes: Sandboxes,
     private val sessions: Sessions,
+    private val execs: Execs,
     private val clock: Clock,
 ) {
 
@@ -26,6 +27,7 @@ class Sweeper(
 
         for ((id, session) in sessions.snapshot()) {
             val sandbox = sandboxes.find(id) ?: continue
+            if (execs.endIfExited(id, session)) continue
             if (now >= session.expiresAt) {
                 log.info { "Session reached its maximum lifetime: sandbox=[$id]" }
                 sandboxes.stop(id, StopReason.SESSION_EXPIRED)

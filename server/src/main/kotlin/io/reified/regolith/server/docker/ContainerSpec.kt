@@ -151,6 +151,9 @@ class ContainerSpec(
     fun copyOut(sandbox: SandboxId, path: String, destination: String): List<String> =
         listOf("cp", "--follow-link=false", "${container(sandbox)}:${path.trimEnd('/')}/.", destination)
 
+    /** The daemon's view of whether the session container runs; nothing is started inside it. */
+    fun running(sandbox: SandboxId): List<String> = listOf("inspect", "--format", "{{.State.Running}}", container(sandbox))
+
     /** The session's cgroup counters, readable by the sandbox user from inside its own container. */
     fun cpuStat(sandbox: SandboxId): List<String> = helperArgs(sandbox, listOf("cat", "/sys/fs/cgroup/cpu.stat"))
 

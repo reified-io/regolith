@@ -111,7 +111,7 @@ private fun serve(config: ServerConfig) {
     val app = open(config)
     val networkGuard = NetworkGuard(app.enforcer, app.sandboxes, app.sessions, app.health)
     val storageGuard = StorageGuard(app.homes, app.health, config.minFreeMb * 1024 * 1024)
-    val sweeper = Sweeper(app.sandboxes, app.sessions, app.clock)
+    val sweeper = Sweeper(app.sandboxes, app.sessions, app.execs, app.clock)
     val cpuGuard = CpuGuard(app.sessions, app.runtime, app.clock, config.limits.unattendedCpu)
 
     startOrExit(app) {

@@ -32,9 +32,13 @@ class CpuGuard(
 
     private val burns = ConcurrentHashMap<SandboxId, Burn>()
 
+    /** Consecutive ticks a session could not be read, by the session they were counted against. */
+    private val misses = ConcurrentHashMap<SandboxId, Pair<Instant, Int>>()
+
     suspend fun tick() {
         val live = sessions.snapshot()
         burns.keys.retainAll(live.keys)
+        misses.keys.retainAll(live.keys)
 
         for ((id, session) in live) {
             // taken before the counter: activity that ends while it is read then marks the next interval too.
@@ -45,8 +49,10 @@ class CpuGuard(
                 throw e
             } catch (e: Exception) {
                 log.warn(e) { "Reading cpu usage failed: sandbox=[$id]" }
+                unreadable(id, session)
                 continue
             }
+            misses.remove(id)
             val previous = burns[id]?.takeIf { it.session == session.startedAt }
             val unattended = when {
                 previous == null -> Duration.ZERO
@@ -61,7 +67,33 @@ class CpuGuard(
         }
     }
 
+    /**
+     * The counter is read by a process started inside the session, so leftovers that fill its pids limit hide
+     * it from this guard entirely while they burn. A session that stays unreadable across two ticks with
+     * nothing of the caller's running is stopped; one whose container has exited is the sweep's to end.
+     */
+    private suspend fun unreadable(id: SandboxId, session: Sessions.Session) {
+        val previous = misses[id]?.takeIf { it.first == session.startedAt }?.second ?: 0
+        misses[id] = session.startedAt to previous + 1
+        if (previous + 1 < UNREADABLE_TICKS || !running(id)) return
+
+        if (sessions.stopIfIdle(id, StopReason.UNRESPONSIVE)) {
+            misses.remove(id)
+            log.warn { "Session stopped, unreadable while idle: sandbox=[$id]" }
+        }
+    }
+
+    private suspend fun running(id: SandboxId): Boolean = try {
+        runtime.isRunning(id)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.warn(e) { "Checking the session container failed: sandbox=[$id]" }
+        true
+    }
+
     private companion object {
         val log = KotlinLogging.logger {}
+        const val UNREADABLE_TICKS = 2
     }
 }

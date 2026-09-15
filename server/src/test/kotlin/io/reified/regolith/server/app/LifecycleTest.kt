@@ -52,6 +52,113 @@ class LifecycleTest {
     }
 
     @Test
+    fun `a command whose container dies under it is interrupted, and the next one gets a fresh session`() = runBlocking {
+        TestServer().use { server ->
+            val sandbox = server.sandbox("killed")
+            val name = sandbox.id
+            val running = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("sleep")), null)
+
+            server.runtime.exitContainer(name)
+
+            assertEquals(ExecOutcome.Interrupted(StopReason.CONTAINER_EXITED), server.execs.await(name, running.id, 10.seconds).outcome)
+            assertEquals(StopReason.CONTAINER_EXITED, server.sessions.lastEnd(name)?.reason)
+            val next = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("echo hi")), null)
+            assertEquals(ExecOutcome.Exited(0), server.execs.await(name, next.id, 10.seconds).outcome)
+            assertEquals(2, server.runtime.started.count { it == name }, "the next command runs in a new container")
+        }
+    }
+
+    @Test
+    fun `a command started into a container that already exited reports the session ending, not itself`() = runBlocking {
+        TestServer().use { server ->
+            val sandbox = server.sandbox("dead")
+            val name = sandbox.id
+            server.sandboxes.start(name)
+            server.runtime.exitContainer(name)
+
+            val exec = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("echo hi")), null)
+
+            assertEquals(ExecOutcome.Interrupted(StopReason.CONTAINER_EXITED), server.execs.await(name, exec.id, 10.seconds).outcome)
+            assertNull(server.sessions.get(name))
+        }
+    }
+
+    @Test
+    fun `a failing command in a live container stays its own failure`() = runBlocking {
+        TestServer().use { server ->
+            val sandbox = server.sandbox("failing")
+            val exec = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("exit 7")), null)
+
+            assertEquals(ExecOutcome.Exited(7), server.execs.await(sandbox.id, exec.id, 10.seconds).outcome)
+            assertTrue(server.sessions.get(sandbox.id) != null)
+        }
+    }
+
+    @Test
+    fun `a cancel that cannot reach its processes ends the session, and only that command says cancelled`() = runBlocking {
+        TestServer().use { server ->
+            val sandbox = server.sandbox("flooded")
+            val name = sandbox.id
+            val flood = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("sleep")), null)
+            val other = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("sleep")), null)
+            server.runtime.unreachable += name
+
+            server.execs.cancel(name, flood.id)
+
+            assertEquals(ExecOutcome.Cancelled, server.execs.await(name, flood.id, 10.seconds).outcome)
+            assertEquals(ExecOutcome.Interrupted(StopReason.UNRESPONSIVE), server.execs.await(name, other.id, 10.seconds).outcome)
+            assertEquals(StopReason.UNRESPONSIVE, server.sessions.lastEnd(name)?.reason)
+        }
+    }
+
+    @Test
+    fun `a command that cannot start where nothing else runs ends the session as unresponsive`() = runBlocking {
+        TestServer().use { server ->
+            val sandbox = server.sandbox("full")
+            val name = sandbox.id
+            server.sandboxes.start(name)
+            server.runtime.unreachable += name
+
+            val exec = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("echo hi")), null)
+
+            assertEquals(ExecOutcome.Interrupted(StopReason.UNRESPONSIVE), server.execs.await(name, exec.id, 10.seconds).outcome)
+            assertEquals(StopReason.UNRESPONSIVE, server.sessions.lastEnd(name)?.reason)
+            val next = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("echo hi")), null)
+            assertEquals(ExecOutcome.Exited(0), server.execs.await(name, next.id, 10.seconds).outcome)
+        }
+    }
+
+    @Test
+    fun `a command that cannot start beside a running one is only its own failure`() = runBlocking<Unit> {
+        TestServer().use { server ->
+            val sandbox = server.sandbox("crowded")
+            val name = sandbox.id
+            val build = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("sleep")), null)
+            server.runtime.unreachable += name
+
+            val exec = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("echo hi")), null)
+
+            assertEquals(126, (server.execs.await(name, exec.id, 10.seconds).outcome as ExecOutcome.Exited).code)
+            assertTrue(server.sessions.get(name) != null, "what fills a busy session may be a real build")
+            server.runtime.unreachable -= name
+            server.execs.cancel(name, build.id)
+        }
+    }
+
+    @Test
+    fun `a timeout that cannot reach its processes ends the session and still says timed out`() = runBlocking {
+        TestServer().use { server ->
+            val sandbox = server.sandbox("stuck")
+            val name = sandbox.id
+            val exec = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("sleep"), timeout = 1.seconds), null)
+            server.runtime.unreachable += name
+
+            assertEquals(ExecOutcome.TimedOut, server.execs.await(name, exec.id, 20.seconds).outcome)
+            assertEquals(StopReason.UNRESPONSIVE, server.sessions.lastEnd(name)?.reason)
+        }
+    }
+
+    @Test
     fun `retention deletes an unused sandbox, and an ephemeral one right after its session`() = runBlocking {
         TestServer().use { server ->
             val kept = server.sandbox("kept", SandboxRequest(lifecycle = LifecycleRequest(retain = 3.days))).id
@@ -108,6 +215,40 @@ class LifecycleTest {
             server.guardTick(name, guard, cpuMicros = 900_000_000)
             server.guardTick(name, guard, cpuMicros = 950_000_000)
             assertTrue(server.sessions.get(name) != null, "only 50 seconds were unattended")
+        }
+    }
+
+    @Test
+    fun `an idle session the cpu guard cannot read twice is stopped as unresponsive`() = runBlocking {
+        TestServer().use { server ->
+            val name = server.sandbox("unreadable").id
+            server.sandboxes.start(name)
+            val guard = CpuGuard(server.sessions, server.runtime, server.clock, limit = 60.seconds)
+            server.runtime.unreachable += name
+
+            server.guardTick(name, guard, cpuMicros = 0)
+            assertTrue(server.sessions.get(name) != null, "one unreadable tick is not enough")
+            server.guardTick(name, guard, cpuMicros = 0)
+
+            assertNull(server.sessions.get(name))
+            assertEquals(StopReason.UNRESPONSIVE, server.sessions.lastEnd(name)?.reason)
+        }
+    }
+
+    @Test
+    fun `the cpu guard leaves an exited container to the sweep, which says what happened`() = runBlocking {
+        TestServer().use { server ->
+            val name = server.sandbox("exited").id
+            server.sandboxes.start(name)
+            val guard = CpuGuard(server.sessions, server.runtime, server.clock, limit = 60.seconds)
+            server.runtime.exitContainer(name)
+
+            repeat(3) { server.guardTick(name, guard, cpuMicros = 0) }
+            assertTrue(server.sessions.get(name) != null, "an exited container is not unresponsive")
+            server.sweeper.tick()
+
+            assertNull(server.sessions.get(name))
+            assertEquals(StopReason.CONTAINER_EXITED, server.sessions.lastEnd(name)?.reason)
         }
     }
 

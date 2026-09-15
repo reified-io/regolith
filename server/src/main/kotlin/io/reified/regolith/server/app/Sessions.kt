@@ -144,6 +144,13 @@ class Sessions(
         true
     }
 
+    /** Ends [session] only while it is still the sandbox's session, so one started since is never taken for it. */
+    suspend fun stopIfCurrent(sandbox: SandboxId, session: Session, reason: StopReason): Boolean = locks.withLock(sandbox) {
+        if (live[sandbox] !== session) return@withLock false
+        stopLocked(sandbox, reason)
+        true
+    }
+
     suspend fun stopAll(reason: StopReason) {
         for (sandbox in live.keys.toList()) stop(sandbox, reason)
     }

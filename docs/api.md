@@ -292,6 +292,8 @@ keeps such a thing in its home should be ready to build it again.
 | `capacity` | Reclaimed while idle, to start another sandbox's session |
 | `cpu_limit` | Processes left behind by earlier commands burned more than `unattendedCpuSeconds` of CPU while no command ran |
 | `policy_failed` | The network floor could not be restored |
+| `container_exited` | Its container exited on its own: a command ended the idle process that keeps a session alive, such as with `pkill sleep` or `kill -9 -1` |
+| `unresponsive` | Nothing more could be started in it, typically because processes left behind filled its process limit |
 
 The server keeps this in memory, so after a restart `lastSessionEnd` is absent until a session of
 that sandbox ends again.
@@ -407,7 +409,7 @@ An exec ends in exactly one `outcome`:
 | `exited` | The command exited on its own; `exitCode` holds the code |
 | `timed_out` | It ran past `timeoutSeconds` and was stopped |
 | `cancelled` | `cancel` stopped it |
-| `interrupted` | Its session ended under it; `reason` is `stopped`, `session_expired`, `sandbox_deleted`, `server_restarted` or `policy_failed` |
+| `interrupted` | Its session ended under it; `reason` is `stopped`, `session_expired`, `sandbox_deleted`, `server_restarted`, `policy_failed`, `container_exited` or `unresponsive` |
 
 A non-zero exit can carry a `reason` too, when a session limit explains it:
 
@@ -498,6 +500,16 @@ Sends SIGTERM to every process the exec started, detached ones included, then SI
 seconds. Returns at once with `ExecInfo`; cancelling a finished exec changes nothing.
 
 A process that cleared its own environment escapes the signal. `stop` ends everything.
+
+The signal is delivered by a process started inside the session, so when not even that can start —
+the session's process limit is full — cancel stops the session instead, as a timeout does. The exec
+still ends `cancelled` or `timed_out`; any other command in that session ends `interrupted` with
+`unresponsive`.
+
+A session the server can no longer reach is not kept. When its container has exited, the first command
+that runs into it ends `interrupted` with `container_exited`, or the lifecycle sweep notices within
+15 seconds; when nothing can be started in it with no other command running, the command ends
+`interrupted` with `unresponsive`. Either way the next use starts a fresh session on the same home.
 
 ## Files
 
