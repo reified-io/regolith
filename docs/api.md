@@ -603,6 +603,8 @@ stops, and the site stays exactly as it was published.
   Symlinks are left behind, not followed.
 - A sandbox has one site, and a site belongs to one sandbox: there is no name to collide over, and
   nothing can replace a site it did not publish.
+- While the site is up, retention leaves the sandbox alone, home included: only a takedown or
+  deleting the sandbox ends a site.
 
 ### `GET /v1/sandboxes/{id}/site`, `DELETE /v1/sandboxes/{id}/site`
 
@@ -610,8 +612,6 @@ What this sandbox has published, and taking it down. Both answer `404 not_found`
 `DELETE` answers `204` and leaves the sandbox and its files untouched; what was served is gone, and
 publishing again gives the sandbox a new address.
 
-- While the site is up, retention leaves the sandbox alone, home included: only a takedown or
-  deleting the sandbox ends a site.
 ## Not in v1
 
 Left out on purpose, each with room in the protocol: domain rules and credential brokering in
