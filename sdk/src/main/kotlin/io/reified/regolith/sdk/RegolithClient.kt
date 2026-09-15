@@ -7,6 +7,7 @@ import io.ktor.client.plugins.timeout
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.accept
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.prepareRequest
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -96,16 +97,32 @@ public class RegolithClient(
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         configure: HttpRequestBuilder.() -> Unit = {},
     ): HttpResponse {
-        val response = http.request("$base$path") {
-            this.method = method
-            bearerAuth(token)
-            timeout { requestTimeoutMillis = timeoutMillis }
-            // called through its name: a bare build() would resolve to the builder's own build method.
-            configure()
-        }
+        val response = http.request("$base$path") { authorized(method, timeoutMillis, configure) }
         if (!response.status.isSuccess()) throw failure(response)
 
         return response
+    }
+
+    /**
+     * Like [send], but hands the response to [read] while its body is still arriving, so a body that is
+     * large, or larger than its reader allows, is never held whole.
+     */
+    internal suspend fun <T> stream(
+        method: HttpMethod,
+        path: String,
+        configure: HttpRequestBuilder.() -> Unit,
+        read: suspend (HttpResponse) -> T,
+    ): T = http.prepareRequest("$base$path") { authorized(method, DEFAULT_TIMEOUT_MILLIS, configure) }.execute { response ->
+        if (!response.status.isSuccess()) throw failure(response)
+        read(response)
+    }
+
+    private fun HttpRequestBuilder.authorized(method: HttpMethod, timeoutMillis: Long, configure: HttpRequestBuilder.() -> Unit) {
+        this.method = method
+        bearerAuth(token)
+        timeout { requestTimeoutMillis = timeoutMillis }
+        // called through its name: a bare build() would resolve to the builder's own build method.
+        configure()
     }
 
     internal fun <T> HttpRequestBuilder.jsonBody(serializer: KSerializer<T>, value: T) {

@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.toList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import io.reified.regolith.server.domain.NetworkPolicy as DomainPolicy
 
@@ -170,6 +171,34 @@ class ApiTest {
     }
 
     @Test
+    fun `one page of output keeps to its bound and says where the next one starts`() = apiTest { _, client ->
+        val sandbox = client.sandbox("pages").also { it.getOrCreate() }
+        val exec = sandbox.startExec(ExecRequest(shell = "bytes 40000"))
+        exec.await()
+
+        // however small the bound, a page carries a frame, or a reader could never move past a large one.
+        val first = exec.readOutput(maxBytes = 1)
+        val rest = exec.readOutput(offset = first.nextOffset)
+
+        assertEquals(1, first.frames.size)
+        assertFalse(first.complete)
+        assertTrue(rest.complete)
+        assertEquals(40000, (first.frames + rest.frames).sumOf { it.text.length })
+    }
+
+    @Test
+    fun `a read that does not wait answers with what is recorded now`() = apiTest { _, client ->
+        val sandbox = client.sandbox("pages").also { it.getOrCreate() }
+        val exec = sandbox.startExec(ExecRequest(shell = "sleep"))
+
+        val page = exec.readOutput()
+
+        assertTrue(page.frames.isEmpty())
+        assertFalse(page.complete)
+        exec.cancel()
+    }
+
+    @Test
     fun `a timeout, a cancel and a stop each end a command with their own outcome`() = apiTest { _, client ->
         val sandbox = client.sandbox("endings").also { it.getOrCreate() }
 
@@ -230,6 +259,24 @@ class ApiTest {
         assertEquals(17, files.stat("/home/sandbox/notes/today.txt").size)
         files.delete("notes/today.txt")
         assertEquals(ErrorCodes.NOT_FOUND, assertFailsWith<RegolithException> { files.stat("notes/today.txt") }.code)
+    }
+
+    @Test
+    fun `a file read keeps to the reader's bound, refusing a larger file before sending any of it`() = apiTest { _, client ->
+        val files = client.sandbox("files").also { it.getOrCreate() }.files
+        files.write("notes/today.txt", "remember the milk")
+
+        assertEquals("remember the milk", files.readText("notes/today.txt", maxBytes = 17))
+        val refused = assertFailsWith<RegolithException> { files.read("notes/today.txt", maxBytes = 16) }
+        assertEquals(ErrorCodes.PAYLOAD_TOO_LARGE, refused.code)
+        assertEquals(413, refused.status)
+
+        for (bound in listOf("0", "lots")) {
+            val response = createClient {}.get("/v1/sandboxes/files/files/content?path=notes/today.txt&maxBytes=$bound") {
+                header(HttpHeaders.Authorization, "Bearer $TEST_TOKEN")
+            }
+            assertEquals(HttpStatusCode.BadRequest, response.status, "maxBytes=$bound was accepted")
+        }
     }
 
     @Test

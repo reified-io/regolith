@@ -422,7 +422,9 @@ Recorded output, from `offset` (default 0). Output is kept on the server whateve
 so a client that lost its connection resumes from the last offset it saw. It comes in two forms.
 
 **As JSON**, the default. `waitSeconds` (up to 30) holds the request until new output or the end
-arrives, and `maxBytes` bounds the page.
+arrives; without it the page holds what is recorded now, which may be nothing. `maxBytes` bounds the
+page's text, though a page always carries at least one frame when there is one, so a reader can move
+past a frame larger than its bound.
 
 ```json
 {
@@ -482,7 +484,7 @@ Paths are absolute or relative to the home. Like any other use, a file operation
 
 | Request | Does |
 |---|---|
-| `GET /v1/sandboxes/{name}/files/content?path=` | The file's bytes, as `application/octet-stream` |
+| `GET /v1/sandboxes/{name}/files/content?path=&maxBytes=` | The file's bytes, as `application/octet-stream` |
 | `PUT /v1/sandboxes/{name}/files/content?path=` | Replaces the file atomically with the body, creating parent directories; returns a `FileEntry` |
 | `GET /v1/sandboxes/{name}/files/entries?path=` | `{"path": ..., "entries": [FileEntry, ...]}` for a directory |
 | `GET /v1/sandboxes/{name}/files/stat?path=` | One `FileEntry`; a symlink is described, not followed |
@@ -503,8 +505,10 @@ A `FileEntry`:
 
 `mode` is the permission bits as a decimal number: 420 is `0644`.
 
-Files are capped at `maxFileBytes`. The home itself cannot be replaced or deleted — delete the
-sandbox for that.
+Files are capped at `maxFileBytes`. A read may set a lower bound of its own with `maxBytes`: a file
+larger than that is refused with `payload_too_large` before any of it is sent, just as one past
+`maxFileBytes` is. A file that grows past the bound while it is sent ends the response early. The
+home itself cannot be replaced or deleted — delete the sandbox for that.
 
 ## Publishing
 

@@ -31,18 +31,29 @@ public class Exec internal constructor(private val client: RegolithClient, sandb
     }
 
     /**
-     * Output frames from [fromOffset] to the end of the exec, live while it runs. Every frame carries
-     * the offset to resume from, so a collector that failed can start a new flow exactly where it
-     * stopped.
+     * One page of output from [offset]. With [waitSeconds], the server holds the request until output past
+     * [offset] arrives or the exec ends, up to its own ceiling; without it, the page holds what is recorded
+     * now, which may be nothing. [maxBytes] bounds the page's text, though a page always carries at least
+     * one frame when there is one to carry. The next page starts at [OutputPage.nextOffset], and
+     * [OutputPage.complete] says there is no next page.
+     */
+    public suspend fun readOutput(offset: Long = 0, waitSeconds: Int = 0, maxBytes: Int? = null): OutputPage =
+        client.call(HttpMethod.Get, "$path/output", OutputPage.serializer(), timeoutFor(waitSeconds)) {
+            url.parameters.append("offset", offset.toString())
+            if (waitSeconds > 0) url.parameters.append("waitSeconds", waitSeconds.toString())
+            maxBytes?.let { url.parameters.append("maxBytes", it.toString()) }
+        }
+
+    /**
+     * Output frames from [fromOffset] to the end of the exec, live while it runs: [readOutput] asked again
+     * and again, each time waiting for more. Every frame carries the offset to resume from, so a collector
+     * that failed can start a new flow exactly where it stopped.
      */
     public fun output(fromOffset: Long = 0): Flow<OutputFrame> = flow {
         var offset = fromOffset
 
         while (true) {
-            val page = client.call(HttpMethod.Get, "$path/output", OutputPage.serializer(), timeoutFor(POLL_WAIT_SECONDS)) {
-                url.parameters.append("offset", offset.toString())
-                url.parameters.append("waitSeconds", POLL_WAIT_SECONDS.toString())
-            }
+            val page = readOutput(offset, POLL_WAIT_SECONDS)
             for (frame in page.frames) emit(frame)
             offset = page.nextOffset
             if (page.complete) break

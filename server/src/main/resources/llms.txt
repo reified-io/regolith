@@ -39,7 +39,7 @@ file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 
 
 - `POST /v1/sandboxes/{name}/execs` - `{"shell":"npm test","cwd":"app","env":{},"timeoutSeconds":600,"stdin":false}` or `{"argv":["python3","main.py"]}`. Returns 201 with `id` at once. Send `Idempotency-Key` to make a retry safe.
 - `GET /v1/sandboxes/{name}/execs/{id}?waitSeconds=30` - status and, when finished, `outcome`: `exited` with `exitCode` (and `reason` `oom_killed` or `pids_limited` when a limit explains it), `timed_out`, `cancelled`, or `interrupted` with `reason`.
-- `GET /v1/sandboxes/{name}/execs/{id}/output?offset=0&waitSeconds=20` - `{"frames":[{"kind":"stdout","text":"...","end":42}],"nextOffset":42,"complete":false}`. Loop with `offset = nextOffset` until `complete`. Output is kept on the server: after a disconnect, resume from the last offset. With `Accept: text/event-stream` the same output arrives as server-sent events, ending with `event: end`.
+- `GET /v1/sandboxes/{name}/execs/{id}/output?offset=0&waitSeconds=20&maxBytes=65536` - `{"frames":[{"kind":"stdout","text":"...","end":42}],"nextOffset":42,"complete":false}`. Loop with `offset = nextOffset` until `complete`; `maxBytes` bounds a page, which still carries at least one frame. Output is kept on the server: after a disconnect, resume from the last offset. With `Accept: text/event-stream` the same output arrives as server-sent events, ending with `event: end`.
 - `POST /v1/sandboxes/{name}/execs/{id}/stdin?close=true` - raw bytes; only for execs started with `"stdin":true`.
 - `POST /v1/sandboxes/{name}/execs/{id}/cancel`
 - `GET /v1/sandboxes/{name}/execs` - recent execs, newest first.
@@ -65,7 +65,7 @@ whoever published it.
 
 Paths are absolute or relative to `/home/sandbox`.
 
-- `GET /v1/sandboxes/{name}/files/content?path=notes/a.txt` - raw bytes.
+- `GET /v1/sandboxes/{name}/files/content?path=notes/a.txt&maxBytes=1048576` - raw bytes; a file larger than `maxBytes` (optional) is refused with `payload_too_large` before any byte is sent.
 - `PUT /v1/sandboxes/{name}/files/content?path=notes/a.txt` - raw bytes in the body; replaces atomically, creates parent directories.
 - `GET /v1/sandboxes/{name}/files/entries?path=notes` - directory listing.
 - `GET /v1/sandboxes/{name}/files/stat?path=notes/a.txt`

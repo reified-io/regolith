@@ -26,20 +26,25 @@ class SandboxFiles(
     suspend fun list(name: SandboxName, path: String): List<FileEntry> =
         withSession(name) { runtime.list(name, resolvePath(path), MAX_ENTRIES) }
 
-    /** Checks that [path] is a readable regular file within the limit, before any byte is sent. */
-    suspend fun openForRead(name: SandboxName, path: String): FileEntry {
+    /**
+     * Checks that [path] is a readable regular file within [maxBytes], or the server's own limit when that is
+     * lower or no bound is given, before any byte is sent. Returns the bound the read itself must keep to.
+     */
+    suspend fun openForRead(name: SandboxName, path: String, maxBytes: Long?): Long {
+        val limit = minOf(maxBytes ?: Long.MAX_VALUE, config.limits.maxFileBytes)
         val entry = stat(name, path)
         if (entry.type == EntryType.DIRECTORY) throw RegolithError.Invalid("`${entry.path}` is a directory")
 
-        if (entry.size > config.limits.maxFileBytes) {
-            throw RegolithError.TooLarge("`${entry.path}` is larger than ${config.limits.maxFileBytes} bytes")
+        if (entry.size > limit) {
+            throw RegolithError.TooLarge("`${entry.path}` is larger than $limit bytes")
         }
 
-        return entry
+        return limit
     }
 
-    suspend fun read(name: SandboxName, path: String, sink: OutputStream) =
-        withSession(name) { runtime.read(name, resolvePath(path), sink, config.limits.maxFileBytes) }
+    /** Streams the file into [sink], stopping the read the moment it grows past [maxBytes]. */
+    suspend fun read(name: SandboxName, path: String, sink: OutputStream, maxBytes: Long) =
+        withSession(name) { runtime.read(name, resolvePath(path), sink, maxBytes) }
 
     suspend fun write(name: SandboxName, path: String, source: InputStream, declaredBytes: Long?): FileEntry {
         val max = config.limits.maxFileBytes

@@ -154,7 +154,7 @@ internal fun Route.execRoutes(services: Services) = route("/sandboxes/{name}/exe
             get {
                 val query = call.request.queryParameters
                 val offset = query["offset"]?.let { it.toLongOrNull() ?: throw RegolithError.Invalid("offset must be a whole number") } ?: 0L
-                val maxBytes = query["maxBytes"]?.toIntOrNull()?.coerceIn(1, PAGE_BYTES) ?: PAGE_BYTES
+                val maxBytes = call.maxBytesParameter()?.coerceAtMost(PAGE_BYTES.toLong())?.toInt() ?: PAGE_BYTES
                 val slice = execs.read(call.sandboxName(), call.execId(), offset, maxBytes, call.waitParameter())
                 call.respond(OutputPage(slice.frames.map { it.toWire() }, slice.nextOffset, slice.complete))
             }
@@ -171,8 +171,8 @@ internal fun Route.fileRoutes(services: Services) = route("/sandboxes/{name}/fil
     get("/content") {
         val name = call.sandboxName()
         val path = call.pathParameter()
-        files.openForRead(name, path)
-        call.respondOutputStream(ContentType.Application.OctetStream, HttpStatusCode.OK) { files.read(name, path, this) }
+        val limit = files.openForRead(name, path, call.maxBytesParameter())
+        call.respondOutputStream(ContentType.Application.OctetStream, HttpStatusCode.OK) { files.read(name, path, this, limit) }
     }
     put("/content") {
         val entry = files.write(call.sandboxName(), call.pathParameter(), call.receiveStream(), call.request.contentLength())

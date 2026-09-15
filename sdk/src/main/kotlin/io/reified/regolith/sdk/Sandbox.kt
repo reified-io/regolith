@@ -2,12 +2,17 @@ package io.reified.regolith.sdk
 
 import io.ktor.client.request.header
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.readRawBytes
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.ByteArrayContent
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.cancel
+import io.ktor.utils.io.readAvailable
 import io.reified.regolith.protocol.CreateSandboxRequest
 import io.reified.regolith.protocol.DirectoryListing
+import io.reified.regolith.protocol.ErrorCodes
 import io.reified.regolith.protocol.ExecInfo
 import io.reified.regolith.protocol.ExecPage
 import io.reified.regolith.protocol.ExecRequest
@@ -18,6 +23,7 @@ import io.reified.regolith.protocol.PublishRequest
 import io.reified.regolith.protocol.PublishedSite
 import io.reified.regolith.protocol.SandboxInfo
 import io.reified.regolith.protocol.UpdateSandboxRequest
+import java.io.ByteArrayOutputStream
 
 /** One sandbox on the server. */
 public class Sandbox internal constructor(private val client: RegolithClient, public val name: String) {
@@ -125,10 +131,24 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
 
 /** Files inside one sandbox. A relative path resolves against the sandbox home. */
 public class SandboxFiles internal constructor(private val client: RegolithClient, private val sandboxPath: String) {
-    public suspend fun read(path: String): ByteArray =
-        client.send(HttpMethod.Get, "$sandboxPath/files/content") { url.parameters.append("path", path) }.readRawBytes()
+    /** The file's bytes, as many as the server's `maxFileBytes` allows. */
+    public suspend fun read(path: String): ByteArray = download(path, maxBytes = null)
+
+    /**
+     * The file's bytes, no more than [maxBytes] of them. The server refuses a larger file with
+     * `payload_too_large` before sending any of it, and this client stops with the same failure the
+     * moment a response runs past [maxBytes], so a server that ignores the bound cannot make it hold more.
+     */
+    public suspend fun read(path: String, maxBytes: Long): ByteArray {
+        require(maxBytes > 0) { "maxBytes must be positive" }
+
+        return download(path, maxBytes)
+    }
 
     public suspend fun readText(path: String): String = read(path).decodeToString()
+
+    /** The file as UTF-8 text, from no more than [maxBytes] of it; see [read]. */
+    public suspend fun readText(path: String, maxBytes: Long): String = read(path, maxBytes).decodeToString()
 
     /** Replaces the file atomically, creating missing parent directories. */
     public suspend fun write(path: String, bytes: ByteArray): FileEntry =
@@ -150,6 +170,37 @@ public class SandboxFiles internal constructor(private val client: RegolithClien
             url.parameters.append("path", path)
             if (recursive) url.parameters.append("recursive", "true")
         }
+    }
+
+    private suspend fun download(path: String, maxBytes: Long?): ByteArray = client.stream(
+        HttpMethod.Get,
+        "$sandboxPath/files/content",
+        configure = {
+            url.parameters.append("path", path)
+            maxBytes?.let { url.parameters.append("maxBytes", it.toString()) }
+        },
+    ) { response -> response.bodyAsChannel().readAtMost(path, maxBytes) }
+
+    /** Reads the whole channel, failing as soon as it holds more than [maxBytes]; null reads it all. */
+    private suspend fun ByteReadChannel.readAtMost(path: String, maxBytes: Long?): ByteArray {
+        val kept = ByteArrayOutputStream()
+        val chunk = ByteArray(CHUNK_BYTES)
+
+        while (true) {
+            val count = readAvailable(chunk)
+            if (count < 0) break
+            if (maxBytes != null && kept.size() + count > maxBytes) {
+                cancel()
+                throw RegolithException(HttpStatusCode.PayloadTooLarge.value, ErrorCodes.PAYLOAD_TOO_LARGE, "`$path` is larger than $maxBytes bytes")
+            }
+            kept.write(chunk, 0, count)
+        }
+
+        return kept.toByteArray()
+    }
+
+    private companion object {
+        const val CHUNK_BYTES = 64 * 1024
     }
 }
 

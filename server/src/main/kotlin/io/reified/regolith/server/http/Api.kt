@@ -176,6 +176,15 @@ internal fun ApplicationCall.sandboxName(): SandboxName = SandboxName.parse(para
 internal fun ApplicationCall.execId(): ExecId = ExecId.parse(parameters["id"].orEmpty())
 
 /** A bounded `waitSeconds` query parameter; absent means no waiting. */
+/** The `maxBytes` a caller set: a positive whole number, or null when it set none. */
+internal fun ApplicationCall.maxBytesParameter(): Long? {
+    val raw = request.queryParameters["maxBytes"] ?: return null
+    val value = raw.toLongOrNull() ?: throw RegolithError.Invalid("maxBytes must be a whole number")
+    if (value <= 0) throw RegolithError.Invalid("maxBytes must be positive")
+
+    return value
+}
+
 internal fun ApplicationCall.waitParameter(max: Duration = MAX_WAIT): Duration {
     val raw = request.queryParameters["waitSeconds"] ?: return Duration.ZERO
     val seconds = raw.toIntOrNull() ?: throw RegolithError.Invalid("waitSeconds must be a whole number")
