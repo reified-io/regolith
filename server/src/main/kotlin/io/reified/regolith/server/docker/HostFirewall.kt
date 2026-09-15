@@ -4,7 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.reified.regolith.server.domain.Cidr
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.PlatformFloor
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.ports.NetworkEnforcer
 import io.reified.regolith.server.ports.SandboxNetwork
 import kotlinx.coroutines.CancellationException
@@ -30,7 +30,7 @@ class HostFirewall(
 
     private val mutex = Mutex()
     private val prefix = FirewallRules.prefixFor(namespace)
-    private val policies = LinkedHashMap<SandboxName, Pair<String, NetworkPolicy>>()
+    private val policies = LinkedHashMap<SandboxId, Pair<String, NetworkPolicy>>()
     private var network: SandboxNetwork? = null
     private var refused: List<Cidr> = PlatformFloor.refused
     private var probeAddress: String? = null
@@ -69,20 +69,20 @@ class HostFirewall(
         }
     }
 
-    override suspend fun apply(name: SandboxName, address: String, policy: NetworkPolicy) = mutex.withLock {
+    override suspend fun apply(sandbox: SandboxId, address: String, policy: NetworkPolicy) = mutex.withLock {
         require(policy != NetworkPolicy.None) { "A detached sandbox has no address to police" }
-        val previous = policies.put(name, address to policy)
+        val previous = policies.put(sandbox, address to policy)
 
         try {
             applyLocked()
         } catch (e: Exception) {
-            if (previous == null) policies.remove(name) else policies[name] = previous
+            if (previous == null) policies.remove(sandbox) else policies[sandbox] = previous
             throw e
         }
     }
 
-    override suspend fun release(name: SandboxName) = mutex.withLock {
-        if (policies.remove(name) != null) applyLocked()
+    override suspend fun release(sandbox: SandboxId) = mutex.withLock {
+        if (policies.remove(sandbox) != null) applyLocked()
     }
 
     private suspend fun applyLocked() {

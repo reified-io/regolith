@@ -20,6 +20,8 @@ import io.ktor.http.isSuccess
 import io.reified.regolith.protocol.ErrorBody
 import io.reified.regolith.protocol.HealthInfo
 import io.reified.regolith.protocol.RegolithJson
+import io.reified.regolith.protocol.CreateSandboxRequest
+import io.reified.regolith.protocol.SandboxInfo
 import io.reified.regolith.protocol.SandboxPage
 import io.reified.regolith.protocol.ServerInfo
 import kotlinx.serialization.KSerializer
@@ -58,8 +60,32 @@ public class RegolithClient(
         require(token.isNotBlank()) { "A Regolith API token is required" }
     }
 
-    /** A handle to the sandbox [name]; nothing is sent until one of its operations is called. */
-    public fun sandbox(name: String): Sandbox = Sandbox(this, name)
+    /** A handle to the sandbox [id]; nothing is sent until one of its operations is called. */
+    public fun sandbox(id: String): Sandbox = Sandbox(this, id)
+
+    /**
+     * The sandbox filed under [alias], created with [request] when the server has none yet. An alias is
+     * the caller's own name for what the sandbox belongs to — a user, a project, a task — so this is
+     * how a client finds its sandbox again without keeping a table of ids.
+     */
+    public suspend fun getOrCreate(alias: String, request: CreateSandboxRequest = CreateSandboxRequest()): Sandbox =
+        create(request.copy(alias = alias))
+
+    /** Creates a sandbox and returns it; without an alias in [request], a caller keeps its [Sandbox.id]. */
+    public suspend fun create(request: CreateSandboxRequest = CreateSandboxRequest()): Sandbox {
+        val info = call(HttpMethod.Post, "/v1/sandboxes", SandboxInfo.serializer()) {
+            with(this@RegolithClient) { jsonBody(CreateSandboxRequest.serializer(), request) }
+        }
+
+        return Sandbox(this, info.id)
+    }
+
+    /** The sandbox filed under [alias], or null when the server has none. */
+    public suspend fun byAlias(alias: String): Sandbox? {
+        val page = call(HttpMethod.Get, "/v1/sandboxes", SandboxPage.serializer()) { url.parameters.append("alias", alias) }
+
+        return page.sandboxes.firstOrNull()?.let { Sandbox(this, it.id) }
+    }
 
     /** Sandboxes carrying every label in [labels], one page at a time. */
     public suspend fun sandboxes(labels: Map<String, String> = emptyMap(), limit: Int? = null, cursor: String? = null): SandboxPage =

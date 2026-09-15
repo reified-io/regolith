@@ -65,6 +65,13 @@ container it runs in — so what it checks and what it runs come from one build.
 `Sandboxes` is the registry: records in memory, persisted on every change, one lock per sandbox.
 `Sessions` owns running containers, at most one per sandbox and `REGOLITH_MAX_SESSIONS` in total.
 
+**Three names, none of them the same thing.** The `SandboxId` is the server's, and everything is
+addressed by it: the API path, the container, the volume, the record. The `Alias` is the caller's own
+identity for what the sandbox holds, kept in an index beside the records so a caller finds its
+sandbox again without a table of its own. The `SiteLabel` is public, made at random when a sandbox
+first publishes and kept with its record, so an address gives away neither the other two nor each
+other. Keeping them apart is why none of them can leak into somewhere it does not belong.
+
 Starting a session:
 
 1. Check the health gates.
@@ -164,9 +171,9 @@ One file per exec, holding a sequence of frames:
 ```
 lock                              exclusive: one server per directory
 namespace                         the namespace this directory belongs to
-sandboxes/<name>/sandbox.json
-sandboxes/<name>/execs/<id>.json
-sandboxes/<name>/execs/<id>.log
+sandboxes/<id>/sandbox.json
+sandboxes/<id>/execs/<exec>.json
+sandboxes/<id>/execs/<exec>.log
 ```
 
 Each record is the domain model wrapped with a schema number. There are no migrations: changing a

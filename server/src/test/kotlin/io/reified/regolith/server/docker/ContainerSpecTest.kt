@@ -7,7 +7,7 @@ import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Sandbox
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.ports.ExecSpec
 import io.reified.regolith.server.ports.HomeMount
 import io.reified.regolith.server.ports.Signal
@@ -20,9 +20,10 @@ import kotlin.time.Instant
 
 class ContainerSpecTest {
     private val spec = ContainerSpec("regolith", "/bin/bash", homeReadBps = "100mb", homeWriteBps = "50mb")
-    private val name = SandboxName.parse("keeper")
+    private val name = SandboxId.random()
     private val sandbox = Sandbox(
-        name = name,
+        id = name,
+        alias = null,
         imagePolicy = ImagePolicy.Default,
         resources = Resources(0.5, 768, 4096),
         network = NetworkPolicy.Public,
@@ -37,7 +38,7 @@ class ContainerSpecTest {
 
     @Test
     fun `a session runs unprivileged, bounded and idle until its first exec`() {
-        val args = spec.run(sandbox, HomeMount("regolith-keeper-home"), "example/sandbox:1")
+        val args = spec.run(sandbox, HomeMount("regolith-$name-home"), "example/sandbox:1")
 
         assertEquals(listOf("1000:1000"), args.valueAfter("--user"))
         assertEquals(listOf("ALL"), args.valueAfter("--cap-drop"))
@@ -47,7 +48,7 @@ class ContainerSpecTest {
         assertEquals(listOf("768m"), args.valueAfter("--memory-swap"))
         assertEquals(listOf("0.50"), args.valueAfter("--cpus"))
         assertEquals(listOf("regolith-sandboxes"), args.valueAfter("--network"))
-        assertEquals(listOf("type=volume,src=regolith-keeper-home,dst=/home/sandbox"), args.valueAfter("--mount"))
+        assertEquals(listOf("type=volume,src=regolith-$name-home,dst=/home/sandbox"), args.valueAfter("--mount"))
         assertTrue("GREETING=hello world" in args.valueAfter("--env"))
         assertEquals(listOf("example/sandbox:1", "infinity"), args.takeLast(2))
         assertTrue(args.none { "docker.sock" in it || it == "--privileged" || it == "--cap-add" })
@@ -57,7 +58,7 @@ class ContainerSpecTest {
 
     @Test
     fun `a none sandbox starts with no network and its home device is throttled`() {
-        val args = spec.run(sandbox.copy(network = NetworkPolicy.None), HomeMount("regolith-keeper-home", "/dev/loop7"), "example/sandbox:1")
+        val args = spec.run(sandbox.copy(network = NetworkPolicy.None), HomeMount("regolith-$name-home", "/dev/loop7"), "example/sandbox:1")
 
         assertEquals(listOf("none"), args.valueAfter("--network"))
         assertEquals(emptyList(), args.valueAfter("--dns"))
@@ -71,7 +72,7 @@ class ContainerSpecTest {
         val script = "echo \"\$HOME\"; rm -rf /tmp/x"
         val args = spec.exec(name, ExecSpec(id, ExecCommand.Shell(script), "/home/sandbox/app", emptyMap(), stdin = false))
 
-        assertEquals(listOf("regolith-keeper", "/bin/bash", "-c", script), args.takeLast(4))
+        assertEquals(listOf("regolith-$name", "/bin/bash", "-c", script), args.takeLast(4))
         assertTrue("REGOLITH_EXEC_ID=$id" in args.valueAfter("--env"))
         assertTrue("--interactive" !in args)
         assertEquals(listOf("/home/sandbox/app"), args.valueAfter("--workdir"))

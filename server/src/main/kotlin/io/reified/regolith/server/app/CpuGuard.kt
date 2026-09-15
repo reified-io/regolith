@@ -1,7 +1,7 @@
 package io.reified.regolith.server.app
 
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.domain.StopReason
 import io.reified.regolith.server.ports.SandboxRuntime
 import kotlinx.coroutines.CancellationException
@@ -30,33 +30,33 @@ class CpuGuard(
 
     private data class Burn(val session: Instant, val micros: Long, val measuredAt: Instant, val unattended: Duration)
 
-    private val burns = ConcurrentHashMap<SandboxName, Burn>()
+    private val burns = ConcurrentHashMap<SandboxId, Burn>()
 
     suspend fun tick() {
         val live = sessions.snapshot()
         burns.keys.retainAll(live.keys)
 
-        for ((name, session) in live) {
+        for ((id, session) in live) {
             // taken before the counter: activity that ends while it is read then marks the next interval too.
             val now = clock.now()
             val micros = try {
-                runtime.cpuMicros(name)
+                runtime.cpuMicros(id)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                log.warn(e) { "Reading cpu usage failed: sandbox=[$name]" }
+                log.warn(e) { "Reading cpu usage failed: sandbox=[$id]" }
                 continue
             }
-            val previous = burns[name]?.takeIf { it.session == session.startedAt }
+            val previous = burns[id]?.takeIf { it.session == session.startedAt }
             val unattended = when {
                 previous == null -> Duration.ZERO
                 session.busy || session.lastActiveAt >= previous.measuredAt || micros < previous.micros -> previous.unattended
                 else -> previous.unattended + (micros - previous.micros).microseconds
             }
-            burns[name] = Burn(session.startedAt, micros, now, unattended)
-            if (unattended > limit && sessions.stopIfIdle(name, StopReason.CPU_LIMIT)) {
-                burns.remove(name)
-                log.warn { "Session stopped for unattended cpu: sandbox=[$name] unattended=[$unattended] limit=[$limit]" }
+            burns[id] = Burn(session.startedAt, micros, now, unattended)
+            if (unattended > limit && sessions.stopIfIdle(id, StopReason.CPU_LIMIT)) {
+                burns.remove(id)
+                log.warn { "Session stopped for unattended cpu: sandbox=[$id] unattended=[$unattended] limit=[$limit]" }
             }
         }
     }

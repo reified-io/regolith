@@ -12,7 +12,7 @@ import io.reified.regolith.server.domain.Metadata
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxLayout
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.output.Frame
 import io.reified.regolith.server.output.FrameKind
@@ -109,13 +109,13 @@ class Execs(
     }
 
     private val running = ConcurrentHashMap<ExecId, Running>()
-    private val startLocks = KeyedLocks<SandboxName>()
+    private val startLocks = KeyedLocks<SandboxId>()
 
     /** Closes records a previous run left unfinished; their commands died with its sessions. */
     suspend fun recover(sandboxes: List<Sandbox>) {
         for (sandbox in sandboxes) {
-            for (exec in store.execs(sandbox.name).filter { !it.finished }) {
-                val file = store.outputFile(sandbox.name, exec.id)
+            for (exec in store.execs(sandbox.id).filter { !it.finished }) {
+                val file = store.outputFile(sandbox.id, exec.id)
                 val end = withContext(Dispatchers.IO) { OutputLog.validEnd(file) }
                 store.save(
                     exec.copy(
@@ -128,10 +128,10 @@ class Execs(
         }
     }
 
-    suspend fun start(sandbox: Sandbox, request: ExecRequest, idempotencyKey: String?): Exec = startLocks.withLock(sandbox.name) {
+    suspend fun start(sandbox: Sandbox, request: ExecRequest, idempotencyKey: String?): Exec = startLocks.withLock(sandbox.id) {
         idempotencyKey?.let { key ->
             requireValid(key.length in 1..MAX_KEY_CHARS) { "The idempotency key is 1-$MAX_KEY_CHARS characters" }
-            find(sandbox.name, key)?.let { return@withLock it }
+            find(sandbox.id, key)?.let { return@withLock it }
         }
         val limits = config.limits
         val timeout = request.timeout ?: config.defaults.execTimeout
@@ -139,15 +139,15 @@ class Execs(
             "timeoutSeconds is between 1 and ${limits.maxExecTimeout.inWholeSeconds}"
         }
         Metadata.requireEnv(request.env)
-        val active = running.values.count { it.exec.sandbox == sandbox.name }
+        val active = running.values.count { it.exec.sandbox == sandbox.id }
 
         if (active >= limits.maxExecsPerSandbox) {
-            throw RegolithError.Busy("Sandbox `${sandbox.name}` already runs $active commands")
+            throw RegolithError.Busy("Sandbox `${sandbox.id}` already runs $active commands")
         }
 
         val exec = Exec(
             id = ExecId.random(),
-            sandbox = sandbox.name,
+            sandbox = sandbox.id,
             command = request.command,
             cwd = resolvePath(request.cwd ?: SandboxLayout.HOME),
             env = request.env,
@@ -156,26 +156,26 @@ class Execs(
             idempotencyKey = idempotencyKey,
             startedAt = clock.now(),
         )
-        prune(sandbox.name)
+        prune(sandbox.id)
         val lease = sessions.acquire(sandbox)
 
         try {
             store.save(exec)
-            val file = store.outputFile(sandbox.name, exec.id)
+            val file = store.outputFile(sandbox.id, exec.id)
             val out = withContext(Dispatchers.IO) {
                 Files.createDirectories(file.parent)
                 BufferedOutputStream(Files.newOutputStream(file, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE))
             }
             val writer = OutputLogWriter(out, limits.maxOutputBytes, TAIL_BYTES)
             val process = try {
-                runtime.exec(sandbox.name, ExecSpec(exec.id, exec.command, exec.cwd, exec.env, exec.stdin))
+                runtime.exec(sandbox.id, ExecSpec(exec.id, exec.command, exec.cwd, exec.env, exec.stdin))
             } catch (e: Exception) {
                 withContext(NonCancellable + Dispatchers.IO) { out.close() }
-                store.deleteExec(sandbox.name, exec.id)
+                store.deleteExec(sandbox.id, exec.id)
                 throw e
             }
             // read alongside the command rather than before it, so a start never waits on a counter.
-            val limitsAtStart = scope.async { limitEventsOrNull(sandbox.name) }
+            val limitsAtStart = scope.async { limitEventsOrNull(sandbox.id) }
             val run = Running(process, writer, lease, exec, limitsAtStart)
             running[exec.id] = run
             scope.launch { supervise(run) { out.close() } }
@@ -186,23 +186,23 @@ class Execs(
         }
     }
 
-    suspend fun get(name: SandboxName, id: ExecId): Exec =
-        running[id]?.takeIf { it.exec.sandbox == name }?.let(::view)
-            ?: store.execs(name).firstOrNull { it.id == id }
-            ?: throw RegolithError.NotFound("Exec `$id` does not exist in sandbox `$name`")
+    suspend fun get(sandbox: SandboxId, id: ExecId): Exec =
+        running[id]?.takeIf { it.exec.sandbox == sandbox }?.let(::view)
+            ?: store.execs(sandbox).firstOrNull { it.id == id }
+            ?: throw RegolithError.NotFound("Exec `$id` does not exist in sandbox `$sandbox`")
 
     fun stdinOpen(id: ExecId): Boolean = running[id]?.stdinOpen ?: false
 
     /** Recent execs, newest first. */
-    suspend fun list(name: SandboxName): List<Exec> {
-        val live = running.values.filter { it.exec.sandbox == name }.associate { it.exec.id to view(it) }
+    suspend fun list(sandbox: SandboxId): List<Exec> {
+        val live = running.values.filter { it.exec.sandbox == sandbox }.associate { it.exec.id to view(it) }
 
-        return (store.execs(name).filter { it.id !in live } + live.values).sortedByDescending { it.startedAt }
+        return (store.execs(sandbox).filter { it.id !in live } + live.values).sortedByDescending { it.startedAt }
     }
 
     /** Waits up to [wait] for the exec to finish and returns it either way. */
-    suspend fun await(name: SandboxName, id: ExecId, wait: Duration): Exec {
-        val run = running[id]?.takeIf { it.exec.sandbox == name } ?: return get(name, id)
+    suspend fun await(sandbox: SandboxId, id: ExecId, wait: Duration): Exec {
+        val run = running[id]?.takeIf { it.exec.sandbox == sandbox } ?: return get(sandbox, id)
 
         return withTimeoutOrNull(wait) { run.done.await() } ?: view(run)
     }
@@ -211,8 +211,8 @@ class Execs(
      * Reads frames from [offset]. When nothing is available yet and the exec still runs, waits up to
      * [wait] for more output or the end.
      */
-    suspend fun read(name: SandboxName, id: ExecId, offset: Long, maxBytes: Int, wait: Duration): OutputSlice {
-        val run = running[id]?.takeIf { it.exec.sandbox == name }
+    suspend fun read(sandbox: SandboxId, id: ExecId, offset: Long, maxBytes: Int, wait: Duration): OutputSlice {
+        val run = running[id]?.takeIf { it.exec.sandbox == sandbox }
         val (exec, limit, finished) = if (run != null) {
             if (wait > Duration.ZERO) {
                 withTimeoutOrNull(wait) { run.progress.first { it.end > offset || it.finished } }
@@ -220,10 +220,10 @@ class Execs(
             val progress = run.progress.value
             Triple(view(run), progress.end, progress.finished)
         } else {
-            val exec = get(name, id)
+            val exec = get(sandbox, id)
             Triple(exec, exec.outputEnd, true)
         }
-        val file = store.outputFile(name, id)
+        val file = store.outputFile(sandbox, id)
         val frames = withContext(Dispatchers.IO) { OutputLog.read(file, offset, limit, maxBytes) }
         val next = frames.lastOrNull()?.end ?: offset
         val complete = finished && next == limit
@@ -231,8 +231,8 @@ class Execs(
         return OutputSlice(if (complete && run != null) run.done.await() else exec, frames, next, complete)
     }
 
-    suspend fun writeStdin(name: SandboxName, id: ExecId, bytes: ByteArray, close: Boolean) {
-        val run = running[id]?.takeIf { it.exec.sandbox == name }
+    suspend fun writeStdin(sandbox: SandboxId, id: ExecId, bytes: ByteArray, close: Boolean) {
+        val run = running[id]?.takeIf { it.exec.sandbox == sandbox }
         val stdin = run?.process?.stdin
         conflictUnless(run != null) { "Exec `$id` is not running" }
         conflictUnless(stdin != null) { "Exec `$id` was started without stdin" }
@@ -253,7 +253,7 @@ class Execs(
             conflictUnless(written) { "Exec `$id` no longer reads its stdin" }
             if (close) run.stdinOpen = false
         }
-        sessions.touch(name)
+        sessions.touch(sandbox)
     }
 
     @OptIn(ExperimentalContracts::class)
@@ -263,24 +263,24 @@ class Execs(
     }
 
     /** Asks the exec to stop; returns at once, and cancelling a finished exec changes nothing. */
-    suspend fun cancel(name: SandboxName, id: ExecId): Exec {
-        val run = running[id]?.takeIf { it.exec.sandbox == name } ?: return get(name, id)
+    suspend fun cancel(sandbox: SandboxId, id: ExecId): Exec {
+        val run = running[id]?.takeIf { it.exec.sandbox == sandbox } ?: return get(sandbox, id)
         run.cancelled = true
         scope.launch { terminate(run) }
 
         return view(run)
     }
 
-    /** Marks every running exec of [name] as interrupted; call before the session is stopped. */
-    fun interrupt(name: SandboxName, reason: StopReason) {
-        running.values.filter { it.exec.sandbox == name }.forEach { run ->
+    /** Marks every running exec of [sandbox] as interrupted; call before the session is stopped. */
+    fun interrupt(sandbox: SandboxId, reason: StopReason) {
+        running.values.filter { it.exec.sandbox == sandbox }.forEach { run ->
             if (run.interruptedBy == null) run.interruptedBy = reason
         }
     }
 
     /** Waits for the execs of a stopped session to finish recording. */
-    suspend fun awaitNone(name: SandboxName) {
-        withTimeoutOrNull(SETTLE) { running.values.filter { it.exec.sandbox == name }.forEach { it.done.await() } }
+    suspend fun awaitNone(sandbox: SandboxId) {
+        withTimeoutOrNull(SETTLE) { running.values.filter { it.exec.sandbox == sandbox }.forEach { it.done.await() } }
     }
 
     private suspend fun supervise(run: Running, closeLog: () -> Unit) {
@@ -342,12 +342,12 @@ class Execs(
         }
     }
 
-    private suspend fun limitEventsOrNull(name: SandboxName): LimitEvents? = try {
-        runtime.limitEvents(name)
+    private suspend fun limitEventsOrNull(sandbox: SandboxId): LimitEvents? = try {
+        runtime.limitEvents(sandbox)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        log.warn(e) { "Reading limit events failed: sandbox=[$name]" }
+        log.warn(e) { "Reading limit events failed: sandbox=[$sandbox]" }
         null
     }
 
@@ -379,13 +379,13 @@ class Execs(
         }
     }
 
-    private suspend fun find(name: SandboxName, key: String): Exec? =
-        running.values.firstOrNull { it.exec.sandbox == name && it.exec.idempotencyKey == key }?.let(::view)
-            ?: store.execs(name).firstOrNull { it.idempotencyKey == key }
+    private suspend fun find(sandbox: SandboxId, key: String): Exec? =
+        running.values.firstOrNull { it.exec.sandbox == sandbox && it.exec.idempotencyKey == key }?.let(::view)
+            ?: store.execs(sandbox).firstOrNull { it.idempotencyKey == key }
 
-    private suspend fun prune(name: SandboxName) {
-        val finished = store.execs(name).filter { it.finished }.sortedByDescending { it.startedAt }
-        for (old in finished.drop(config.limits.execsRetained)) store.deleteExec(name, old.id)
+    private suspend fun prune(sandbox: SandboxId) {
+        val finished = store.execs(sandbox).filter { it.finished }.sortedByDescending { it.startedAt }
+        for (old in finished.drop(config.limits.execsRetained)) store.deleteExec(sandbox, old.id)
     }
 
     private fun view(run: Running): Exec {

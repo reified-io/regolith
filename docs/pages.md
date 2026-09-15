@@ -129,7 +129,7 @@ accident far more often than anything needs them.
 ## Publishing from a sandbox
 
 With the control plane pointed at this role, one call publishes:
-`POST /v1/sandboxes/{name}/publish` with `{"path": "dist"}` ([API](api.md#publishing)).
+`POST /v1/sandboxes/{id}/publish` with `{"path": "dist"}` ([API](api.md#publishing)).
 
 1. The control plane lists the directory inside the sandbox and refuses anything past
    [the caps](#what-a-site-may-hold) **before** copying a byte.
@@ -140,8 +140,8 @@ With the control plane pointed at this role, one call publishes:
 The sandbox is never told any of this happened. It holds no token and opens no connection; its
 files are read from the outside like any other file operation.
 
-A site name is a DNS label, the same shape as a sandbox name, so a sandbox called `user-23`
-publishes to `user-23` without a second naming scheme.
+A site name is a DNS label, and the control plane sends a random one it made for that sandbox: this
+role never learns whose sandbox published, and an address tells a visitor nothing about it.
 
 ## Releases
 

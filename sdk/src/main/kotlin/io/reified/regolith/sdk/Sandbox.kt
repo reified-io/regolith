@@ -25,16 +25,12 @@ import io.reified.regolith.protocol.SandboxInfo
 import io.reified.regolith.protocol.UpdateSandboxRequest
 import java.io.ByteArrayOutputStream
 
-/** One sandbox on the server. */
-public class Sandbox internal constructor(private val client: RegolithClient, public val name: String) {
-    private val path = "/v1/sandboxes/$name"
+/** One sandbox on the server, addressed by the id the server gave it. */
+public class Sandbox internal constructor(private val client: RegolithClient, public val id: String) {
+    private val path = "/v1/sandboxes/$id"
 
     /** File operations inside this sandbox. */
     public val files: SandboxFiles = SandboxFiles(client, path)
-
-    /** Creates the sandbox, or returns the existing one unchanged. */
-    public suspend fun getOrCreate(request: CreateSandboxRequest = CreateSandboxRequest()): SandboxInfo =
-        client.call(HttpMethod.Put, path, SandboxInfo.serializer()) { with(client) { jsonBody(CreateSandboxRequest.serializer(), request) } }
 
     public suspend fun get(): SandboxInfo = client.call(HttpMethod.Get, path, SandboxInfo.serializer())
 
@@ -100,26 +96,23 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
         run(ExecRequest(shell = shell, timeoutSeconds = timeoutSeconds))
 
     /**
-     * Publishes a directory of this sandbox to the server's pages role and returns its public address.
+     * Publishes a directory of this sandbox to the server's pages role and returns its public address,
+     * which the server chooses and keeps for this sandbox.
      *
      * What goes out is a snapshot taken now, not the home itself: the files keep changing afterwards and
-     * the site does not. Publishing again replaces it atomically. [site] defaults to the sandbox's name.
+     * the site does not. Publishing again replaces it atomically, at the same address.
      */
-    public suspend fun publish(directory: String, site: String? = null): PublishedSite =
-        client.call(HttpMethod.Post, "$path/publish", PublishedSite.serializer()) {
-            with(client) { jsonBody(PublishRequest.serializer(), PublishRequest(directory, site)) }
+    public suspend fun publish(directory: String): PublishedSite =
+        client.call(HttpMethod.Post, "$path/site", PublishedSite.serializer()) {
+            with(client) { jsonBody(PublishRequest.serializer(), PublishRequest(directory)) }
         }
 
-    /**
-     * What is published under the sandbox's name, or under [site] when it was published with one; a
-     * `not_found` failure when nothing is.
-     */
-    public suspend fun site(site: String? = null): PublishedSite =
-        client.call(HttpMethod.Get, "$path/site", PublishedSite.serializer()) { site?.let { url.parameters.append("site", it) } }
+    /** What this sandbox has published, or a `not_found` failure when it has nothing. */
+    public suspend fun site(): PublishedSite = client.call(HttpMethod.Get, "$path/site", PublishedSite.serializer())
 
-    /** Takes down the site under the sandbox's name, or under [site]; the sandbox and its files are untouched. */
-    public suspend fun unpublish(site: String? = null) {
-        client.send(HttpMethod.Delete, "$path/site") { site?.let { url.parameters.append("site", it) } }
+    /** Takes the site down; the sandbox and its files are untouched. */
+    public suspend fun unpublish() {
+        client.send(HttpMethod.Delete, "$path/site")
     }
 
     /** A handle to an exec started earlier, for example by a previous process. */

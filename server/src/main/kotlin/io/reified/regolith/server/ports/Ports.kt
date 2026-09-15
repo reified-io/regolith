@@ -6,7 +6,7 @@ import io.reified.regolith.server.domain.ExecId
 import io.reified.regolith.server.domain.FileEntry
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.Sandbox
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.Path
@@ -78,45 +78,45 @@ interface SandboxRuntime {
     suspend fun startSession(sandbox: Sandbox, home: HomeMount, image: String): SessionHandle
 
     /** Attaches a running session to the sandbox network and returns its new address. */
-    suspend fun attachNetwork(name: SandboxName): String
+    suspend fun attachNetwork(sandbox: SandboxId): String
 
     /**
      * Detaches a running session from every network. With no interface left it reaches nothing,
      * Docker's embedded DNS resolver included — which host rules alone could not stop, because that
      * resolver forwards queries from the daemon's own namespace.
      */
-    suspend fun detachNetwork(name: SandboxName)
+    suspend fun detachNetwork(sandbox: SandboxId)
 
     /** Removes the session's container, which ends every process in it; a no-op for no session. */
-    suspend fun stopSession(name: SandboxName)
+    suspend fun stopSession(sandbox: SandboxId)
 
-    suspend fun exec(name: SandboxName, spec: ExecSpec): RunningProcess
+    suspend fun exec(sandbox: SandboxId, spec: ExecSpec): RunningProcess
 
     /** CPU time the whole session has used since it started, in microseconds, from its cgroup. */
-    suspend fun cpuMicros(name: SandboxName): Long
+    suspend fun cpuMicros(sandbox: SandboxId): Long
 
     /** The session's limit counters, from its cgroup. */
-    suspend fun limitEvents(name: SandboxName): LimitEvents
+    suspend fun limitEvents(sandbox: SandboxId): LimitEvents
 
     /** Signals every process started by one exec, detached descendants included. */
-    suspend fun signal(name: SandboxName, exec: ExecId, signal: Signal)
+    suspend fun signal(sandbox: SandboxId, exec: ExecId, signal: Signal)
 
-    suspend fun stat(name: SandboxName, path: String): FileEntry
+    suspend fun stat(sandbox: SandboxId, path: String): FileEntry
 
-    suspend fun list(name: SandboxName, path: String, maxEntries: Int): List<FileEntry>
+    suspend fun list(sandbox: SandboxId, path: String, maxEntries: Int): List<FileEntry>
 
-    suspend fun read(name: SandboxName, path: String, sink: OutputStream, maxBytes: Long)
+    suspend fun read(sandbox: SandboxId, path: String, sink: OutputStream, maxBytes: Long)
 
     /** Replaces [path] atomically, creating missing parent directories. */
-    suspend fun write(name: SandboxName, path: String, source: InputStream, maxBytes: Long): FileEntry
+    suspend fun write(sandbox: SandboxId, path: String, source: InputStream, maxBytes: Long): FileEntry
 
-    suspend fun delete(name: SandboxName, path: String, recursive: Boolean)
+    suspend fun delete(sandbox: SandboxId, path: String, recursive: Boolean)
 
     /** Every regular file under a directory, with its size; the pre-check before a publish copies it. */
-    suspend fun tree(name: SandboxName, path: String, maxFiles: Int): List<TreeFile>
+    suspend fun tree(sandbox: SandboxId, path: String, maxFiles: Int): List<TreeFile>
 
     /** Copies a directory out of the session into [destination] on the server, as a snapshot. */
-    suspend fun copyOut(name: SandboxName, path: String, destination: Path)
+    suspend fun copyOut(sandbox: SandboxId, path: String, destination: Path)
 }
 
 /** One file of a sandbox directory: where it is, relative to the directory, and how large. */
@@ -157,21 +157,21 @@ interface HomeStore {
     suspend fun recover()
 
     /** Creates the home on first use; the size of an existing home never changes. */
-    suspend fun open(name: SandboxName, sizeMb: Int): HomeMount
+    suspend fun open(sandbox: SandboxId, sizeMb: Int): HomeMount
 
     /** Detaches a home after its session ended, keeping every file. */
-    suspend fun close(name: SandboxName)
+    suspend fun close(sandbox: SandboxId)
 
-    suspend fun destroy(name: SandboxName)
+    suspend fun destroy(sandbox: SandboxId)
 
     /** Free bytes left for homes on the host, for the storage guard. */
     suspend fun hostFreeBytes(): Long
 
     /** Every sandbox this namespace holds a home for, whether or not a record still claims it. */
-    suspend fun list(): List<SandboxName>
+    suspend fun list(): List<SandboxId>
 
     /** Size of the sandbox's existing home in MB, or null when it has none. */
-    suspend fun sizeMb(name: SandboxName): Int?
+    suspend fun sizeMb(sandbox: SandboxId): Int?
 }
 
 /** The host-level network policy under every session. */
@@ -194,9 +194,9 @@ interface NetworkEnforcer {
      * applied before. An address with no policy applied reaches nothing, so a session is confined from
      * the moment it has an address. [policy] is never `none`: that session has no address.
      */
-    suspend fun apply(name: SandboxName, address: String, policy: NetworkPolicy)
+    suspend fun apply(sandbox: SandboxId, address: String, policy: NetworkPolicy)
 
-    suspend fun release(name: SandboxName)
+    suspend fun release(sandbox: SandboxId)
 }
 
 /** Durable records of sandboxes and execs, and where exec output is written. */
@@ -206,13 +206,13 @@ interface StateStore {
     suspend fun save(sandbox: Sandbox)
 
     /** Deletes the sandbox record together with every exec record and output file. */
-    suspend fun delete(name: SandboxName)
+    suspend fun delete(sandbox: SandboxId)
 
-    suspend fun execs(name: SandboxName): List<Exec>
+    suspend fun execs(sandbox: SandboxId): List<Exec>
 
     suspend fun save(exec: Exec)
 
-    suspend fun deleteExec(name: SandboxName, id: ExecId)
+    suspend fun deleteExec(sandbox: SandboxId, id: ExecId)
 
-    fun outputFile(name: SandboxName, id: ExecId): Path
+    fun outputFile(sandbox: SandboxId, id: ExecId): Path
 }

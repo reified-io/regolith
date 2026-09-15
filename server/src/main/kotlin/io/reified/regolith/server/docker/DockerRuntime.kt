@@ -8,7 +8,7 @@ import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxLayout
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.ports.ExecSpec
 import io.reified.regolith.server.ports.HomeMount
@@ -64,56 +64,56 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
     }
 
     override suspend fun startSession(sandbox: Sandbox, home: HomeMount, image: String): SessionHandle {
-        val container = spec.container(sandbox.name)
+        val container = spec.container(sandbox.id)
         // a container can survive a crash between its start and its registration; it is never reused.
         docker.run(listOf("rm", "--force", container))
-        docker.run(spec.run(sandbox, home, image), timeout = START_TIMEOUT).requireOk("Starting session ${sandbox.name}")
+        docker.run(spec.run(sandbox, home, image), timeout = START_TIMEOUT).requireOk("Starting session ${sandbox.id}")
         if (sandbox.network == NetworkPolicy.None) return SessionHandle(container, address = null)
 
         return try {
-            SessionHandle(container, address(sandbox.name))
+            SessionHandle(container, address(sandbox.id))
         } catch (e: Exception) {
             docker.run(listOf("rm", "--force", container))
             throw e
         }
     }
 
-    override suspend fun attachNetwork(name: SandboxName): String {
-        docker.run(spec.connect(name)).requireOk("Attaching session $name to ${spec.network}")
+    override suspend fun attachNetwork(sandbox: SandboxId): String {
+        docker.run(spec.connect(sandbox)).requireOk("Attaching session $sandbox to ${spec.network}")
 
-        return address(name)
+        return address(sandbox)
     }
 
-    override suspend fun detachNetwork(name: SandboxName) {
-        docker.run(spec.disconnect(name)).requireOk("Detaching session $name from ${spec.network}")
-        check(docker.run(spec.address(name)).text.isBlank()) { "Session $name still has an address after detaching" }
+    override suspend fun detachNetwork(sandbox: SandboxId) {
+        docker.run(spec.disconnect(sandbox)).requireOk("Detaching session $sandbox from ${spec.network}")
+        check(docker.run(spec.address(sandbox)).text.isBlank()) { "Session $sandbox still has an address after detaching" }
     }
 
-    private suspend fun address(name: SandboxName): String {
-        val address = docker.run(spec.address(name)).requireOk("Inspecting session $name").text.trim()
-        check(address.isNotEmpty()) { "Session $name has no address on ${spec.network}" }
+    private suspend fun address(sandbox: SandboxId): String {
+        val address = docker.run(spec.address(sandbox)).requireOk("Inspecting session $sandbox").text.trim()
+        check(address.isNotEmpty()) { "Session $sandbox has no address on ${spec.network}" }
 
         return address
     }
 
-    override suspend fun stopSession(name: SandboxName) {
-        val result = docker.run(listOf("rm", "--force", spec.container(name)))
-        if (!result.ok && "No such container" !in result.stderr) result.requireOk("Stopping session $name")
+    override suspend fun stopSession(sandbox: SandboxId) {
+        val result = docker.run(listOf("rm", "--force", spec.container(sandbox)))
+        if (!result.ok && "No such container" !in result.stderr) result.requireOk("Stopping session $sandbox")
     }
 
-    override suspend fun exec(name: SandboxName, spec: ExecSpec): RunningProcess = withContext(Dispatchers.IO) {
-        DockerProcess(docker.start(this@DockerRuntime.spec.exec(name, spec), stdin = spec.stdin), spec.stdin)
+    override suspend fun exec(sandbox: SandboxId, spec: ExecSpec): RunningProcess = withContext(Dispatchers.IO) {
+        DockerProcess(docker.start(this@DockerRuntime.spec.exec(sandbox, spec), stdin = spec.stdin), spec.stdin)
     }
 
-    override suspend fun cpuMicros(name: SandboxName): Long {
-        val stat = docker.run(spec.cpuStat(name)).requireOk("Reading the cpu usage of session $name").text
+    override suspend fun cpuMicros(sandbox: SandboxId): Long {
+        val stat = docker.run(spec.cpuStat(sandbox)).requireOk("Reading the cpu usage of session $sandbox").text
         val usage = stat.lineSequence().firstOrNull { it.startsWith("usage_usec ") }?.substringAfter(' ')?.trim()?.toLongOrNull()
 
-        return checkNotNull(usage) { "Session $name reports no cpu usage" }
+        return checkNotNull(usage) { "Session $sandbox reports no cpu usage" }
     }
 
-    override suspend fun limitEvents(name: SandboxName): LimitEvents {
-        val text = docker.run(spec.limitEvents(name)).requireOk("Reading the limit events of session $name").text
+    override suspend fun limitEvents(sandbox: SandboxId): LimitEvents {
+        val text = docker.run(spec.limitEvents(sandbox)).requireOk("Reading the limit events of session $sandbox").text
         val memory = text.substringBefore("\n--\n")
         val pids = text.substringAfter("\n--\n", "")
         fun counter(section: String, key: String): Long =
@@ -122,12 +122,12 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
         return LimitEvents(oomKills = counter(memory, "oom_kill"), forksRefused = counter(pids, "max"))
     }
 
-    override suspend fun signal(name: SandboxName, exec: ExecId, signal: Signal) {
-        docker.run(spec.signal(name, exec, signal)).requireOk("Signalling exec $exec")
+    override suspend fun signal(sandbox: SandboxId, exec: ExecId, signal: Signal) {
+        docker.run(spec.signal(sandbox, exec, signal)).requireOk("Signalling exec $exec")
     }
 
-    override suspend fun stat(name: SandboxName, path: String): FileEntry {
-        val result = docker.run(spec.stat(name, path))
+    override suspend fun stat(sandbox: SandboxId, path: String): FileEntry {
+        val result = docker.run(spec.stat(sandbox, path))
         failOn(result, path)
         val fields = result.text.split(Char(0))
         check(fields.size >= 4) { "Unexpected stat output for $path" }
@@ -142,13 +142,13 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
         )
     }
 
-    override suspend fun list(name: SandboxName, path: String, maxEntries: Int): List<FileEntry> {
-        val directory = stat(name, path)
+    override suspend fun list(sandbox: SandboxId, path: String, maxEntries: Int): List<FileEntry> {
+        val directory = stat(sandbox, path)
         requireValid(directory.type == EntryType.DIRECTORY) { "`$path` is not a directory" }
-        val result = docker.run(spec.list(name, path), maxStdout = maxEntries * ENTRY_BYTES_ESTIMATE)
+        val result = docker.run(spec.list(sandbox, path), maxStdout = maxEntries * ENTRY_BYTES_ESTIMATE)
         failOn(result, path)
 
-        // find prints five NUL-terminated fields per entry: name, type, size, mtime, mode.
+        // find prints five NUL-terminated fields per entry: sandbox, type, size, mtime, mode.
         return result.text.split(Char(0)).dropLast(1).chunked(5).filter { it.size == 5 }.take(maxEntries).map { fields ->
             FileEntry(
                 path = "${path.trimEnd('/')}/${fields[0]}",
@@ -161,8 +161,8 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
         }.sortedBy { it.name }
     }
 
-    override suspend fun read(name: SandboxName, path: String, sink: OutputStream, maxBytes: Long) = withContext(Dispatchers.IO) {
-        val process = docker.start(spec.read(name, path), stdin = false)
+    override suspend fun read(sandbox: SandboxId, path: String, sink: OutputStream, maxBytes: Long) = withContext(Dispatchers.IO) {
+        val process = docker.start(spec.read(sandbox, path), stdin = false)
         coroutineScope {
             val stderr = async(Dispatchers.IO) { quietly { process.errorStream.readNBytes(MAX_STDERR).toString(StandardCharsets.UTF_8) } }
             var total = 0L
@@ -184,11 +184,11 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
         }
     }
 
-    override suspend fun write(name: SandboxName, path: String, source: InputStream, maxBytes: Long): FileEntry {
+    override suspend fun write(sandbox: SandboxId, path: String, source: InputStream, maxBytes: Long): FileEntry {
         requireValid(path.trimEnd('/') != SandboxLayout.HOME && path.trimEnd('/').isNotEmpty()) { "`$path` cannot be replaced" }
         val temporaryName = ".regolith-upload-${UUID.randomUUID()}"
         withContext(Dispatchers.IO) {
-            val process = docker.start(spec.write(name, path, temporaryName), stdin = true)
+            val process = docker.start(spec.write(sandbox, path, temporaryName), stdin = true)
             coroutineScope {
                 val stderr = async(Dispatchers.IO) { quietly { process.errorStream.readNBytes(MAX_STDERR).toString(StandardCharsets.UTF_8) } }
                 val drainStdout = async(Dispatchers.IO) { quietly { process.inputStream.use { it.readAllBytes() }.size.toString() } }
@@ -198,7 +198,7 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
                     // a body that failed or ran past its limit: nothing renames the temporary file, so it goes.
                     process.destroyForcibly()
                     runCatching { process.outputStream.close() }
-                    removeUpload(name, path, temporaryName)
+                    removeUpload(sandbox, path, temporaryName)
                     throw e
                 }
                 runCatching { process.outputStream.close() }
@@ -207,19 +207,19 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
                 // a writer that stopped taking the body, a full disk most often, explains itself in its exit.
                 if (code != 0) failOn(DockerCli.Result(code, ByteArray(0), stderr.await()), path)
                 if (!delivered) {
-                    removeUpload(name, path, temporaryName)
+                    removeUpload(sandbox, path, temporaryName)
                     error("The writer of $path exited before the body ended")
                 }
             }
 
-            val moved = docker.run(spec.move(name, path, temporaryName))
+            val moved = docker.run(spec.move(sandbox, path, temporaryName))
             if (!moved.ok) {
-                removeUpload(name, path, temporaryName)
+                removeUpload(sandbox, path, temporaryName)
                 failOn(moved, path)
             }
         }
 
-        return stat(name, path)
+        return stat(sandbox, path)
     }
 
     /** Copies [source] into a writer's stdin and closes it; false when the writer stopped taking it first. */
@@ -246,15 +246,15 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
         false
     }
 
-    private suspend fun removeUpload(name: SandboxName, path: String, temporaryName: String) {
+    private suspend fun removeUpload(sandbox: SandboxId, path: String, temporaryName: String) {
         val directory = path.substringBeforeLast('/', SandboxLayout.HOME).ifEmpty { "/" }
-        docker.run(spec.delete(name, "$directory/$temporaryName", recursive = false, directory = false))
+        docker.run(spec.delete(sandbox, "$directory/$temporaryName", recursive = false, directory = false))
     }
 
-    override suspend fun tree(name: SandboxName, path: String, maxFiles: Int): List<TreeFile> {
-        val directory = stat(name, path)
+    override suspend fun tree(sandbox: SandboxId, path: String, maxFiles: Int): List<TreeFile> {
+        val directory = stat(sandbox, path)
         requireValid(directory.type == EntryType.DIRECTORY) { "`$path` is not a directory" }
-        val result = docker.run(spec.tree(name, path), maxStdout = maxFiles * TREE_BYTES_ESTIMATE)
+        val result = docker.run(spec.tree(sandbox, path), maxStdout = maxFiles * TREE_BYTES_ESTIMATE)
         failOn(result, path)
 
         // find prints two NUL-terminated fields per file: size and the path relative to the directory.
@@ -263,17 +263,17 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
         }
     }
 
-    override suspend fun copyOut(name: SandboxName, path: String, destination: Path) {
+    override suspend fun copyOut(sandbox: SandboxId, path: String, destination: Path) {
         withContext(Dispatchers.IO) { Files.createDirectories(destination) }
-        val result = docker.run(spec.copyOut(name, path, destination.toString()))
+        val result = docker.run(spec.copyOut(sandbox, path, destination.toString()))
         failOn(result, path)
     }
 
-    override suspend fun delete(name: SandboxName, path: String, recursive: Boolean) {
+    override suspend fun delete(sandbox: SandboxId, path: String, recursive: Boolean) {
         val trimmed = path.trimEnd('/')
         requireValid(trimmed.isNotEmpty() && trimmed != SandboxLayout.HOME) { "`$path` cannot be deleted" }
-        val entry = stat(name, path)
-        val result = docker.run(spec.delete(name, path, recursive, directory = entry.type == EntryType.DIRECTORY))
+        val entry = stat(sandbox, path)
+        val result = docker.run(spec.delete(sandbox, path, recursive, directory = entry.type == EntryType.DIRECTORY))
         failOn(result, path)
     }
 

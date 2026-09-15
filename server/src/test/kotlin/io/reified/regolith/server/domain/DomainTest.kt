@@ -4,15 +4,32 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DomainTest {
     @Test
-    fun `sandbox names are dns labels`() {
-        listOf("a", "user-23", "x".repeat(63)).forEach { SandboxName.parse(it) }
-        listOf("", "-a", "a-", "Upper", "under_score", "dot.ted", "x".repeat(64)).forEach { raw ->
-            assertFailsWith<RegolithError.Invalid>(raw) { SandboxName.parse(raw) }
+    fun `an id is the server's, an alias is the caller's, a site label is public`() {
+        val id = SandboxId.random()
+        assertEquals(id, SandboxId.parse(id.value))
+        listOf("", "user-23", "Upper", id.value + "0", id.value.uppercase()).forEach { raw ->
+            assertFailsWith<RegolithError.Invalid>(raw) { SandboxId.parse(raw) }
+        }
+
+        // an alias is somebody else's identifier, so it takes whatever shape that world uses
+        listOf("user-23", "telegram:123456789", "проєкт/42", "x".repeat(Alias.MAX_CHARS)).forEach { Alias.parse(it) }
+        listOf("", " padded ", "with\u0000nul", "x".repeat(Alias.MAX_CHARS + 1)).forEach { raw ->
+            assertFailsWith<RegolithError.Invalid>(raw) { Alias.parse(raw) }
+        }
+
+        // a label is read aloud, typed by hand and seen by anyone with the link
+        val label = SiteLabel.random()
+        assertEquals(label, SiteLabel.parse(label.value))
+        assertNotEquals(label, SiteLabel.random())
+        assertTrue(label.value.none { it in "aeiou01il" }, "${label.value} can be misread or spell something")
+        listOf("", "user-23", label.value.uppercase(), label.value + "x").forEach { raw ->
+            assertFailsWith<RegolithError.Invalid>(raw) { SiteLabel.parse(raw) }
         }
     }
 

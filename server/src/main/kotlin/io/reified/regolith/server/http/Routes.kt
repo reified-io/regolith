@@ -34,6 +34,7 @@ import io.reified.regolith.protocol.RegolithJson
 import io.reified.regolith.protocol.SandboxPage
 import io.reified.regolith.protocol.UpdateSandboxRequest
 import io.reified.regolith.server.app.Services
+import io.reified.regolith.server.domain.Alias
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.requireValid
@@ -41,10 +42,15 @@ import kotlinx.io.readByteArray
 
 internal fun Route.sandboxRoutes(services: Services) = route("/sandboxes") {
     fun info(sandbox: Sandbox) =
-        sandbox.toInfo(services.sessions.get(sandbox.name), services.sessions.lastEnd(sandbox.name), services.config.images)
+        sandbox.toInfo(services.sessions.get(sandbox.id), services.sessions.lastEnd(sandbox.id), services.config.images)
 
     get {
         val query = call.request.queryParameters
+        query["alias"]?.let { raw ->
+            val found = services.sandboxes.byAlias(Alias.parse(raw))
+
+            return@get call.respond(SandboxPage(listOfNotNull(found?.let(::info))))
+        }
         val labels = query.getAll("label").orEmpty().associate { raw ->
             val key = raw.substringBefore('=')
             requireValid('=' in raw && key.isNotEmpty()) { "A label filter is written as key=value" }
@@ -54,75 +60,75 @@ internal fun Route.sandboxRoutes(services: Services) = route("/sandboxes") {
         val (page, next) = services.sandboxes.list(labels, limit, query["cursor"])
         call.respond(SandboxPage(page.map(::info), next))
     }
+    post {
+        val request = call.jsonBody(CreateSandboxRequest.serializer(), empty = CreateSandboxRequest())
+        val (sandbox, created) = services.sandboxes.create(request.alias?.let(Alias::parse), request.toDomain())
+        call.respond(if (created) HttpStatusCode.Created else HttpStatusCode.OK, info(sandbox))
+    }
 
-    route("/{name}") {
-        put {
-            val request = call.jsonBody(CreateSandboxRequest.serializer(), empty = CreateSandboxRequest())
-            val (sandbox, created) = services.sandboxes.getOrCreate(call.sandboxName(), request.toDomain())
-            call.respond(if (created) HttpStatusCode.Created else HttpStatusCode.OK, info(sandbox))
-        }
+    route("/{id}") {
         get {
-            call.respond(info(services.sandboxes.require(call.sandboxName())))
+            call.respond(info(services.sandboxes.require(call.sandboxId())))
         }
         patch {
             val request = call.jsonBody(UpdateSandboxRequest.serializer())
-            call.respond(info(services.sandboxes.update(call.sandboxName(), request.toDomain())))
+            call.respond(info(services.sandboxes.update(call.sandboxId(), request.toDomain())))
         }
         delete {
-            services.sandboxes.delete(call.sandboxName())
+            services.sandboxes.delete(call.sandboxId())
             call.respond(HttpStatusCode.NoContent)
         }
         post("/start") {
-            call.respond(info(services.sandboxes.start(call.sandboxName())))
+            call.respond(info(services.sandboxes.start(call.sandboxId())))
         }
         post("/stop") {
-            val name = call.sandboxName()
+            val name = call.sandboxId()
             services.sandboxes.stop(name)
             call.respond(info(services.sandboxes.require(name)))
         }
-        post("/publish") {
+        post("/site") {
             val request = call.jsonBody(PublishRequest.serializer())
-            call.respond(services.sites.publish(call.sandboxName(), request.path, request.site).toWire())
+            call.respond(services.sites.publish(call.sandboxId(), request.path).toWire())
         }
         get("/site") {
-            call.respond(services.sites.published(call.sandboxName(), call.request.queryParameters["site"]).toWire())
+            call.respond(services.sites.published(call.sandboxId()).toWire())
         }
         delete("/site") {
-            services.sites.unpublish(call.sandboxName(), call.request.queryParameters["site"])
+            services.sites.unpublish(call.sandboxId())
             call.respond(HttpStatusCode.NoContent)
         }
     }
 }
 
-internal fun Route.execRoutes(services: Services) = route("/sandboxes/{name}/execs") {
+internal fun Route.execRoutes(services: Services) = route("/sandboxes/{id}/execs") {
     val execs = services.execs
 
     post {
         val request = call.jsonBody(ExecRequest.serializer())
-        val sandbox = services.sandboxes.markUsed(call.sandboxName())
+        val sandbox = services.sandboxes.markUsed(call.sandboxId())
         val exec = execs.start(sandbox, request.toDomain(), call.request.headers[IDEMPOTENCY_KEY_HEADER])
         call.respond(HttpStatusCode.Created, exec.toInfo(execs.stdinOpen(exec.id)))
     }
     get {
-        val name = call.sandboxName()
+        val name = call.sandboxId()
         services.sandboxes.require(name)
         call.respond(ExecPage(execs.list(name).map { it.toInfo(execs.stdinOpen(it.id)) }))
     }
 
-    route("/{id}") {
+    route("/{exec}") {
         get {
-            val exec = execs.await(call.sandboxName(), call.execId(), call.waitParameter())
+            val exec = execs.await(call.sandboxId(), call.execId(), call.waitParameter())
             call.respond(exec.toInfo(execs.stdinOpen(exec.id)))
         }
         post("/cancel") {
-            val exec = execs.cancel(call.sandboxName(), call.execId())
+            val exec = execs.cancel(call.sandboxId(), call.execId())
             call.respond(exec.toInfo(execs.stdinOpen(exec.id)))
         }
         post("/stdin") {
             val bytes = call.receiveChannel().readRemaining(MAX_STDIN_BYTES + 1L).readByteArray()
             if (bytes.size > MAX_STDIN_BYTES) throw RegolithError.TooLarge("One stdin write is limited to $MAX_STDIN_BYTES bytes")
             val close = call.request.queryParameters["close"] == "true"
-            execs.writeStdin(call.sandboxName(), call.execId(), bytes, close)
+            execs.writeStdin(call.sandboxId(), call.execId(), bytes, close)
             call.respond(HttpStatusCode.NoContent)
         }
 
@@ -131,7 +137,7 @@ internal fun Route.execRoutes(services: Services) = route("/sandboxes/{name}/exe
             // explicit text/event-stream selects it: a client sending */* keeps getting json pages.
             createChild(EventStreamRequested).apply {
                 sse {
-                    val name = call.sandboxName()
+                    val name = call.sandboxId()
                     val id = call.execId()
                     var offset = (call.request.headers["Last-Event-ID"] ?: call.request.queryParameters["offset"])
                         ?.let { it.toLongOrNull() ?: throw RegolithError.Invalid("offset must be a whole number") } ?: 0L
@@ -155,38 +161,38 @@ internal fun Route.execRoutes(services: Services) = route("/sandboxes/{name}/exe
                 val query = call.request.queryParameters
                 val offset = query["offset"]?.let { it.toLongOrNull() ?: throw RegolithError.Invalid("offset must be a whole number") } ?: 0L
                 val maxBytes = call.maxBytesParameter()?.coerceAtMost(PAGE_BYTES.toLong())?.toInt() ?: PAGE_BYTES
-                val slice = execs.read(call.sandboxName(), call.execId(), offset, maxBytes, call.waitParameter())
+                val slice = execs.read(call.sandboxId(), call.execId(), offset, maxBytes, call.waitParameter())
                 call.respond(OutputPage(slice.frames.map { it.toWire() }, slice.nextOffset, slice.complete))
             }
         }
     }
 }
 
-internal fun Route.fileRoutes(services: Services) = route("/sandboxes/{name}/files") {
+internal fun Route.fileRoutes(services: Services) = route("/sandboxes/{id}/files") {
     val files = services.files
 
     fun io.ktor.server.application.ApplicationCall.pathParameter(): String =
         request.queryParameters["path"] ?: throw RegolithError.Invalid("The path query parameter is required")
 
     get("/content") {
-        val name = call.sandboxName()
+        val name = call.sandboxId()
         val path = call.pathParameter()
         val limit = files.openForRead(name, path, call.maxBytesParameter())
         call.respondOutputStream(ContentType.Application.OctetStream, HttpStatusCode.OK) { files.read(name, path, this, limit) }
     }
     put("/content") {
-        val entry = files.write(call.sandboxName(), call.pathParameter(), call.receiveStream(), call.request.contentLength())
+        val entry = files.write(call.sandboxId(), call.pathParameter(), call.receiveStream(), call.request.contentLength())
         call.respond(entry.toWire())
     }
     get("/entries") {
         val path = call.pathParameter()
-        call.respond(DirectoryListing(path, files.list(call.sandboxName(), path).map { it.toWire() }))
+        call.respond(DirectoryListing(path, files.list(call.sandboxId(), path).map { it.toWire() }))
     }
     get("/stat") {
-        call.respond(files.stat(call.sandboxName(), call.pathParameter()).toWire())
+        call.respond(files.stat(call.sandboxId(), call.pathParameter()).toWire())
     }
     delete {
-        files.delete(call.sandboxName(), call.pathParameter(), recursive = call.request.queryParameters["recursive"] == "true")
+        files.delete(call.sandboxId(), call.pathParameter(), recursive = call.request.queryParameters["recursive"] == "true")
         call.respond(HttpStatusCode.NoContent)
     }
 }

@@ -2,7 +2,7 @@ package io.reified.regolith.server.docker
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.reified.regolith.server.domain.RegolithError
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.ports.HomeMount
 import io.reified.regolith.server.ports.HomeStore
 import kotlinx.coroutines.Dispatchers
@@ -13,8 +13,8 @@ import java.nio.file.Path
 /**
  * [HomeStore] as one preallocated ext4 image per sandbox.
  *
- * Two Docker volumes per home: `<ns>-<name>-disk` holds the image and is only ever seen by the home disk
- * helper, which attaches it to a loop device; `<ns>-<name>-home` is a local-driver volume of that device,
+ * Two Docker volumes per home: `<ns>-<sandbox>-disk` holds the image and is only ever seen by the home disk
+ * helper, which attaches it to a loop device; `<ns>-<sandbox>-home` is a local-driver volume of that device,
  * which the daemon itself mounts when a session starts. A full home stops at its own size, in the kernel,
  * whatever fills it.
  */
@@ -36,9 +36,9 @@ class HomeDisks(
         log.info { "Home attachments recovered: disks=[${disks.size}]" }
     }
 
-    override suspend fun open(name: SandboxName, sizeMb: Int): HomeMount {
-        val disk = diskVolume(name)
-        val home = homeVolume(name)
+    override suspend fun open(sandbox: SandboxId, sizeMb: Int): HomeMount {
+        val disk = diskVolume(sandbox)
+        val home = homeVolume(sandbox)
         // a mount volume only names a device, which may be stale after a restart; it is always recreated.
         docker.run(listOf("volume", "rm", "--force", home))
 
@@ -46,7 +46,7 @@ class HomeDisks(
             docker.run(
                 listOf(
                     "volume", "create",
-                    "--label", namespaceLabel, "--label", "$ROLE_LABEL=$ROLE_DISK", "--label", "${ContainerSpec.LABEL_PREFIX}.sandbox=$name",
+                    "--label", namespaceLabel, "--label", "$ROLE_LABEL=$ROLE_DISK", "--label", "${ContainerSpec.LABEL_PREFIX}.sandbox=$sandbox",
                     disk,
                 ),
             )
@@ -71,15 +71,15 @@ class HomeDisks(
         return HomeMount(home, device)
     }
 
-    override suspend fun close(name: SandboxName) {
-        val disk = diskVolume(name)
-        docker.run(listOf("volume", "rm", "--force", homeVolume(name)))
+    override suspend fun close(sandbox: SandboxId) {
+        val disk = diskVolume(sandbox)
+        docker.run(listOf("volume", "rm", "--force", homeVolume(sandbox)))
         if (exists(disk)) helper(disk, "release")
     }
 
-    override suspend fun destroy(name: SandboxName) {
-        close(name)
-        val disk = diskVolume(name)
+    override suspend fun destroy(sandbox: SandboxId) {
+        close(sandbox)
+        val disk = diskVolume(sandbox)
 
         if (exists(disk)) {
             requireOwned(disk, ROLE_DISK)
@@ -89,15 +89,15 @@ class HomeDisks(
 
     override suspend fun hostFreeBytes(): Long = withContext(Dispatchers.IO) { Files.getFileStore(stateDir).usableSpace }
 
-    override suspend fun list(): List<SandboxName> = volumes(ROLE_DISK).mapNotNull { volume ->
+    override suspend fun list(): List<SandboxId> = volumes(ROLE_DISK).mapNotNull { volume ->
         val raw = volume.removePrefix("$namespace-").removeSuffix("-disk")
-        runCatching { SandboxName.parse(raw) }
+        runCatching { SandboxId.parse(raw) }
             .onFailure { log.warn { "Ignoring a home disk volume whose name is not a sandbox: volume=[$volume]" } }
             .getOrNull()
     }
 
-    override suspend fun sizeMb(name: SandboxName): Int? {
-        val disk = diskVolume(name)
+    override suspend fun sizeMb(sandbox: SandboxId): Int? {
+        val disk = diskVolume(sandbox)
         if (!exists(disk)) return null
         requireOwned(disk, ROLE_DISK)
         val bytes = helper(disk, "size").toLongOrNull() ?: return null
@@ -117,7 +117,7 @@ class HomeDisks(
 
     private suspend fun exists(volume: String): Boolean = docker.run(listOf("volume", "inspect", volume)).ok
 
-    /** Refuses to touch a volume this namespace did not create: a name collision must never destroy a stranger's data. */
+    /** Refuses to touch a volume this namespace did not create: a sandbox collision must never destroy a stranger's data. */
     private suspend fun requireOwned(volume: String, role: String) {
         val labels = docker.run(
             listOf("volume", "inspect", "--format", "{{index .Labels \"${ContainerSpec.LABEL_PREFIX}.namespace\"}} {{index .Labels \"$ROLE_LABEL\"}} {{.Driver}}", volume),
@@ -129,9 +129,9 @@ class HomeDisks(
         docker.run(listOf("volume", "ls", "--quiet", "--filter", "label=$namespaceLabel", "--filter", "label=$ROLE_LABEL=$role"))
             .requireOk("Listing $role volumes").text.lines().filter { it.isNotBlank() }
 
-    private fun diskVolume(name: SandboxName) = "$namespace-$name-disk"
+    private fun diskVolume(sandbox: SandboxId) = "$namespace-$sandbox-disk"
 
-    private fun homeVolume(name: SandboxName) = "$namespace-$name-home"
+    private fun homeVolume(sandbox: SandboxId) = "$namespace-$sandbox-home"
 
     private companion object {
         val log = KotlinLogging.logger {}

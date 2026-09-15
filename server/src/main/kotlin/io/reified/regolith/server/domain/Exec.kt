@@ -36,7 +36,7 @@ sealed interface ExecCommand {
 @Serializable
 data class Exec(
     val id: ExecId,
-    val sandbox: SandboxName,
+    val sandbox: SandboxId,
     val command: ExecCommand,
     val cwd: String,
     val env: Map<String, String>,

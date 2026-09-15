@@ -14,12 +14,15 @@ object SandboxLayout {
 }
 
 /**
- * A sandbox: the durable part — name, configuration and home. Its running container is a session,
- * tracked separately, and a sandbox outlives as many sessions as it is used for.
+ * A sandbox: the durable part — its id, the caller's [alias] for it, its configuration and its home.
+ * Its running container is a session, tracked separately, and a sandbox outlives as many sessions as
+ * it is used for. [site] is the label its published files are served at, while any are.
  */
 @Serializable
 data class Sandbox(
-    val name: SandboxName,
+    val id: SandboxId,
+    val alias: Alias?,
+    val site: SiteLabel? = null,
     val imagePolicy: ImagePolicy,
     val resources: Resources,
     val network: NetworkPolicy,

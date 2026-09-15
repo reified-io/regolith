@@ -13,48 +13,49 @@ wraps it.
 | `GET` | `/v1/info` | Version, defaults and every limit |
 | `GET` | `/llms.txt` | This API condensed for a model; no token |
 | **[Sandboxes](#sandboxes)** | | |
-| `PUT` | `/v1/sandboxes/{name}` | Create a sandbox, or return the one that exists |
-| `GET` | `/v1/sandboxes/{name}` | One sandbox |
-| `GET` | `/v1/sandboxes` | Sandboxes, filtered by label |
-| `PATCH` | `/v1/sandboxes/{name}` | Change its image policy, network, lifecycle, environment or labels |
-| `POST` | `/v1/sandboxes/{name}/start` | Start a session ahead of time |
-| `POST` | `/v1/sandboxes/{name}/stop` | End the session; the home stays |
-| `DELETE` | `/v1/sandboxes/{name}` | Delete the sandbox and its home |
+| `POST` | `/v1/sandboxes` | Create a sandbox, or return the one an alias already has |
+| `GET` | `/v1/sandboxes/{id}` | One sandbox |
+| `GET` | `/v1/sandboxes` | The sandbox of one alias, or sandboxes filtered by label |
+| `PATCH` | `/v1/sandboxes/{id}` | Change its image policy, network, lifecycle, environment or labels |
+| `POST` | `/v1/sandboxes/{id}/start` | Start a session ahead of time |
+| `POST` | `/v1/sandboxes/{id}/stop` | End the session; the home stays |
+| `DELETE` | `/v1/sandboxes/{id}` | Delete the sandbox and its home |
 | **[Execs](#execs)** | | |
-| `POST` | `/v1/sandboxes/{name}/execs` | Start a command |
-| `GET` | `/v1/sandboxes/{name}/execs` | Recent commands |
-| `GET` | `/v1/sandboxes/{name}/execs/{id}` | One command, optionally waiting for it to finish |
-| `GET` | `/v1/sandboxes/{name}/execs/{id}/output` | Its output, from any offset |
-| `POST` | `/v1/sandboxes/{name}/execs/{id}/stdin` | Write to its stdin |
-| `POST` | `/v1/sandboxes/{name}/execs/{id}/cancel` | Stop it |
+| `POST` | `/v1/sandboxes/{id}/execs` | Start a command |
+| `GET` | `/v1/sandboxes/{id}/execs` | Recent commands |
+| `GET` | `/v1/sandboxes/{id}/execs/{exec}` | One command, optionally waiting for it to finish |
+| `GET` | `/v1/sandboxes/{id}/execs/{exec}/output` | Its output, from any offset |
+| `POST` | `/v1/sandboxes/{id}/execs/{exec}/stdin` | Write to its stdin |
+| `POST` | `/v1/sandboxes/{id}/execs/{exec}/cancel` | Stop it |
 | **[Files](#files)** | | |
-| `GET` | `/v1/sandboxes/{name}/files/content` | Read a file |
-| `PUT` | `/v1/sandboxes/{name}/files/content` | Write a file atomically |
-| `GET` | `/v1/sandboxes/{name}/files/entries` | List a directory |
-| `GET` | `/v1/sandboxes/{name}/files/stat` | Describe one path |
-| `DELETE` | `/v1/sandboxes/{name}/files` | Delete a file or a directory |
+| `GET` | `/v1/sandboxes/{id}/files/content` | Read a file |
+| `PUT` | `/v1/sandboxes/{id}/files/content` | Write a file atomically |
+| `GET` | `/v1/sandboxes/{id}/files/entries` | List a directory |
+| `GET` | `/v1/sandboxes/{id}/files/stat` | Describe one path |
+| `DELETE` | `/v1/sandboxes/{id}/files` | Delete a file or a directory |
 | **[Publishing](#publishing)** | | |
-| `POST` | `/v1/sandboxes/{name}/publish` | Publish a directory to the web |
-| `GET` | `/v1/sandboxes/{name}/site` | What is published |
-| `DELETE` | `/v1/sandboxes/{name}/site` | Take it down |
+| `POST` | `/v1/sandboxes/{id}/site` | Publish a directory to the web |
+| `GET` | `/v1/sandboxes/{id}/site` | What is published |
+| `DELETE` | `/v1/sandboxes/{id}/site` | Take it down |
 
 ## A first command
 
 With the server's address in `$URL` and its token in `$TOKEN`:
 
 ```bash
-# create the sandbox, or get the existing one back
-curl -X PUT -H "Authorization: Bearer $TOKEN" "$URL/v1/sandboxes/user-23"
-
-# start a command; the answer carries its id at once
+# the sandbox for your own name for it, created or handed back
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"shell": "uname -a"}' "$URL/v1/sandboxes/user-23/execs"
+  -d '{"alias": "user-23"}' "$URL/v1/sandboxes"
+
+# everything else is addressed by the id that answer carries
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"shell": "uname -a"}' "$URL/v1/sandboxes/<id>/execs"
 
 # read what it printed, waiting up to 30 seconds for output
-curl -H "Authorization: Bearer $TOKEN" "$URL/v1/sandboxes/user-23/execs/<id>/output?waitSeconds=30"
+curl -H "Authorization: Bearer $TOKEN" "$URL/v1/sandboxes/<id>/execs/<exec>/output?waitSeconds=30"
 
 # and how it ended
-curl -H "Authorization: Bearer $TOKEN" "$URL/v1/sandboxes/user-23/execs/<id>?waitSeconds=30"
+curl -H "Authorization: Bearer $TOKEN" "$URL/v1/sandboxes/<id>/execs/<exec>?waitSeconds=30"
 ```
 
 Starting a command never waits for it. Its output stays on the server, so it can be read again, from
@@ -82,7 +83,7 @@ served as `application/problem+json`:
   "type": "urn:regolith:error:busy",
   "title": "Sandbox busy",
   "status": 409,
-  "detail": "Sandbox `user-23` already runs 8 commands",
+  "detail": "Sandbox `5f2b9c7d1e3a4f6b8c0d2e4f6a8b0c1d` already runs 8 commands",
   "code": "busy"
 }
 ```
@@ -173,21 +174,27 @@ the rules that save a failed attempt.
 
 ## Sandboxes
 
-A **sandbox** is the durable part: a name, a configuration and a home. Its running container is a
+A **sandbox** is the durable part: an id, a configuration and a home. Its running container is a
 **session**. A session starts on first use and ends when idle, at its maximum lifetime, on `stop`,
 or when the server restarts. Files in the home survive every session; processes do not.
 
-Names are DNS labels: 1–63 lowercase letters, digits and inner hyphens. The caller chooses them, so
-an application maps its own identities onto sandboxes without keeping a table — `user-23`,
-`ci-run-9913`.
+The **id** is the server's, and addresses the sandbox everywhere. The **alias** is the caller's: the
+identity the sandbox stands for in its own world — `user-23`, `ci-run-9913`, `telegram:123456789` —
+so an application finds its sandbox again without keeping a table of ids. It is opaque text of up to
+200 characters, with no control characters and no space at either end, and no two sandboxes share
+one. Nothing public is built from either.
 
-### `PUT /v1/sandboxes/{name}`
+### `POST /v1/sandboxes`
 
-Creates the sandbox, or returns the existing one **unchanged**: `201` when created, `200` otherwise.
+Creates a sandbox and returns it. With an `alias` nothing else holds, it answers `201`; with one that
+already has a sandbox it returns that sandbox **unchanged** with `200`, so a caller can send this
+before every piece of work. Without an alias it always creates one, and the caller keeps its id.
+
 The body may be empty; whatever it leaves out takes the default from `GET /v1/info`.
 
 ```json
 {
+  "alias": "user-23",
   "imagePolicy": {"mode": "default"},
   "resources": {"cpus": 1.0, "memoryMb": 1024, "homeMb": 4096},
   "network": {"mode": "public"},
@@ -199,10 +206,10 @@ The body may be empty; whatever it leaves out takes the default from `GET /v1/in
 
 - That is the whole body: there is no other field, and an unknown one is
   [refused](#requests-and-responses). The values shown are the stock defaults — `GET /v1/info` gives
-  the ones the server you are talking to actually uses — except `env` and `labels`, which are empty
-  unless you set them.
+  the ones the server you are talking to actually uses — except `alias`, `env` and `labels`, which are
+  empty unless you set them.
 - The body is applied only when the sandbox is created. For an existing one, change settings with
-  [`PATCH`](#patch-v1sandboxesname).
+  [`PATCH`](#patch-v1sandboxesid).
 - `imagePolicy` picks which image the sandbox runs — see [below](#which-image-a-sandbox-runs).
   `network` is a [network policy](#network-policy). `resources` are fixed for the sandbox's life.
 - `lifecycle.retainDays: 0` makes the sandbox ephemeral: it is deleted once its session stops.
@@ -214,7 +221,8 @@ The response is a `SandboxInfo`:
 
 ```json
 {
-  "name": "user-23",
+  "id": "5f2b9c7d1e3a4f6b8c0d2e4f6a8b0c1d",
+  "alias": "user-23",
   "image": "ghcr.io/reified-io/regolith-sandbox:0.3.0",
   "imagePolicy": {"mode": "default"},
   "resources": {"cpus": 1.0, "memoryMb": 1024, "homeMb": 4096},
@@ -285,10 +293,11 @@ keeps such a thing in its home should be ready to build it again.
 The server keeps this in memory, so after a restart `lastSessionEnd` is absent until a session of
 that sandbox ends again.
 
-### `GET /v1/sandboxes/{name}`, `GET /v1/sandboxes`
+### `GET /v1/sandboxes/{id}`, `GET /v1/sandboxes`
 
-One sandbox, or a page of them ordered by name. The list takes:
+One sandbox, or a page of them ordered by id. The list takes:
 
+- `alias=user-23` — the sandbox filed under that alias, alone, or an empty page when there is none;
 - `label=key=value` — repeatable; all must match;
 - `limit` — 1–500, default 100;
 - `cursor` — the previous page's `nextCursor`.
@@ -296,9 +305,11 @@ One sandbox, or a page of them ordered by name. The list takes:
 It answers `{"sandboxes": [SandboxInfo, ...], "nextCursor": "..."}`, with no `nextCursor` on the
 last page.
 
-### `PATCH /v1/sandboxes/{name}`
+### `PATCH /v1/sandboxes/{id}`
 
-Changes `imagePolicy`, `network`, `lifecycle`, `env` or `labels`; fields left out stay as they are.
+Changes `alias`, `imagePolicy`, `network`, `lifecycle`, `env` or `labels`; fields left out stay as
+they are. An alias another sandbox holds is refused, and moving one here leaves that sandbox with no
+alias to be found by.
 
 ```json
 {"network": {"mode": "none"}}
@@ -310,14 +321,15 @@ A network policy applies to the running session immediately — install dependen
 then switch to `none` before running untrusted code. Everything else applies from the next session,
 so pinning a sandbox that is running takes hold once its session ends; `stop` makes that now.
 
-### `POST /v1/sandboxes/{name}/start`, `POST /v1/sandboxes/{name}/stop`
+### `POST /v1/sandboxes/{id}/start`, `POST /v1/sandboxes/{id}/stop`
 
 `start` warms a session ahead of the first command; any operation would start one anyway. `stop`
 ends the session and interrupts its commands; the home stays. Both return `SandboxInfo`.
 
-### `DELETE /v1/sandboxes/{name}`
+### `DELETE /v1/sandboxes/{id}`
 
-Deletes the sandbox, its home and its exec records, and answers `204`. There is no undo.
+Deletes the sandbox, its home, its exec records and the site it published, and answers `204`. There
+is no undo, and the site's address is never handed out again.
 
 ## Network policy
 
@@ -346,7 +358,7 @@ explains why.
 An **exec** is one command in a sandbox. It runs in the sandbox's session, starting one if needed,
 and its output is recorded on the server whatever the client does.
 
-### `POST /v1/sandboxes/{name}/execs`
+### `POST /v1/sandboxes/{id}/execs`
 
 Starts a command and returns at once, with `201` and an `ExecInfo`. Give either `shell` or `argv`:
 
@@ -409,7 +421,7 @@ The server compares the session's cgroup event counters at the command's start a
 running at the same time share those counters, so a kill caused by one can be reported on another
 that failed in the same window.
 
-### `GET /v1/sandboxes/{name}/execs`, `GET /v1/sandboxes/{name}/execs/{id}`
+### `GET /v1/sandboxes/{id}/execs`, `GET /v1/sandboxes/{id}/execs/{exec}`
 
 The list answers `{"execs": [ExecInfo, ...]}`, newest first; the server keeps the last 50 finished
 execs per sandbox.
@@ -417,7 +429,7 @@ execs per sandbox.
 A single exec takes `waitSeconds`, up to 30: the request is held until the exec finishes or the wait
 ends.
 
-### `GET /v1/sandboxes/{name}/execs/{id}/output`
+### `GET /v1/sandboxes/{id}/execs/{exec}/output`
 
 Recorded output, from `offset` (default 0). Output is kept on the server whatever the client does,
 so a client that lost its connection resumes from the last offset it saw. It comes in two forms.
@@ -465,13 +477,13 @@ Either way:
   `outputTruncated` is true from the moment that happens.
 - Text is UTF-8; malformed bytes arrive as U+FFFD.
 
-### `POST /v1/sandboxes/{name}/execs/{id}/stdin`
+### `POST /v1/sandboxes/{id}/execs/{exec}/stdin`
 
 Raw bytes for the command's stdin, up to 1 MiB per request; `?close=true` closes stdin after
 writing. Answers `204`, or `409 conflict` when the exec was started without stdin, has finished, or
 its stdin is already closed.
 
-### `POST /v1/sandboxes/{name}/execs/{id}/cancel`
+### `POST /v1/sandboxes/{id}/execs/{exec}/cancel`
 
 Sends SIGTERM to every process the exec started, detached ones included, then SIGKILL after five
 seconds. Returns at once with `ExecInfo`; cancelling a finished exec changes nothing.
@@ -485,11 +497,11 @@ Paths are absolute or relative to the home. Like any other use, a file operation
 
 | Request | Does |
 |---|---|
-| `GET /v1/sandboxes/{name}/files/content?path=&maxBytes=` | The file's bytes, as `application/octet-stream` |
-| `PUT /v1/sandboxes/{name}/files/content?path=` | Replaces the file atomically with the body, creating parent directories; returns a `FileEntry` |
-| `GET /v1/sandboxes/{name}/files/entries?path=` | `{"path": ..., "entries": [FileEntry, ...]}` for a directory |
-| `GET /v1/sandboxes/{name}/files/stat?path=` | One `FileEntry`; a symlink is described, not followed |
-| `DELETE /v1/sandboxes/{name}/files?path=&recursive=true` | Deletes a file, an empty directory, or with `recursive` a whole tree; `204` |
+| `GET /v1/sandboxes/{id}/files/content?path=&maxBytes=` | The file's bytes, as `application/octet-stream` |
+| `PUT /v1/sandboxes/{id}/files/content?path=` | Replaces the file atomically with the body, creating parent directories; returns a `FileEntry` |
+| `GET /v1/sandboxes/{id}/files/entries?path=` | `{"path": ..., "entries": [FileEntry, ...]}` for a directory |
+| `GET /v1/sandboxes/{id}/files/stat?path=` | One `FileEntry`; a symlink is described, not followed |
+| `DELETE /v1/sandboxes/{id}/files?path=&recursive=true` | Deletes a file, an empty directory, or with `recursive` a whole tree; `204` |
 
 A `FileEntry`:
 
@@ -520,30 +532,31 @@ files makes room, while a larger `payload_too_large` limit would not.
 A sandbox can put a directory on the web through the server's [pages role](pages.md). Without one,
 these endpoints answer `501 not_implemented`, and `GET /v1/info` says `"publishing": false`.
 
-### `POST /v1/sandboxes/{name}/publish`
+### `POST /v1/sandboxes/{id}/site`
 
 Publishes a directory of the sandbox and returns its public address.
 
 ```json
-{"path": "dist", "site": "user-23"}
+{"path": "dist"}
 ```
 
-- `path` is a directory inside the sandbox, relative to the home unless it is absolute.
-- `site` names the site and defaults to the sandbox's name. It is a DNS label like a sandbox name;
-  labels the pages role reserves, such as `www` and `api`, are refused.
-
-The response is a `PublishedSite`:
+`path` is a directory inside the sandbox, relative to the home unless it is absolute. The response is
+a `PublishedSite`:
 
 ```json
 {
-  "site": "user-23",
-  "url": "https://user-23.sites.example.com",
+  "url": "https://k7m2q9xwtp.sites.example.com",
   "release": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   "files": 12,
   "bytes": 48213,
   "publishedAt": "2026-09-13T12:00:00Z"
 }
 ```
+
+The address is the server's to choose, and it is random on purpose: it is public, so an address built
+from the sandbox or from a caller's own identity would hand that identity to everyone with the link
+and make every other site on the server guessable from one. It belongs to this sandbox until the site
+is taken down, so publishing again keeps the link alive and nobody has to record it.
 
 What goes out is a **snapshot taken now**, not the home. The sandbox keeps changing, its session
 stops, and the site stays exactly as it was published.
@@ -554,16 +567,14 @@ stops, and the site stays exactly as it was published.
   of the sandbox.
 - A file or directory whose name starts with a dot fails the whole publish with `invalid_request`.
   Symlinks are left behind, not followed.
-- A site name is not owned by a sandbox. Publishing to a name that is already live replaces that
-  site, whichever sandbox published it before; as with sandbox names, keeping names apart is the
-  caller's job.
+- A sandbox has one site, and a site belongs to one sandbox: there is no name to collide over, and
+  nothing can replace a site it did not publish.
 
-### `GET /v1/sandboxes/{name}/site`, `DELETE /v1/sandboxes/{name}/site`
+### `GET /v1/sandboxes/{id}/site`, `DELETE /v1/sandboxes/{id}/site`
 
-What is published for this sandbox, and taking it down. Both answer `404 not_found` when nothing is
-published. `DELETE` answers `204` and leaves the sandbox and its files untouched.
-
-Both take an optional `site` query parameter, for a site published under another name.
+What this sandbox has published, and taking it down. Both answer `404 not_found` when it has nothing.
+`DELETE` answers `204` and leaves the sandbox and its files untouched; what was served is gone, and
+publishing again gives the sandbox a new address.
 
 ## Not in v1
 

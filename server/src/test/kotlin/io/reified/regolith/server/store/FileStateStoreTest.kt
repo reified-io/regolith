@@ -7,10 +7,11 @@ import io.reified.regolith.server.domain.ExecOutcome
 import io.reified.regolith.server.domain.ImagePolicy
 import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.NetworkPolicy
+import io.reified.regolith.server.domain.Alias
 import io.reified.regolith.server.domain.Cidr
 import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Sandbox
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -31,7 +32,8 @@ class FileStateStoreTest {
     }
 
     private val sandbox = Sandbox(
-        name = SandboxName.parse("keeper"),
+        id = SandboxId.random(),
+        alias = Alias.parse("keeper"),
         imagePolicy = ImagePolicy.Pin("example/sandbox:1"),
         resources = Resources(1.5, 1024, 4096),
         network = NetworkPolicy.Allowlist(listOf(Cidr.parse("140.82.112.0/20"))),
@@ -46,7 +48,7 @@ class FileStateStoreTest {
     fun `records survive a reopen and deletion takes everything`() = runBlocking {
         val exec = Exec(
             id = ExecId.random(),
-            sandbox = sandbox.name,
+            sandbox = sandbox.id,
             command = ExecCommand.Argv(listOf("make", "test")),
             cwd = "/home/sandbox",
             env = emptyMap(),
@@ -59,15 +61,15 @@ class FileStateStoreTest {
         FileStateStore.open(root, "regolith").use { store ->
             store.save(sandbox)
             store.save(exec)
-            Files.writeString(store.outputFile(sandbox.name, exec.id), "log")
+            Files.writeString(store.outputFile(sandbox.id, exec.id), "log")
         }
 
         FileStateStore.open(root, "regolith").use { store ->
             assertEquals(listOf(sandbox), store.sandboxes())
-            assertEquals(listOf(exec), store.execs(sandbox.name))
-            store.delete(sandbox.name)
+            assertEquals(listOf(exec), store.execs(sandbox.id))
+            store.delete(sandbox.id)
             assertEquals(emptyList(), store.sandboxes())
-            assertTrue(!Files.exists(store.outputFile(sandbox.name, exec.id)))
+            assertTrue(!Files.exists(store.outputFile(sandbox.id, exec.id)))
         }
     }
 

@@ -24,20 +24,20 @@ class Sweeper(
     suspend fun tick() {
         val now = clock.now()
 
-        for ((name, session) in sessions.snapshot()) {
-            val sandbox = sandboxes.find(name) ?: continue
+        for ((id, session) in sessions.snapshot()) {
+            val sandbox = sandboxes.find(id) ?: continue
             if (now >= session.expiresAt) {
-                log.info { "Session reached its maximum lifetime: sandbox=[$name]" }
-                sandboxes.stop(name, StopReason.SESSION_EXPIRED)
+                log.info { "Session reached its maximum lifetime: sandbox=[$id]" }
+                sandboxes.stop(id, StopReason.SESSION_EXPIRED)
             } else if (!session.busy && now - session.lastActiveAt >= sandbox.lifecycle.idleStop) {
-                sessions.stopIfIdle(name, StopReason.IDLE)
+                sessions.stopIfIdle(id, StopReason.IDLE)
             }
         }
 
         for (sandbox in sandboxes.all()) {
-            if (sessions.get(sandbox.name) == null && now >= sandbox.deleteAfter) {
-                log.info { "Sandbox past retention: sandbox=[${sandbox.name}]" }
-                sandboxes.delete(sandbox.name)
+            if (sessions.get(sandbox.id) == null && now >= sandbox.deleteAfter) {
+                log.info { "Sandbox past retention: sandbox=[${sandbox.id}]" }
+                sandboxes.delete(sandbox.id)
             }
         }
     }
@@ -81,7 +81,7 @@ class NetworkGuard(
         latched = true
         health.report(Health.NETWORK, ok = false, detail = "The network policy could not be restored; sandboxes are stopped")
         log.error { "Network policy lost and not restorable; stopping every session" }
-        for (name in sessions.snapshot().keys) sandboxes.stop(name, StopReason.POLICY_FAILED)
+        for (id in sessions.snapshot().keys) sandboxes.stop(id, StopReason.POLICY_FAILED)
     }
 
     private companion object {

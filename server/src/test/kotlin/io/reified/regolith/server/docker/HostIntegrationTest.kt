@@ -12,7 +12,7 @@ import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Sandbox
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.domain.StopReason
 import io.reified.regolith.server.ports.ExecSpec
 import kotlinx.coroutines.NonCancellable
@@ -41,7 +41,7 @@ class HostIntegrationTest {
     private val enabled = System.getenv("REGOLITH_HOST_TESTS") == "1"
     private val namespace = "regolith-host-it"
     private val docker = DockerCli("docker")
-    private val name = SandboxName.parse("probe")
+    private val name = SandboxId.random()
 
     @Test
     fun `homes are bounded and persistent, and the network floor holds under every policy`() {
@@ -60,7 +60,7 @@ class HostIntegrationTest {
             val image = "regolith-sandbox:it"
             val sessions = Sessions(runtime, homes, firewall, Health(), Clock.System, maxSessions = 2, images = ImageCatalog(image, listOf(image)))
             val now = Clock.System.now()
-            val sandbox = Sandbox(name, ImagePolicy.Default, Resources(1.0, 512, 256), NetworkPolicy.Public, Lifecycle(5.minutes, 1.days, 1.days), emptyMap(), emptyMap(), now, now)
+            val sandbox = Sandbox(name, alias = null, site = null, ImagePolicy.Default, Resources(1.0, 512, 256), NetworkPolicy.Public, Lifecycle(5.minutes, 1.days, 1.days), emptyMap(), emptyMap(), now, now)
             var network: io.reified.regolith.server.ports.SandboxNetwork? = null
 
             suspend fun sh(script: String): String {

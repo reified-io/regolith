@@ -9,7 +9,7 @@ import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Sandbox
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.ports.ExecSpec
 import io.reified.regolith.server.ports.HomeMount
 import io.reified.regolith.server.ports.Signal
@@ -39,7 +39,7 @@ class DockerRuntimeIntegrationTest {
     private val docker = DockerCli("docker")
     private val spec = ContainerSpec(namespace, "/bin/bash")
     private val runtime = DockerRuntime(docker, spec)
-    private val name = SandboxName.parse("probe")
+    private val name = SandboxId.random()
     private val volume = "$namespace-probe-home"
 
     @Test
@@ -51,7 +51,7 @@ class DockerRuntimeIntegrationTest {
                 docker.run(listOf("volume", "create", volume)).requireOk("volume create")
                 val now = Clock.System.now()
                 val image = "debian:trixie-slim"
-                val sandbox = Sandbox(name, ImagePolicy.Pin(image), Resources(0.5, 256, 512), NetworkPolicy.Public, Lifecycle(5.minutes, 1.days, 1.days), emptyMap(), emptyMap(), now, now)
+                val sandbox = Sandbox(name, alias = null, site = null, ImagePolicy.Pin(image), Resources(0.5, 256, 512), NetworkPolicy.Public, Lifecycle(5.minutes, 1.days, 1.days), emptyMap(), emptyMap(), now, now)
                 runtime.startSession(sandbox, HomeMount(volume), image)
 
                 val idle = runtime.cpuMicros(name)

@@ -3,7 +3,7 @@ package io.reified.regolith.server.app
 import io.reified.regolith.server.domain.ExecCommand
 import io.reified.regolith.server.domain.ExecOutcome
 import io.reified.regolith.server.domain.StopReason
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.support.TestServer
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
@@ -16,12 +16,12 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 class LifecycleTest {
-    private val name = SandboxName.parse("swept")
 
     @Test
     fun `an idle session stops, a busy one does not`() = runBlocking {
         TestServer().use { server ->
-            val sandbox = server.sandboxes.getOrCreate(name, SandboxRequest(lifecycle = LifecycleRequest(idleStop = 60.seconds))).first
+            val sandbox = server.sandbox("swept", SandboxRequest(lifecycle = LifecycleRequest(idleStop = 60.seconds)))
+            val name = sandbox.id
             val exec = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("sleep")), null)
 
             server.clock.advance(2.minutes)
@@ -40,7 +40,8 @@ class LifecycleTest {
     @Test
     fun `the maximum lifetime interrupts even a busy session`() = runBlocking {
         TestServer().use { server ->
-            val sandbox = server.sandboxes.getOrCreate(name, SandboxRequest(lifecycle = LifecycleRequest(idleStop = 5.minutes, maxSession = 10.minutes))).first
+            val sandbox = server.sandbox("swept", SandboxRequest(lifecycle = LifecycleRequest(idleStop = 5.minutes, maxSession = 10.minutes)))
+            val name = sandbox.id
             val exec = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("sleep")), null)
 
             server.clock.advance(11.minutes)
@@ -53,10 +54,9 @@ class LifecycleTest {
     @Test
     fun `retention deletes an unused sandbox, and an ephemeral one right after its session`() = runBlocking {
         TestServer().use { server ->
-            val kept = SandboxName.parse("kept")
-            server.sandboxes.getOrCreate(kept, SandboxRequest(lifecycle = LifecycleRequest(retain = 3.days)))
-            val ephemeral = SandboxName.parse("ephemeral")
-            val sandbox = server.sandboxes.getOrCreate(ephemeral, SandboxRequest(lifecycle = LifecycleRequest(idleStop = 60.seconds, retain = 0.days))).first
+            val kept = server.sandbox("kept", SandboxRequest(lifecycle = LifecycleRequest(retain = 3.days))).id
+            val sandbox = server.sandbox("ephemeral", SandboxRequest(lifecycle = LifecycleRequest(idleStop = 60.seconds, retain = 0.days)))
+            val ephemeral = sandbox.id
             server.sandboxes.start(ephemeral)
             assertEquals(ExecOutcome.Exited(0), server.execs.await(ephemeral, server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("echo hi")), null).id, 10.seconds).outcome)
 
@@ -76,14 +76,14 @@ class LifecycleTest {
     @Test
     fun `a session burning cpu with nothing of its own running is stopped and says why`() = runBlocking {
         TestServer().use { server ->
-            server.sandboxes.getOrCreate(name, SandboxRequest())
+            val name = server.sandbox("burner").id
             server.sandboxes.start(name)
             val guard = CpuGuard(server.sessions, server.runtime, server.clock, limit = 60.seconds)
 
-            server.guardTick(guard, cpuMicros = 0)
-            server.guardTick(guard, cpuMicros = 40_000_000)
+            server.guardTick(name, guard, cpuMicros = 0)
+            server.guardTick(name, guard, cpuMicros = 40_000_000)
             assertTrue(server.sessions.get(name) != null, "40 unattended seconds are under the limit")
-            server.guardTick(guard, cpuMicros = 70_000_000)
+            server.guardTick(name, guard, cpuMicros = 70_000_000)
 
             assertNull(server.sessions.get(name))
             assertEquals(StopReason.CPU_LIMIT, server.sessions.lastEnd(name)?.reason)
@@ -93,24 +93,25 @@ class LifecycleTest {
     @Test
     fun `cpu spent by commands or around activity is never counted`() = runBlocking {
         TestServer().use { server ->
-            val sandbox = server.sandboxes.getOrCreate(name, SandboxRequest()).first
+            val sandbox = server.sandbox("busy")
+            val name = sandbox.id
             server.sandboxes.start(name)
             val guard = CpuGuard(server.sessions, server.runtime, server.clock, limit = 60.seconds)
-            server.guardTick(guard, cpuMicros = 0)
+            server.guardTick(name, guard, cpuMicros = 0)
 
             val exec = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("sleep")), null)
-            server.guardTick(guard, cpuMicros = 500_000_000)
+            server.guardTick(name, guard, cpuMicros = 500_000_000)
             server.execs.cancel(name, exec.id)
             server.execs.await(name, exec.id, 10.seconds)
 
             // the command ended after the last tick, so the interval it ended in is not unattended either.
-            server.guardTick(guard, cpuMicros = 900_000_000)
-            server.guardTick(guard, cpuMicros = 950_000_000)
+            server.guardTick(name, guard, cpuMicros = 900_000_000)
+            server.guardTick(name, guard, cpuMicros = 950_000_000)
             assertTrue(server.sessions.get(name) != null, "only 50 seconds were unattended")
         }
     }
 
-    private suspend fun TestServer.guardTick(guard: CpuGuard, cpuMicros: Long) {
+    private suspend fun TestServer.guardTick(name: SandboxId, guard: CpuGuard, cpuMicros: Long) {
         clock.advance(30.seconds)
         runtime.cpu[name] = cpuMicros
         guard.tick()
@@ -119,7 +120,7 @@ class LifecycleTest {
     @Test
     fun `a network floor that cannot be restored latches and stops every session`() = runBlocking {
         TestServer().use { server ->
-            server.sandboxes.getOrCreate(name, SandboxRequest())
+            val name = server.sandbox("floor").id
             server.sandboxes.start(name)
             val guard = NetworkGuard(server.enforcer, server.sandboxes, server.sessions, server.health)
 

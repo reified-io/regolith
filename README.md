@@ -23,14 +23,14 @@ sandbox it cannot confine.
 
 ## What it does
 
-- **Sandboxes that remember.** Pick a name, and its files are still there next time.
+- **Sandboxes that remember.** Give one your own name for it, and its files are still there next time.
 - **Commands you can reconnect to.** Output stays on the server, so a dropped client just resumes.
 - **A network boundary that checks itself.** No way to the host or your LAN, in any mode.
 - **Cleans up after itself.** Idle sessions stop, and sandboxes nobody uses are deleted.
 - **Upgrades reach existing sandboxes.** A new image takes hold at the next session, unless a
   sandbox pinned the one it has.
 - **Failures a model can act on.** `oom_killed` instead of a bare exit code 137.
-- **Publishing, if you want it.** What an agent built, on the web at its own address.
+- **Publishing, if you want it.** What an agent built, on the web at an address that gives nobody away.
 - **Made for Kotlin and for agents.** A coroutine SDK, Koog, `/llms.txt` and an
   [Agent Skill](skills/regolith/SKILL.md).
 
@@ -70,8 +70,8 @@ dependencies {
 
 ```kotlin
 RegolithClient("http://127.0.0.1:8080", token).use { client ->
-    val sandbox = client.sandbox("field-notes")
-    sandbox.getOrCreate()
+    // your own name for it; the same one finds this sandbox again next time
+    val sandbox = client.getOrCreate("field-notes")
 
     val result = sandbox.run("python3 -c 'import platform; print(platform.system())'")
     println(result.stdout) // Linux
@@ -87,7 +87,7 @@ With [Koog](https://github.com/JetBrains/koog) and `io.reified.regolith:koog`, a
 runs inside a sandbox instead of on the machine running the agent:
 
 ```kotlin
-val executor = RegolithShellCommandExecutor(client.sandbox("agent-7"))
+val executor = RegolithShellCommandExecutor(client.getOrCreate("agent-7"))
 val shell = ExecuteShellCommandTool(executor, PrintShellCommandConfirmationHandler())
 ```
 

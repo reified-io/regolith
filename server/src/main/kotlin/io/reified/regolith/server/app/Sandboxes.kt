@@ -9,10 +9,13 @@ import io.reified.regolith.server.domain.Metadata
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Resources
+import io.reified.regolith.server.domain.Alias
 import io.reified.regolith.server.domain.Sandbox
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.SiteLabel
 import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.ports.HomeStore
+import io.reified.regolith.server.ports.SitePublisher
 import io.reified.regolith.server.ports.StateStore
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Clock
@@ -36,6 +39,7 @@ data class LifecycleRequest(val idleStop: Duration? = null, val maxSession: Dura
 
 /** A change to an existing sandbox; only non-null fields apply. */
 data class SandboxPatch(
+    val alias: Alias? = null,
     val imagePolicy: ImagePolicy? = null,
     val network: NetworkPolicy? = null,
     val lifecycle: LifecycleRequest? = null,
@@ -49,39 +53,56 @@ class Sandboxes(
     private val sessions: Sessions,
     private val execs: Execs,
     private val homes: HomeStore,
+    private val sites: SitePublisher?,
     private val config: ServerConfig,
     private val clock: Clock,
 ) {
 
-    private val records = ConcurrentHashMap<SandboxName, Sandbox>()
-    private val locks = KeyedLocks<SandboxName>()
+    private val records = ConcurrentHashMap<SandboxId, Sandbox>()
+    private val aliases = ConcurrentHashMap<Alias, SandboxId>()
+    private val locks = KeyedLocks<SandboxId>()
+    private val aliasLocks = KeyedLocks<Alias>()
 
     suspend fun load() {
-        for (sandbox in store.sandboxes()) records[sandbox.name] = sandbox
+        for (sandbox in store.sandboxes()) remember(sandbox)
         log.info { "Sandboxes loaded: count=[${records.size}]" }
     }
 
-    fun find(name: SandboxName): Sandbox? = records[name]
+    fun find(id: SandboxId): Sandbox? = records[id]
 
-    fun require(name: SandboxName): Sandbox =
-        records[name] ?: throw RegolithError.NotFound("Sandbox `$name` does not exist")
+    fun require(id: SandboxId): Sandbox =
+        records[id] ?: throw RegolithError.NotFound("Sandbox `$id` does not exist")
 
-    fun all(): List<Sandbox> = records.values.sortedBy { it.name.value }
+    /** The sandbox a caller filed under [alias], which is how it finds one again without a table. */
+    fun byAlias(alias: Alias): Sandbox? = aliases[alias]?.let { records[it] }
 
-    /** Sandboxes carrying every label in [labels], ordered by name, starting after [cursor]. */
+    fun all(): List<Sandbox> = records.values.sortedBy { it.id.value }
+
+    /** Sandboxes carrying every label in [labels], ordered by id, starting after [cursor]. */
     fun list(labels: Map<String, String>, limit: Int, cursor: String?): Pair<List<Sandbox>, String?> {
         requireValid(limit in 1..MAX_PAGE) { "limit is between 1 and $MAX_PAGE" }
         val matching = all()
             .filter { sandbox -> labels.all { (key, value) -> sandbox.labels[key] == value } }
-            .filter { cursor == null || it.name.value > cursor }
+            .filter { cursor == null || it.id.value > cursor }
         val page = matching.take(limit)
 
-        return page to page.lastOrNull()?.name?.value?.takeIf { matching.size > limit }
+        return page to page.lastOrNull()?.id?.value?.takeIf { matching.size > limit }
     }
 
-    /** Creates the sandbox, or returns the existing one unchanged. The flag is true when it was created. */
-    suspend fun getOrCreate(name: SandboxName, request: SandboxRequest): Pair<Sandbox, Boolean> = locks.withLock(name) {
-        records[name]?.let { return@withLock it to false }
+    /**
+     * The sandbox filed under [alias], created when there is none; without an alias, always a new one.
+     * The flag is true when it was created.
+     */
+    suspend fun create(alias: Alias?, request: SandboxRequest): Pair<Sandbox, Boolean> {
+        if (alias == null) return created(alias = null, request) to true
+
+        return aliasLocks.withLock(alias) {
+            byAlias(alias)?.let { return@withLock it to false }
+            created(alias, request) to true
+        }
+    }
+
+    private suspend fun created(alias: Alias?, request: SandboxRequest): Sandbox {
         val defaults = config.defaults
         val limits = config.limits
         val imagePolicy = request.imagePolicy ?: ImagePolicy.Default
@@ -98,7 +119,8 @@ class Sandboxes(
         Metadata.requireLabels(request.labels, limits.maxLabels)
         val now = clock.now()
         val sandbox = Sandbox(
-            name = name,
+            id = SandboxId.random(),
+            alias = alias,
             imagePolicy = imagePolicy,
             resources = resources,
             network = request.network ?: defaults.network,
@@ -109,21 +131,23 @@ class Sandboxes(
             lastUsedAt = now,
         )
         store.save(sandbox)
-        records[name] = sandbox
-        log.info { "Sandbox created: sandbox=[$name]" }
-        sandbox to true
+        remember(sandbox)
+        log.info { "Sandbox created: sandbox=[${sandbox.id}] alias=[$alias]" }
+
+        return sandbox
     }
 
     /**
      * Gives an orphaned home a record again: server defaults for everything but the home size, which is
      * the size the home already has, and an `adopted` label so an operator can find it.
      */
-    suspend fun adopt(name: SandboxName, homeMb: Int): Sandbox = locks.withLock(name) {
-        check(records[name] == null) { "Sandbox `$name` already has a record" }
+    suspend fun adopt(id: SandboxId, homeMb: Int): Sandbox = locks.withLock(id) {
+        check(records[id] == null) { "Sandbox `$id` already has a record" }
         val defaults = config.defaults
         val now = clock.now()
         val sandbox = Sandbox(
-            name = name,
+            id = id,
+            alias = null,
             imagePolicy = ImagePolicy.Default,
             resources = defaults.resources.copy(homeMb = homeMb),
             network = defaults.network,
@@ -134,17 +158,22 @@ class Sandboxes(
             lastUsedAt = now,
         )
         store.save(sandbox)
-        records[name] = sandbox
-        log.info { "Sandbox adopted from an orphaned home: sandbox=[$name] homeMb=[$homeMb]" }
+        remember(sandbox)
+        log.info { "Sandbox adopted from an orphaned home: sandbox=[$id] homeMb=[$homeMb]" }
         sandbox
     }
 
-    suspend fun update(name: SandboxName, patch: SandboxPatch): Sandbox = locks.withLock(name) {
-        val current = require(name)
+    suspend fun update(id: SandboxId, patch: SandboxPatch): Sandbox = locks.withLock(id) {
+        val current = require(id)
         patch.imagePolicy?.let(config.images::requireAllowed)
         patch.env?.let(Metadata::requireEnv)
         patch.labels?.let { Metadata.requireLabels(it, config.limits.maxLabels) }
+        patch.alias?.let { alias ->
+            val holder = aliases[alias]
+            requireValid(holder == null || holder == id) { "Another sandbox is filed under that alias" }
+        }
         val updated = current.copy(
+            alias = patch.alias ?: current.alias,
             imagePolicy = patch.imagePolicy ?: current.imagePolicy,
             network = patch.network ?: current.network,
             lifecycle = patch.lifecycle?.let { lifecycle(current.lifecycle, it) } ?: current.lifecycle,
@@ -152,45 +181,74 @@ class Sandboxes(
             labels = patch.labels ?: current.labels,
         )
         store.save(updated)
-        records[name] = updated
+        current.alias?.takeIf { it != updated.alias }?.let { aliases.remove(it) }
+        remember(updated)
         if (updated.network != current.network) sessions.applyNetwork(updated)
         updated
     }
 
-    suspend fun start(name: SandboxName): Sandbox {
-        val sandbox = markUsed(name)
+    suspend fun start(id: SandboxId): Sandbox {
+        val sandbox = markUsed(id)
         sessions.acquire(sandbox).close()
 
         return sandbox
     }
 
-    suspend fun stop(name: SandboxName, reason: StopReason = StopReason.STOPPED) {
-        require(name)
-        execs.interrupt(name, reason)
-        sessions.stop(name, reason)
+    suspend fun stop(id: SandboxId, reason: StopReason = StopReason.STOPPED) {
+        require(id)
+        execs.interrupt(id, reason)
+        sessions.stop(id, reason)
     }
 
-    suspend fun delete(name: SandboxName) = locks.withLock(name) {
-        require(name)
-        execs.interrupt(name, StopReason.SANDBOX_DELETED)
-        sessions.stop(name, StopReason.SANDBOX_DELETED)
-        execs.awaitNone(name)
-        homes.destroy(name)
-        store.delete(name)
-        records.remove(name)
-        sessions.forget(name)
-        log.info { "Sandbox deleted: sandbox=[$name]" }
+    suspend fun delete(id: SandboxId) = locks.withLock(id) {
+        val sandbox = require(id)
+        execs.interrupt(id, StopReason.SANDBOX_DELETED)
+        sessions.stop(id, StopReason.SANDBOX_DELETED)
+        execs.awaitNone(id)
+        // a site outlives the home unless it is taken down here: nothing else knows where it was served.
+        sandbox.site?.let { label ->
+            runCatching { sites?.unpublish(label.value) }
+                .onFailure { log.warn(it) { "Site left behind by a deleted sandbox: sandbox=[$id] site=[$label]" } }
+        }
+        homes.destroy(id)
+        store.delete(id)
+        records.remove(id)
+        sandbox.alias?.let { aliases.remove(it) }
+        sessions.forget(id)
+        log.info { "Sandbox deleted: sandbox=[$id]" }
+    }
+
+    /** Records where this sandbox's files are served, or that they no longer are. */
+    suspend fun site(id: SandboxId, label: SiteLabel?): Sandbox = locks.withLock(id) {
+        val updated = require(id).copy(site = label)
+        store.save(updated)
+        remember(updated)
+        updated
+    }
+
+    /** A label nothing else is served at; they are random, so a taken one is a coincidence. */
+    fun unusedSiteLabel(): SiteLabel {
+        repeat(LABEL_TRIES) {
+            val label = SiteLabel.random()
+            if (records.values.none { it.site == label }) return label
+        }
+        error("No unused site label after $LABEL_TRIES tries")
     }
 
     /** Records use of the sandbox; retention counts from the last one. Persisted at most once a minute. */
-    suspend fun markUsed(name: SandboxName): Sandbox = locks.withLock(name) {
-        val current = require(name)
+    suspend fun markUsed(id: SandboxId): Sandbox = locks.withLock(id) {
+        val current = require(id)
         val now = clock.now()
         if (now - current.lastUsedAt < USE_PERSIST_INTERVAL) return@withLock current
         val updated = current.copy(lastUsedAt = now)
         store.save(updated)
-        records[name] = updated
+        remember(updated)
         updated
+    }
+
+    private fun remember(sandbox: Sandbox) {
+        records[sandbox.id] = sandbox
+        sandbox.alias?.let { aliases[it] = sandbox.id }
     }
 
     private fun lifecycle(base: Lifecycle, request: LifecycleRequest): Lifecycle {
@@ -216,6 +274,7 @@ class Sandboxes(
     companion object {
         private val log = KotlinLogging.logger {}
         private const val MAX_PAGE = 500
+        private const val LABEL_TRIES = 10
         const val ADOPTED_LABEL = "regolith.adopted"
         private const val MIN_MEMORY_MB = 128
         private const val MIN_HOME_MB = 256

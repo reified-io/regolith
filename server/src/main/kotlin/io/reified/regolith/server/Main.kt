@@ -92,11 +92,11 @@ private class Application(val config: ServerConfig, val store: FileStateStore) {
     val enforcer = HostFirewall(docker, helpers, config.namespace, config.blockedCidrs)
     val sessions = Sessions(runtime, homes, enforcer, health, clock, config.maxSessions, config.images)
     val execs = Execs(store, sessions, runtime, config, clock, scope)
-    val sandboxes = Sandboxes(store, sessions, execs, homes, config, clock)
-    val files = SandboxFiles(sandboxes, sessions, runtime, health, config)
-    val orphans = OrphanHomes(sandboxes, homes)
     // optional: without a pages role configured, the publish endpoints answer `not_implemented`.
     val publisher = config.pagesUrl?.let { PagesPublisher(it, checkNotNull(config.pagesToken)) }
+    val sandboxes = Sandboxes(store, sessions, execs, homes, publisher, config, clock)
+    val files = SandboxFiles(sandboxes, sessions, runtime, health, config)
+    val orphans = OrphanHomes(sandboxes, homes)
     val sites = SitePublishing(sandboxes, sessions, runtime, config, publisher)
 }
 
@@ -135,7 +135,7 @@ private fun serve(config: ServerConfig) {
             log.info { "Regolith stopping" }
             server.stop(gracePeriodMillis = 1_000, timeoutMillis = 5_000)
             runBlocking {
-                for (sandbox in app.sandboxes.all()) app.execs.interrupt(sandbox.name, StopReason.SERVER_RESTARTED)
+                for (sandbox in app.sandboxes.all()) app.execs.interrupt(sandbox.id, StopReason.SERVER_RESTARTED)
                 app.sessions.stopAll(StopReason.SERVER_RESTARTED)
             }
             app.scope.cancel()
@@ -178,7 +178,7 @@ private fun orphans(config: ServerConfig, action: String?): Int {
         runBlocking {
             app.sandboxes.load()
             when (action) {
-                "adopt" -> app.orphans.adopt().forEach { println("adopted  ${it.name}  ${it.resources.homeMb} MB") }
+                "adopt" -> app.orphans.adopt().forEach { println("adopted  ${it.id}  ${it.resources.homeMb} MB") }
                 "delete" -> app.orphans.delete().forEach { println("deleted  $it") }
                 else -> app.orphans.find().also { found ->
                     if (found.isEmpty()) println("no orphaned homes")

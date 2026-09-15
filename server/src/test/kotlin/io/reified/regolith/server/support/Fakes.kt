@@ -7,7 +7,7 @@ import io.reified.regolith.server.domain.FileEntry
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Sandbox
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.ports.ExecSpec
 import io.reified.regolith.server.ports.HomeMount
 import io.reified.regolith.server.ports.HomeStore
@@ -49,22 +49,22 @@ import kotlin.time.Duration
  * `bytes N` (N bytes of `x`).
  */
 class FakeRuntime : SandboxRuntime {
-    val sessions: MutableSet<SandboxName> = ConcurrentHashMap.newKeySet()
-    val attached: MutableSet<SandboxName> = ConcurrentHashMap.newKeySet()
-    val started = CopyOnWriteArrayList<SandboxName>()
+    val sessions: MutableSet<SandboxId> = ConcurrentHashMap.newKeySet()
+    val attached: MutableSet<SandboxId> = ConcurrentHashMap.newKeySet()
+    val started = CopyOnWriteArrayList<SandboxId>()
 
     /** The image each session started on, and every image the server asked to have on the host. */
-    val startedOn = ConcurrentHashMap<SandboxName, String>()
+    val startedOn = ConcurrentHashMap<SandboxId, String>()
     val pulled = CopyOnWriteArrayList<String>()
 
     /** CPU microseconds each session reports; a test moves it by hand. */
-    val cpu = ConcurrentHashMap<SandboxName, Long>()
+    val cpu = ConcurrentHashMap<SandboxId, Long>()
 
     /** When set, every file write fails the way a full disk makes it. */
     @Volatile
     var diskFull = false
 
-    private val processes = ConcurrentHashMap<ExecId, Pair<SandboxName, FakeProcess>>()
+    private val processes = ConcurrentHashMap<ExecId, Pair<SandboxId, FakeProcess>>()
     private val files = ConcurrentHashMap<String, ByteArray>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -75,32 +75,32 @@ class FakeRuntime : SandboxRuntime {
     }
 
     override suspend fun startSession(sandbox: Sandbox, home: HomeMount, image: String): SessionHandle {
-        sessions += sandbox.name
-        started += sandbox.name
-        startedOn[sandbox.name] = image
-        if (sandbox.network == NetworkPolicy.None) return SessionHandle("test-${sandbox.name}", null)
-        attached += sandbox.name
+        sessions += sandbox.id
+        started += sandbox.id
+        startedOn[sandbox.id] = image
+        if (sandbox.network == NetworkPolicy.None) return SessionHandle("test-${sandbox.id}", null)
+        attached += sandbox.id
 
-        return SessionHandle("test-${sandbox.name}", "172.30.0.${sessions.size + 1}")
+        return SessionHandle("test-${sandbox.id}", "172.30.0.${sessions.size + 1}")
     }
 
-    override suspend fun attachNetwork(name: SandboxName): String {
+    override suspend fun attachNetwork(name: SandboxId): String {
         attached += name
 
         return "172.30.1.${attached.size}"
     }
 
-    override suspend fun detachNetwork(name: SandboxName) {
+    override suspend fun detachNetwork(name: SandboxId) {
         attached -= name
     }
 
-    override suspend fun stopSession(name: SandboxName) {
+    override suspend fun stopSession(name: SandboxId) {
         sessions -= name
         attached -= name
         processes.values.filter { it.first == name }.forEach { it.second.kill(137) }
     }
 
-    override suspend fun exec(name: SandboxName, spec: ExecSpec): RunningProcess {
+    override suspend fun exec(name: SandboxId, spec: ExecSpec): RunningProcess {
         check(name in sessions) { "No session for $name" }
         val process = FakeProcess(spec.stdin) { limits.merge(name, LimitEvents(1, 0)) { a, b -> LimitEvents(a.oomKills + b.oomKills, a.forksRefused) } }
         processes[spec.id] = name to process
@@ -109,26 +109,26 @@ class FakeRuntime : SandboxRuntime {
         return process
     }
 
-    override suspend fun cpuMicros(name: SandboxName): Long = cpu[name] ?: 0
+    override suspend fun cpuMicros(name: SandboxId): Long = cpu[name] ?: 0
 
     /** Limit counters each session reports; a fake command `oom` bumps them the way the kernel would. */
-    val limits = ConcurrentHashMap<SandboxName, LimitEvents>()
+    val limits = ConcurrentHashMap<SandboxId, LimitEvents>()
 
-    override suspend fun limitEvents(name: SandboxName): LimitEvents = limits[name] ?: LimitEvents(0, 0)
+    override suspend fun limitEvents(name: SandboxId): LimitEvents = limits[name] ?: LimitEvents(0, 0)
 
-    override suspend fun signal(name: SandboxName, exec: ExecId, signal: Signal) {
+    override suspend fun signal(name: SandboxId, exec: ExecId, signal: Signal) {
         processes[exec]?.second?.kill(if (signal == Signal.TERM) 143 else 137)
     }
 
     /** Puts a file in a session without going through the api, for a test that needs one to exist. */
-    fun place(name: SandboxName, path: String, text: String) {
+    fun place(name: SandboxId, path: String, text: String) {
         files["$name:$path"] = text.toByteArray()
     }
 
     /** What a session holds at [path], or null. */
-    fun content(name: SandboxName, path: String): String? = files["$name:$path"]?.decodeToString()
+    fun content(name: SandboxId, path: String): String? = files["$name:$path"]?.decodeToString()
 
-    override suspend fun stat(name: SandboxName, path: String): FileEntry {
+    override suspend fun stat(name: SandboxId, path: String): FileEntry {
         val bytes = files["$name:$path"]
         val isDirectory = files.keys.any { it.startsWith("$name:${path.trimEnd('/')}/") }
         if (bytes == null && !isDirectory) throw RegolithError.NotFound("`$path` does not exist")
@@ -136,7 +136,7 @@ class FakeRuntime : SandboxRuntime {
         return entry(path, bytes)
     }
 
-    override suspend fun list(name: SandboxName, path: String, maxEntries: Int): List<FileEntry> {
+    override suspend fun list(name: SandboxId, path: String, maxEntries: Int): List<FileEntry> {
         val prefix = "$name:${path.trimEnd('/')}/"
 
         return files.entries.filter { it.key.startsWith(prefix) && '/' !in it.key.removePrefix(prefix) }
@@ -144,11 +144,11 @@ class FakeRuntime : SandboxRuntime {
             .sortedBy { it.name }
     }
 
-    override suspend fun read(name: SandboxName, path: String, sink: OutputStream, maxBytes: Long) {
+    override suspend fun read(name: SandboxId, path: String, sink: OutputStream, maxBytes: Long) {
         sink.write(files["$name:$path"] ?: throw RegolithError.NotFound("`$path` does not exist"))
     }
 
-    override suspend fun write(name: SandboxName, path: String, source: InputStream, maxBytes: Long): FileEntry {
+    override suspend fun write(name: SandboxId, path: String, source: InputStream, maxBytes: Long): FileEntry {
         val bytes = runInterruptible { source.readAllBytes() }
         if (bytes.size > maxBytes) throw RegolithError.TooLarge("Files are limited to $maxBytes bytes")
         if (diskFull) throw RegolithError.InsufficientStorage("The disk that holds `$path` is full; delete files to make room")
@@ -157,15 +157,15 @@ class FakeRuntime : SandboxRuntime {
         return entry(path, bytes)
     }
 
-    override suspend fun delete(name: SandboxName, path: String, recursive: Boolean) {
+    override suspend fun delete(name: SandboxId, path: String, recursive: Boolean) {
         files.remove("$name:$path") ?: throw RegolithError.NotFound("`$path` does not exist")
     }
 
-    override suspend fun tree(name: SandboxName, path: String, maxFiles: Int): List<TreeFile> =
+    override suspend fun tree(name: SandboxId, path: String, maxFiles: Int): List<TreeFile> =
         files.filterKeys { it.startsWith("$name:${path.trimEnd('/')}/") }
             .map { (key, bytes) -> TreeFile(key.substringAfter("$name:${path.trimEnd('/')}/"), bytes.size.toLong()) }
 
-    override suspend fun copyOut(name: SandboxName, path: String, destination: Path) {
+    override suspend fun copyOut(name: SandboxId, path: String, destination: Path) {
         for (file in tree(name, path, Int.MAX_VALUE)) {
             val target = destination.resolve(file.path)
             Files.createDirectories(target.parent)
@@ -344,29 +344,29 @@ class FakePublisher(private val limits: SiteLimits = SiteLimits(100, 1024 * 1024
 
 class FakeHomes(var freeBytes: Long = Long.MAX_VALUE) : HomeStore {
     /** Homes that exist on "disk", with their size; `open` adds one, `destroy` removes it. */
-    val disks = ConcurrentHashMap<SandboxName, Int>()
+    val disks = ConcurrentHashMap<SandboxId, Int>()
 
     override suspend fun recover() = Unit
 
-    override suspend fun list(): List<SandboxName> = disks.keys.toList()
+    override suspend fun list(): List<SandboxId> = disks.keys.toList()
 
-    override suspend fun sizeMb(name: SandboxName): Int? = disks[name]
+    override suspend fun sizeMb(name: SandboxId): Int? = disks[name]
 
-    val open: MutableSet<SandboxName> = ConcurrentHashMap.newKeySet()
-    val destroyed = CopyOnWriteArrayList<SandboxName>()
+    val open: MutableSet<SandboxId> = ConcurrentHashMap.newKeySet()
+    val destroyed = CopyOnWriteArrayList<SandboxId>()
 
-    override suspend fun open(name: SandboxName, sizeMb: Int): HomeMount {
+    override suspend fun open(name: SandboxId, sizeMb: Int): HomeMount {
         open += name
         disks.putIfAbsent(name, sizeMb)
 
         return HomeMount("home-$name")
     }
 
-    override suspend fun close(name: SandboxName) {
+    override suspend fun close(name: SandboxId) {
         open -= name
     }
 
-    override suspend fun destroy(name: SandboxName) {
+    override suspend fun destroy(name: SandboxId) {
         destroyed += name
         disks.remove(name)
     }
@@ -375,7 +375,7 @@ class FakeHomes(var freeBytes: Long = Long.MAX_VALUE) : HomeStore {
 }
 
 class FakeEnforcer : NetworkEnforcer {
-    val applied = ConcurrentHashMap<SandboxName, NetworkPolicy>()
+    val applied = ConcurrentHashMap<SandboxId, NetworkPolicy>()
 
     @Volatile
     var holds = true
@@ -384,12 +384,12 @@ class FakeEnforcer : NetworkEnforcer {
 
     override suspend fun verifyAndRepair(): Boolean = holds
 
-    override suspend fun apply(name: SandboxName, address: String, policy: NetworkPolicy) {
+    override suspend fun apply(name: SandboxId, address: String, policy: NetworkPolicy) {
         check(policy != NetworkPolicy.None) { "none is never applied to an address" }
         applied[name] = policy
     }
 
-    override suspend fun release(name: SandboxName) {
+    override suspend fun release(name: SandboxId) {
         applied.remove(name)
     }
 }

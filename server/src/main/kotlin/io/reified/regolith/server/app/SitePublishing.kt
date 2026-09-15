@@ -3,7 +3,8 @@ package io.reified.regolith.server.app
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.reified.regolith.server.config.ServerConfig
 import io.reified.regolith.server.domain.RegolithError
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.SiteLabel
 import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.ports.PublishedSite
 import io.reified.regolith.server.ports.SandboxRuntime
@@ -21,6 +22,10 @@ import kotlin.io.path.isSymbolicLink
 /**
  * Publishing a directory of a sandbox to the public pages role.
  *
+ * A sandbox has one site, and the server gives it the label it is served at — a random one, so the
+ * address carries nothing of the sandbox or of whoever the caller keeps it for. The label is recorded
+ * with the sandbox, so publishing again keeps the address and nobody has to remember it.
+ *
  * The sandbox never learns that any of this happened: it holds no token, opens no connection, and is
  * read from the outside like any other file operation. What reaches the internet is a snapshot taken
  * at one moment — not the home itself, which keeps changing and disappears when the session stops.
@@ -36,40 +41,49 @@ class SitePublishing(
     /** Whether this server publishes at all, which `GET /v1/info` reports so a client need not try. */
     val available: Boolean get() = publisher != null
 
-    suspend fun publish(name: SandboxName, path: String, site: String?): PublishedSite {
+    suspend fun publish(id: SandboxId, path: String): PublishedSite {
         val pages = require()
-        val target = siteName(site ?: name.value)
         val limits = pages.limits()
         val directory = resolvePath(path)
 
-        val sandbox = sandboxes.markUsed(name)
+        val sandbox = sandboxes.markUsed(id)
+        val label = sandbox.site ?: sandboxes.unusedSiteLabel()
         val snapshot = snapshotDir()
 
         try {
             sessions.withLease(sandbox) {
-                val files = runtime.tree(name, directory, limits.maxFiles + 1)
+                val files = runtime.tree(id, directory, limits.maxFiles + 1)
                 check(files, limits, directory)
-                runtime.copyOut(name, directory, snapshot)
+                runtime.copyOut(id, directory, snapshot)
             }
             verify(snapshot, limits)
-            val published = pages.publish(target.value, snapshot)
-            log.info { "Site published: sandbox=[$name] site=[$target] release=[${published.release}] files=[${published.files}]" }
+            val published = pages.publish(label.value, snapshot)
+            // recorded only once the release is live, so a failed first publish leaves no label behind.
+            if (sandbox.site != label) sandboxes.site(id, label)
+            log.info { "Site published: sandbox=[$id] site=[$label] release=[${published.release}] files=[${published.files}]" }
             return published
         } finally {
             withContext(Dispatchers.IO) { snapshot.toFile().deleteRecursively() }
         }
     }
 
-    suspend fun published(name: SandboxName, site: String?): PublishedSite {
-        val target = siteName(site ?: name.value)
+    suspend fun published(id: SandboxId): PublishedSite {
+        val pages = require()
+        val label = label(id)
 
-        return require().published(target.value) ?: throw RegolithError.NotFound("Nothing is published as `$target`")
+        return pages.published(label.value) ?: throw RegolithError.NotFound("Nothing is published for sandbox `$id`")
     }
 
-    suspend fun unpublish(name: SandboxName, site: String?) {
-        require().unpublish(siteName(site ?: name.value).value)
-        log.info { "Site taken down: sandbox=[$name]" }
+    suspend fun unpublish(id: SandboxId) {
+        val pages = require()
+        val label = label(id)
+        pages.unpublish(label.value)
+        sandboxes.site(id, null)
+        log.info { "Site taken down: sandbox=[$id] site=[$label]" }
     }
+
+    private fun label(id: SandboxId): SiteLabel =
+        sandboxes.require(id).site ?: throw RegolithError.NotFound("Nothing is published for sandbox `$id`")
 
     /** What the pages role would refuse, refused here: before a byte leaves the sandbox. */
     private fun check(files: List<TreeFile>, limits: SiteLimits, directory: String) {
@@ -109,8 +123,6 @@ class SitePublishing(
 
     private fun require(): SitePublisher =
         publisher ?: throw RegolithError.NotImplemented("This server publishes nothing: no pages role is configured")
-
-    private fun siteName(raw: String): SandboxName = SandboxName.parse(raw)
 
     private suspend fun snapshotDir(): Path = withContext(Dispatchers.IO) {
         Files.createDirectories(config.stateDir.resolve("publish").resolve(UUID.randomUUID().toString()))

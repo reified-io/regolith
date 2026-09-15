@@ -2,7 +2,7 @@ package io.reified.regolith.server.docker
 
 import io.reified.regolith.server.domain.Cidr
 import io.reified.regolith.server.domain.NetworkPolicy
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.ports.SandboxNetwork
 import java.security.MessageDigest
 
@@ -92,7 +92,7 @@ class FirewallRules(
         appendLine("-A $chain $spec")
     }
 
-    /** One chain per address rather than per name: the dispatch rule and its chain always change together. */
+    /** One chain per address rather than per sandbox: the dispatch rule and its chain always change together. */
     private fun sandboxChain(address: String): String = "${prefix}_S${digest(address).take(12).uppercase()}"
 
     companion object {
@@ -108,5 +108,5 @@ class FirewallRules(
 }
 
 /** Keyed by sandbox so a release finds its address; rendered by address. */
-internal fun Map<SandboxName, Pair<String, NetworkPolicy>>.byAddress(): Map<String, NetworkPolicy> =
+internal fun Map<SandboxId, Pair<String, NetworkPolicy>>.byAddress(): Map<String, NetworkPolicy> =
     values.associate { (address, policy) -> address to policy }

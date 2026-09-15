@@ -4,7 +4,7 @@ import io.reified.regolith.server.domain.Exec
 import io.reified.regolith.server.domain.ExecId
 import io.reified.regolith.server.domain.ImagePolicy
 import io.reified.regolith.server.domain.Sandbox
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.ports.StateStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,8 +29,8 @@ import kotlin.io.path.readText
  *
  * ```
  * lock, namespace
- * sandboxes/<name>/sandbox.json
- * sandboxes/<name>/execs/<id>.json, <id>.log
+ * sandboxes/<sandbox>/sandbox.json
+ * sandboxes/<sandbox>/execs/<id>.json, <id>.log
  * ```
  *
  * Each file is the domain model wrapped with [SCHEMA]. There are no migrations: a change to a
@@ -51,17 +51,17 @@ class FileStateStore private constructor(private val root: Path, private val loc
     }
 
     override suspend fun save(sandbox: Sandbox) = io {
-        writeRecord(sandboxDir(sandbox.name).resolve(SANDBOX_FILE), sandbox, Sandbox.serializer())
+        writeRecord(sandboxDir(sandbox.id).resolve(SANDBOX_FILE), sandbox, Sandbox.serializer())
     }
 
-    override suspend fun delete(name: SandboxName) = io {
-        val dir = sandboxDir(name)
+    override suspend fun delete(sandbox: SandboxId) = io {
+        val dir = sandboxDir(sandbox)
         if (dir.exists()) dir.toFile().deleteRecursively()
         Unit
     }
 
-    override suspend fun execs(name: SandboxName): List<Exec> = io {
-        val dir = execDir(name)
+    override suspend fun execs(sandbox: SandboxId): List<Exec> = io {
+        val dir = execDir(sandbox)
         if (!dir.exists()) return@io emptyList()
         dir.listDirectoryEntries("*.json").map { readRecord(it, Exec.serializer()) }
     }
@@ -70,22 +70,22 @@ class FileStateStore private constructor(private val root: Path, private val loc
         writeRecord(execDir(exec.sandbox).resolve("${exec.id}.json"), exec, Exec.serializer())
     }
 
-    override suspend fun deleteExec(name: SandboxName, id: ExecId) = io {
-        Files.deleteIfExists(execDir(name).resolve("$id.json"))
-        Files.deleteIfExists(outputFile(name, id))
+    override suspend fun deleteExec(sandbox: SandboxId, id: ExecId) = io {
+        Files.deleteIfExists(execDir(sandbox).resolve("$id.json"))
+        Files.deleteIfExists(outputFile(sandbox, id))
         Unit
     }
 
-    override fun outputFile(name: SandboxName, id: ExecId): Path = execDir(name).resolve("$id.log")
+    override fun outputFile(sandbox: SandboxId, id: ExecId): Path = execDir(sandbox).resolve("$id.log")
 
     override fun close() {
         lock.release()
         lock.channel().close()
     }
 
-    private fun sandboxDir(name: SandboxName): Path = root.resolve("sandboxes").resolve(name.value)
+    private fun sandboxDir(sandbox: SandboxId): Path = root.resolve("sandboxes").resolve(sandbox.value)
 
-    private fun execDir(name: SandboxName): Path = sandboxDir(name).resolve("execs")
+    private fun execDir(sandbox: SandboxId): Path = sandboxDir(sandbox).resolve("execs")
 
     private fun <T> writeRecord(file: Path, value: T, serializer: KSerializer<T>) {
         Files.createDirectories(file.parent)
@@ -111,7 +111,7 @@ class FileStateStore private constructor(private val root: Path, private val loc
             return dir.listDirectoryEntries().filter { it.resolve(SANDBOX_FILE).exists() }.map { it.name }.sorted()
         }
 
-        /** How every recorded sandbox picks its image, by name, read without taking the lock. */
+        /** How every recorded sandbox picks its image, by sandbox, read without taking the lock. */
         fun recordedImagePolicies(root: Path): Map<String, ImagePolicy> {
             val dir = root.resolve("sandboxes")
             if (!dir.exists()) return emptyMap()

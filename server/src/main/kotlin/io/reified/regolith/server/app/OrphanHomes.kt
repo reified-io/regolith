@@ -1,18 +1,18 @@
 package io.reified.regolith.server.app
 
 import io.reified.regolith.server.domain.Sandbox
-import io.reified.regolith.server.domain.SandboxName
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.ports.HomeStore
 
 /**
  * Homes no sandbox record claims. They appear when the state directory is lost or points somewhere
  * else, and they are dangerous twice over: retention walks records, so they are never deleted, and
- * opening a home reuses a disk of the same name, so a new sandbox that happens to take an old name
+ * opening a home reuses a disk of the same id, so a new sandbox that happens to take an old id
  * would get the previous owner's files. The server therefore refuses to start while any exist, and
  * only an explicit, one-shot command resolves them.
  */
 class OrphanHomes(private val sandboxes: Sandboxes, private val homes: HomeStore) {
-    suspend fun find(): List<SandboxName> = homes.list().filter { sandboxes.find(it) == null }.sortedBy { it.value }
+    suspend fun find(): List<SandboxId> = homes.list().filter { sandboxes.find(it) == null }.sortedBy { it.value }
 
     /** Throws when any orphaned home exists, naming them and the commands that resolve them. */
     suspend fun requireNone() {
@@ -21,13 +21,13 @@ class OrphanHomes(private val sandboxes: Sandboxes, private val homes: HomeStore
     }
 
     /** Recreates a record for every orphaned home, keeping its files and its size. */
-    suspend fun adopt(): List<Sandbox> = find().map { name ->
-        val size = checkNotNull(homes.sizeMb(name)) { "The home of `$name` has no disk image to adopt" }
-        sandboxes.adopt(name, size)
+    suspend fun adopt(): List<Sandbox> = find().map { id ->
+        val size = checkNotNull(homes.sizeMb(id)) { "The home of `$id` has no disk image to adopt" }
+        sandboxes.adopt(id, size)
     }
 
     /** Deletes every orphaned home with its files. */
-    suspend fun delete(): List<SandboxName> = find().onEach { homes.destroy(it) }
+    suspend fun delete(): List<SandboxId> = find().onEach { homes.destroy(it) }
 
     companion object {
         fun message(orphans: List<String>): String =

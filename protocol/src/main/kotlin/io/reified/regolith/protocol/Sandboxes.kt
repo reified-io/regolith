@@ -32,11 +32,16 @@ public enum class ImageMode {
 public data class ImagePolicy(val mode: ImageMode, val image: String? = null)
 
 /**
- * Body of `PUT /v1/sandboxes/{name}`. Every field is optional; an omitted one takes the server
- * default advertised by `GET /v1/info`. An existing sandbox is returned unchanged.
+ * Body of `POST /v1/sandboxes`. Every field is optional; an omitted one takes the server default
+ * advertised by `GET /v1/info`.
+ *
+ * [alias] is the caller's own name for the sandbox — the identity it stands for, such as a user or a
+ * project — and asking again with the same one returns that sandbox unchanged instead of making a
+ * second. Without an alias, every call creates a sandbox the caller has to remember the id of.
  */
 @Serializable
 public data class CreateSandboxRequest(
+    val alias: String? = null,
     val imagePolicy: ImagePolicy? = null,
     val resources: ResourcesSpec? = null,
     val network: NetworkPolicy? = null,
@@ -46,11 +51,13 @@ public data class CreateSandboxRequest(
 )
 
 /**
- * Body of `PATCH /v1/sandboxes/{name}`. Only the fields that are present change. A network policy
- * applies to a running session immediately; everything else applies from the next session.
+ * Body of `PATCH /v1/sandboxes/{id}`. Only the fields that are present change. A network policy
+ * applies to a running session immediately; everything else applies from the next session. An
+ * [alias] no other sandbox holds moves it to this one.
  */
 @Serializable
 public data class UpdateSandboxRequest(
+    val alias: String? = null,
     val imagePolicy: ImagePolicy? = null,
     val network: NetworkPolicy? = null,
     val lifecycle: LifecycleSpec? = null,
@@ -167,14 +174,16 @@ public data class SessionEndInfo(
 )
 
 /**
- * A sandbox as the server reports it. [lastSessionEnd] is known only for sessions this server ended.
+ * A sandbox as the server reports it. [id] is what addresses it; [alias] is the caller's own name for
+ * it, when it gave one. [lastSessionEnd] is known only for sessions this server ended.
  *
  * [image] is the exact reference the sandbox's next session runs, and is null only when the server
  * no longer offers the image [imagePolicy] tracks, which no session can start on.
  */
 @Serializable
 public data class SandboxInfo(
-    val name: String,
+    val id: String,
+    val alias: String? = null,
     val image: String?,
     val imagePolicy: ImagePolicy,
     val resources: Resources,
@@ -198,22 +207,23 @@ public data class SandboxPage(
 )
 
 /**
- * Body of `POST /v1/sandboxes/{name}/publish`. [path] is the directory inside the sandbox to publish,
- * relative to the home unless it is absolute; [site] names the site, defaulting to the sandbox's name.
+ * Body of `POST /v1/sandboxes/{id}/site`. [path] is the directory inside the sandbox to publish,
+ * relative to the home unless it is absolute.
  */
 @Serializable
 public data class PublishRequest(
     val path: String,
-    val site: String? = null,
 )
 
 /**
  * A published site. [release] identifies the exact snapshot behind [url]; publishing again replaces it
  * atomically, and nothing of the sandbox except the files of that snapshot is reachable at it.
+ *
+ * [url] is the server's to choose and the only address the site has: it is built from a label made
+ * for this site alone, so it says nothing about the sandbox or the caller behind it.
  */
 @Serializable
 public data class PublishedSite(
-    val site: String,
     val url: String,
     val release: String,
     val files: Int,

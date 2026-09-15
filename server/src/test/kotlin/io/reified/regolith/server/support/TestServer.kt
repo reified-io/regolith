@@ -11,7 +11,11 @@ import io.reified.regolith.server.app.Sandboxes
 import io.reified.regolith.server.app.Services
 import io.reified.regolith.server.app.Sessions
 import io.reified.regolith.server.app.Sweeper
+import io.reified.regolith.server.app.SandboxRequest
 import io.reified.regolith.server.config.ServerConfig
+import io.reified.regolith.server.domain.Alias
+import io.reified.regolith.server.domain.Sandbox
+import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.http.regolithApi
 import io.reified.regolith.server.store.FileStateStore
 import kotlinx.coroutines.CoroutineScope
@@ -42,12 +46,19 @@ class TestServer(
     val store = FileStateStore.open(stateDir, config.namespace)
     val sessions = Sessions(runtime, homes, enforcer, health, clock, config.maxSessions, config.images)
     val execs = Execs(store, sessions, runtime, config, clock, scope)
-    val sandboxes = Sandboxes(store, sessions, execs, homes, config, clock)
+    val publisher = FakePublisher()
+    val sandboxes = Sandboxes(store, sessions, execs, homes, publisher, config, clock)
     val files = SandboxFiles(sandboxes, sessions, runtime, health, config)
     val sweeper = Sweeper(sandboxes, sessions, clock)
-    val publisher = FakePublisher()
     val sites = SitePublishing(sandboxes, sessions, runtime, config, publisher)
     val services = Services(config, "test", health, sandboxes, sessions, execs, files, sites)
+
+    /** A sandbox filed under [alias], as a caller would make one. */
+    suspend fun sandbox(alias: String, request: SandboxRequest = SandboxRequest()): Sandbox =
+        sandboxes.create(Alias.parse(alias), request).first
+
+    /** The label the pages role serves this sandbox's site at, once it has published one. */
+    fun siteOf(id: SandboxId): String = checkNotNull(sandboxes.require(id).site) { "Sandbox `$id` has published nothing" }.value
 
     override fun close() {
         scope.cancel()

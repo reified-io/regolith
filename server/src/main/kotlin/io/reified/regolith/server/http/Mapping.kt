@@ -62,7 +62,8 @@ import io.reified.regolith.protocol.UpdateSandboxRequest as WireUpdateSandbox
  */
 
 internal fun Sandbox.toInfo(session: Sessions.Session?, lastEnd: SessionEnd?, images: ImageCatalog): SandboxInfo = SandboxInfo(
-    name = name.value,
+    id = id.value,
+    alias = alias?.value,
     image = images.resolveOrNull(imagePolicy),
     imagePolicy = imagePolicy.toWire(),
     resources = resources.toWire(),
@@ -243,7 +244,6 @@ internal fun ServerConfig.Limits.toWire(images: List<String>) = ServerLimits(
 
 /** A published site as the API reports it. */
 internal fun PublishedSite.toWire(): WirePublishedSite = WirePublishedSite(
-    site = site,
     url = url,
     release = release,
     files = files,
