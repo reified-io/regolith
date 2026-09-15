@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/reified-io/regolith/actions/workflows/build.yml"><img src="https://github.com/reified-io/regolith/actions/workflows/build.yml/badge.svg" alt="build"></a>
+  <a href="https://central.sonatype.com/search?namespace=io.reified.regolith"><img src="https://img.shields.io/maven-central/v/io.reified.regolith/sdk?label=maven%20central" alt="Maven Central"></a>
   <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Freified-io%2Fregolith%2Fmain%2Fgradle%2Flibs.versions.toml&query=%24.versions.kotlin&logo=kotlin&label=kotlin&color=blue" alt="Kotlin"></a>
   <a href="https://github.com/orgs/reified-io/packages/container/package/regolith"><img src="https://img.shields.io/badge/ghcr-regolith-blue?logo=docker" alt="GHCR"></a>
   <img src="https://img.shields.io/badge/status-pre--release-orange" alt="Status: pre-release">
@@ -62,6 +63,12 @@ The API now answers on `127.0.0.1:8080`.
 From Kotlin:
 
 ```kotlin
+dependencies {
+    implementation("io.reified.regolith:sdk:0.2.1")
+}
+```
+
+```kotlin
 RegolithClient("http://127.0.0.1:8080", token).use { client ->
     val sandbox = client.sandbox("field-notes")
     sandbox.getOrCreate()
@@ -76,8 +83,8 @@ RegolithClient("http://127.0.0.1:8080", token).use { client ->
 }
 ```
 
-With [Koog](https://github.com/JetBrains/koog), an agent's shell tool runs inside a sandbox instead
-of on the machine running the agent:
+With [Koog](https://github.com/JetBrains/koog) and `io.reified.regolith:koog`, an agent's shell tool
+runs inside a sandbox instead of on the machine running the agent:
 
 ```kotlin
 val executor = RegolithShellCommandExecutor(client.sandbox("agent-7"))
