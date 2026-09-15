@@ -109,7 +109,8 @@ curl -s -X POST -H "Authorization: Bearer $REGOLITH_TOKEN" -H 'Content-Type: app
   belongs to. Publishing again keeps it, so hand out the link as often as you like.
 - The URL is **public to anyone with the link**. Say so before publishing anything personal.
 - `DELETE /v1/sandboxes/{id}/site` takes it down, and the next publish gets a new address;
-  `501 not_implemented` means this server publishes nothing.
+  `501 not_implemented` means this server publishes nothing. While a site is up, retention never
+  deletes its sandbox.
 
 ## Network
 

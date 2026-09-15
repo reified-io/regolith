@@ -14,6 +14,10 @@ import kotlin.time.Clock
  * Idle means no lease — no running exec and no file transfer. A background server started by a
  * finished command holds no lease, so it ends with the idle session; that is the price of not
  * letting one command keep a slot forever.
+ *
+ * Retention never takes a sandbox whose site is up: the address was handed to people who never use
+ * the sandbox, so its being unused says nothing about the site. Only a takedown or an explicit
+ * delete ends a site, and the home stays with it, since it is what the site would be built from again.
  */
 class Sweeper(
     private val sandboxes: Sandboxes,
@@ -37,7 +41,8 @@ class Sweeper(
         }
 
         for (sandbox in sandboxes.all()) {
-            if (sessions.get(sandbox.id) == null && now >= sandbox.deleteAfter) {
+            val deleteAfter = sandbox.deleteAfter ?: continue
+            if (sessions.get(sandbox.id) == null && now >= deleteAfter) {
                 log.info { "Sandbox past retention: sandbox=[${sandbox.id}]" }
                 sandboxes.delete(sandbox.id)
             }

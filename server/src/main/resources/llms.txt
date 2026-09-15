@@ -65,7 +65,7 @@ answer `not_implemented`.
 A site is a snapshot, not the live home: build first, then publish. Static files only - no server side
 runs there. A file or directory whose name starts with a dot (`.git`, `.env`, `.well-known`) fails the
 whole publish, and symlinks are skipped. One sandbox has one site, and deleting the sandbox takes it
-down.
+down; while a site is up, retention never deletes its sandbox.
 
 ## Files
 

@@ -216,7 +216,7 @@ The body may be empty; whatever it leaves out takes the default from `GET /v1/in
 - `lifecycle.retainDays: 0` makes the sandbox ephemeral: the lifecycle sweep deletes it once no
   session runs and `idleStopSeconds` have passed since it was last used — right after an idle stop,
   and up to that window after an explicit `stop`, so one created just before its first command is
-  not swept in between.
+  not swept in between. A sandbox with a published site is never swept, whatever its retention.
 - `env` applies to every command. Everything in the sandbox can read it, so it is no place for
   secrets. The server adds `REGOLITH_MEMORY_MB`, `REGOLITH_CPUS` and `REGOLITH_HOME_MB`, since `free`
   and `nproc` inside a container report the whole machine rather than the sandbox's own share; an
@@ -255,7 +255,9 @@ The response is a `SandboxInfo`:
 - `image` is the exact reference the sandbox's next session runs, `session.image` the one the
   running session started on, and `imagePolicy` the rule that picked them. The first two differ, as
   above, when the server has been offered a newer image since that session started.
-- `deleteAfter` is when retention deletes the sandbox, unless it is used before then.
+- `deleteAfter` is when retention deletes the sandbox, unless it is used before then. It is absent
+  while the sandbox has a [site](#publishing) up: the address was handed to people who never touch
+  the sandbox, so retention leaves both alone until the site is taken down.
 - `lastSessionEnd` says how the previous session ended — see below.
 
 ### Which image a sandbox runs
@@ -601,6 +603,8 @@ What this sandbox has published, and taking it down. Both answer `404 not_found`
 `DELETE` answers `204` and leaves the sandbox and its files untouched; what was served is gone, and
 publishing again gives the sandbox a new address.
 
+- While the site is up, retention leaves the sandbox alone, home included: only a takedown or
+  deleting the sandbox ends a site.
 ## Not in v1
 
 Left out on purpose, each with room in the protocol: domain rules and credential brokering in

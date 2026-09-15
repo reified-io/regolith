@@ -180,6 +180,29 @@ class LifecycleTest {
         }
     }
 
+    // the link was handed to people who never touch the sandbox: its being unused says nothing about the site
+    @Test
+    fun `retention leaves a sandbox alone while its site is up, and takes it once the site is down`() = runBlocking {
+        TestServer().use { server ->
+            val sandbox = server.sandbox("author", SandboxRequest(lifecycle = LifecycleRequest(retain = 3.days)))
+            val id = sandbox.id
+            server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>kept</h1>")
+            server.sites.publish(id, "dist")
+            val site = server.siteOf(id)
+            server.sandboxes.stop(id)
+            assertNull(server.sandboxes.require(id).deleteAfter, "a sandbox with a site up has no deletion date")
+
+            server.clock.advance(30.days)
+            server.sweeper.tick()
+            assertTrue(server.sandboxes.find(id) != null, "retention took a sandbox whose site was up")
+            assertTrue(server.publisher.sites[site] != null)
+
+            server.sites.unpublish(id)
+            server.sweeper.tick()
+            assertNull(server.sandboxes.find(id), "retention counts from the last use once the site is down")
+        }
+    }
+
     @Test
     fun `a session burning cpu with nothing of its own running is stopped and says why`() = runBlocking {
         TestServer().use { server ->

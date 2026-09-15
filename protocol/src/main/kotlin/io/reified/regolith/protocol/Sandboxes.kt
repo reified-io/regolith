@@ -178,7 +178,9 @@ public data class SessionEndInfo(
  * it, when it gave one. [lastSessionEnd] is known only for sessions this server ended.
  *
  * [image] is the exact reference the sandbox's next session runs, and is null only when the server
- * no longer offers the image [imagePolicy] tracks, which no session can start on.
+ * no longer offers the image [imagePolicy] tracks, which no session can start on. [deleteAfter] is
+ * when retention deletes the sandbox unless it is used first, and is absent while it has a site up:
+ * retention never takes a sandbox whose address people hold.
  */
 @Serializable
 public data class SandboxInfo(
@@ -196,7 +198,7 @@ public data class SandboxInfo(
     val lastSessionEnd: SessionEndInfo? = null,
     val createdAt: Instant,
     val lastUsedAt: Instant,
-    val deleteAfter: Instant,
+    val deleteAfter: Instant? = null,
 )
 
 /** One page of `GET /v1/sandboxes`. */
