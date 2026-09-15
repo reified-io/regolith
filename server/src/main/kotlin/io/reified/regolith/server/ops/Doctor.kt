@@ -1,6 +1,7 @@
 package io.reified.regolith.server.ops
 
 import io.reified.regolith.server.app.OrphanHomes
+import io.reified.regolith.server.app.OrphanSites
 import io.reified.regolith.server.config.ServerConfig
 import io.reified.regolith.server.docker.DockerCli
 import io.reified.regolith.server.docker.FirewallRules
@@ -67,10 +68,13 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
         checks += attempt("free-space") { freeSpace() }
         checks += attempt("state") { state() }
         if (helpers != null) checks += attempt("orphan-homes") { orphanHomes(helpers) }
-        checks += pagesCheck(config.pagesUrl) { PagesPublisher(it, checkNotNull(config.pagesToken)) }
+        checks += pagesCheck(config.pagesUrl, claimedSites()) { PagesPublisher(it, checkNotNull(config.pagesToken)) }
 
         return checks
     }
+
+    private suspend fun claimedSites(): Set<String> =
+        withContext(Dispatchers.IO) { FileStateStore.recorded(config.stateDir) }.mapNotNull { it.site?.value }.toSet()
 
     private suspend fun cgroups(): Check {
         // read as json: a go template names struct fields, which differ from the json keys docker documents.
@@ -90,7 +94,7 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
      * resolve to — a sandbox pinned to an image that has since left the allowlist still runs it.
      */
     private suspend fun sandboxImages(): Check {
-        val recorded = withContext(Dispatchers.IO) { FileStateStore.recordedImagePolicies(config.stateDir) }
+        val recorded = withContext(Dispatchers.IO) { FileStateStore.recorded(config.stateDir) }.associate { it.id.value to it.imagePolicy }
         val stranded = recorded.filterValues { config.images.resolveOrNull(it) == null }.keys
         val references = (config.images.allowed + recorded.values.mapNotNull { config.images.resolveOrNull(it) }).distinct()
         val missing = references.filterNot { docker.run(listOf("image", "inspect", "--format", "{{.Id}}", it)).ok }
@@ -203,15 +207,18 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
 
     companion object {
         /**
-         * Whether the pages role this server publishes to answers and accepts its token. A warning, not a
-         * failure: the server starts without it, and only publishing is refused.
+         * Whether the pages role this server publishes to answers, accepts its token, and serves only sites
+         * a record in [claimed] holds. A warning, not a failure: the server starts either way, and only
+         * publishing is refused when the role is unreachable.
          */
-        suspend fun pagesCheck(url: String?, connect: (String) -> SitePublisher): Check {
+        suspend fun pagesCheck(url: String?, claimed: Set<String>, connect: (String) -> SitePublisher): Check {
             if (url == null) return ok("pages", "No pages role configured; publish answers not_implemented")
             val publisher = connect(url)
 
             return try {
                 val limits = publisher.limits()
+                val orphans = OrphanSites(publisher).find(claimed)
+                if (orphans.isNotEmpty()) return warn("pages", OrphanSites.message(orphans))
                 ok("pages", "$url answers: up to ${limits.maxFiles} files and ${limits.maxSiteBytes / MIB} MB a site")
             } catch (e: CancellationException) {
                 throw e

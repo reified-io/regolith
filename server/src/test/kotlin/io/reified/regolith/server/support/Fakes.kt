@@ -396,6 +396,14 @@ class FakePublisher(private val limits: SiteLimits = SiteLimits(100, 1024 * 1024
 
     override suspend fun published(site: String): PublishedSite? = sites[site]
 
+    override suspend fun sites(): List<PublishedSite> = sites.values.sortedBy { it.site }
+
+    /** A site the pages role serves that this server never recorded, as a lost state directory leaves one. */
+    fun stray(site: String) {
+        sites[site] = PublishedSite(site, "https://$site.example.test", "r0", 1, 2, Instant.parse("2026-09-01T00:00:00Z"), hasIndex = true)
+        published[site] = mapOf("index.html" to "hi")
+    }
+
     override suspend fun unpublish(site: String) {
         sites.remove(site)
         published.remove(site)

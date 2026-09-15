@@ -8,6 +8,7 @@ import io.reified.regolith.server.app.Execs
 import io.reified.regolith.server.app.Health
 import io.reified.regolith.server.app.NetworkGuard
 import io.reified.regolith.server.app.OrphanHomes
+import io.reified.regolith.server.app.OrphanSites
 import io.reified.regolith.server.app.SandboxFiles
 import io.reified.regolith.server.app.SitePublishing
 import io.reified.regolith.server.app.Sandboxes
@@ -50,9 +51,9 @@ private const val USAGE = """usage: server [serve | pages | doctor | orphans [ad
   serve            run the control plane API (the default)
   pages            run the public role: serve published sites and take in releases
   doctor           check this host against every startup precondition, changing nothing
-  orphans          list homes no sandbox record claims, beside a running server or not
-  orphans adopt    give each of them a record again, keeping its files
-  orphans delete   delete them and their files
+  orphans          list homes and sites no sandbox record claims, beside a running server or not
+  orphans adopt    give each orphaned home a record again, keeping its files
+  orphans delete   delete orphaned homes with their files, and take orphaned sites down
 
 Adopting and deleting take the state lock, so they need the server stopped; the rest do not.
 
@@ -176,22 +177,27 @@ private fun orphans(config: ServerConfig, action: String?): Int =
     if (action == null) listOrphans(config) else resolveOrphans(config, action)
 
 /**
- * Lists orphaned homes the way `doctor` reads them — records off disk, no state lock — so an operator
- * can look while a server is serving rather than stopping one to find out whether it needs to.
+ * Lists orphaned homes and sites the way `doctor` reads them — records off disk, no state lock — so an
+ * operator can look while a server is serving rather than stopping one to find out whether it needs to.
  */
 private fun listOrphans(config: ServerConfig): Int = try {
     runBlocking {
         val docker = DockerCli(config.docker)
         val helpers = Helpers(Helpers.resolveImage(docker, config.helperImage), config.namespace)
         val homes = HomeDisks(docker, helpers, config.namespace, config.stateDir, reserveMb = config.minFreeMb)
-        val recorded = FileStateStore.recordedIds(config.stateDir).toSet()
-        val found = homes.list().filterNot { it.value in recorded }.sortedBy { it.value }
+        val recorded = FileStateStore.recorded(config.stateDir)
+        val ids = recorded.map { it.id.value }.toSet()
+        val found = homes.list().filterNot { it.value in ids }.sortedBy { it.value }
         val unrecognized = homes.unrecognized().sorted()
+        val sites = config.pagesUrl?.let { url ->
+            PagesPublisher(url, checkNotNull(config.pagesToken)).use { OrphanSites(it).find(recorded.mapNotNull { it.site?.value }.toSet()) }
+        }.orEmpty()
 
-        if (found.isEmpty() && unrecognized.isEmpty()) println("no orphaned homes")
+        if (found.isEmpty() && unrecognized.isEmpty() && sites.isEmpty()) println("no orphaned homes or sites")
         found.forEach { println("orphan   $it  ${homes.sizeMb(it) ?: "?"} MB") }
         // nothing here can adopt or delete these: only an operator knows what they held.
         unrecognized.forEach { println("unknown  $it  (no sandbox id; remove with docker volume rm)") }
+        sites.forEach { println("site     $it  (served by the pages role, claimed by no sandbox)") }
     }
     0
 } catch (e: Exception) {
@@ -199,7 +205,7 @@ private fun listOrphans(config: ServerConfig): Int = try {
     1
 }
 
-/** Adopts or deletes orphaned homes, which writes records: it takes the lock the server holds. */
+/** Adopts or deletes orphaned homes and takes orphaned sites down, which writes records: it takes the lock the server holds. */
 private fun resolveOrphans(config: ServerConfig, action: String): Int {
     val app = open(config)
 
@@ -208,7 +214,10 @@ private fun resolveOrphans(config: ServerConfig, action: String): Int {
             app.sandboxes.load()
             when (action) {
                 "adopt" -> app.orphans.adopt().forEach { println("adopted  ${it.id}  ${it.resources.homeMb} MB") }
-                else -> app.orphans.delete().forEach { println("deleted  $it") }
+                else -> {
+                    app.orphans.delete().forEach { println("deleted  $it") }
+                    app.orphanSites.delete(app.sandboxes.all().mapNotNull { it.site?.value }.toSet()).forEach { println("taken down  $it") }
+                }
             }
         }
         0

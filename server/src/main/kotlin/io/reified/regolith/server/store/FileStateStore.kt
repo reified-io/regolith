@@ -2,7 +2,6 @@ package io.reified.regolith.server.store
 
 import io.reified.regolith.server.domain.Exec
 import io.reified.regolith.server.domain.ExecId
-import io.reified.regolith.server.domain.ImagePolicy
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.ports.StateStore
@@ -111,14 +110,14 @@ class FileStateStore private constructor(private val root: Path, private val loc
             return dir.listDirectoryEntries().filter { it.resolve(SANDBOX_FILE).exists() }.map { it.name }.sorted()
         }
 
-        /** How every recorded sandbox picks its image, by sandbox, read without taking the lock. */
-        fun recordedImagePolicies(root: Path): Map<String, ImagePolicy> {
+        /** Every sandbox recorded under [root], read without taking the lock, for the read-only commands. */
+        fun recorded(root: Path): List<Sandbox> {
             val dir = root.resolve("sandboxes")
-            if (!dir.exists()) return emptyMap()
+            if (!dir.exists()) return emptyList()
 
             return dir.listDirectoryEntries()
                 .filter { it.resolve(SANDBOX_FILE).exists() }
-                .associate { it.name to readRecord(it.resolve(SANDBOX_FILE), Sandbox.serializer()).imagePolicy }
+                .map { readRecord(it.resolve(SANDBOX_FILE), Sandbox.serializer()) }
         }
 
         private fun <T> readRecord(file: Path, serializer: KSerializer<T>): T {

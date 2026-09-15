@@ -224,9 +224,9 @@ The server image runs one program, which takes a command:
 | `serve` (the default) | Runs the control plane API |
 | `pages` | Runs the public role: serves published sites and takes releases in (see [pages](pages.md)) |
 | `doctor` | Checks the host against every startup precondition and prints each check with its fix; exits 1 if one would stop the server |
-| `orphans` | Lists homes that no sandbox record claims, and homes whose name holds no sandbox id |
+| `orphans` | Lists homes that no sandbox record claims, homes whose name holds no sandbox id, and sites the pages role serves for no record |
 | `orphans adopt` | Gives each orphaned home a record again: default settings, its own size, label `regolith.adopted=true` |
-| `orphans delete` | Deletes orphaned homes and their files |
+| `orphans delete` | Deletes orphaned homes and their files, and takes orphaned sites down |
 
 `doctor` changes nothing — no rule, no loop attachment, no pull, no lock — so it can run beside a
 live server. It checks:
@@ -236,7 +236,9 @@ live server. It checks:
 - the netfilter backend and hook positions, and a LAN control for the network proof;
 - loop devices and free space;
 - the state directory, its namespace, and orphaned homes;
-- when one is configured, whether the pages role answers and accepts this server's token.
+- when one is configured, whether the pages role answers, accepts this server's token, and serves
+  no site that no record here claims — one left by a lost state directory, or by a sandbox deleted
+  while the role was unreachable.
 
 `orphans` reads records off disk and takes no lock, so it answers beside a running server.
 `orphans adopt` and `orphans delete` write records, so they take the state lock and need the server

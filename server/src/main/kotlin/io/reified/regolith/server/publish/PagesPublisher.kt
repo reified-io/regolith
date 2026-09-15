@@ -20,6 +20,7 @@ import io.reified.regolith.protocol.pages.ReleaseFile
 import io.reified.regolith.protocol.pages.ReleaseRequest
 import io.reified.regolith.protocol.pages.ReleaseStarted
 import io.reified.regolith.protocol.pages.SiteInfo
+import io.reified.regolith.protocol.pages.SiteList
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.ports.PublishedSite
 import io.reified.regolith.server.ports.SiteLimits
@@ -91,6 +92,9 @@ class PagesPublisher(
     } catch (e: RegolithError.NotFound) {
         null
     }
+
+    override suspend fun sites(): List<PublishedSite> =
+        call(HttpMethod.Get, "/v1/sites", SiteList.serializer()).sites.map { it.toDomain() }
 
     override suspend fun unpublish(site: String) {
         send(HttpMethod.Delete, "/v1/sites/$site")

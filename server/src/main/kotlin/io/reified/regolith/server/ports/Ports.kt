@@ -170,6 +170,9 @@ interface SitePublisher {
 
     suspend fun published(site: String): PublishedSite?
 
+    /** Every site the pages role serves, whoever published it. */
+    suspend fun sites(): List<PublishedSite>
+
     suspend fun unpublish(site: String)
 }
 

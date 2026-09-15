@@ -195,7 +195,9 @@ The sandbox is never told any of this happened. It holds no token and opens no c
 files are read from the outside like any other file operation, as the sandbox user.
 
 A site name is a DNS label, and the control plane sends a random one it made for that sandbox: this
-role never learns whose sandbox published, and an address tells a visitor nothing about it.
+role never learns whose sandbox published, and an address tells a visitor nothing about it. One
+control plane publishes to one pages role: a site here that no sandbox record there claims is an
+orphan, which the control plane's `doctor` reports and `orphans delete` takes down.
 
 ## Releases
 
