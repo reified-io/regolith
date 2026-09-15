@@ -51,6 +51,10 @@ the hardening flags.
 - **Arguments, never scripts.** Caller input reaches a container only as a process argument.
   Commands run as `<shell> -c <script>` with the script as one argument, and helper scripts receive
   paths and ids as positional parameters. No server-side shell ever interprets caller text.
+- **An image from the catalogue only.** A caller names an image, it is never taken at its word: the
+  name is matched against the images the configuration allows, and a session starts on a reference
+  from that list or not at all. A sandbox that follows the server therefore moves only where the
+  operator's configuration moves, and one that pinned an image stays on it.
 - **Files as the sandbox user.** File operations run inside the sandbox as the sandbox user and
   reach exactly what a command could, so a symlink pointing elsewhere gives nothing a command would
   not already have.

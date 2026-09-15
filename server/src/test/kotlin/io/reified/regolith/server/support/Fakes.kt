@@ -53,6 +53,10 @@ class FakeRuntime : SandboxRuntime {
     val attached: MutableSet<SandboxName> = ConcurrentHashMap.newKeySet()
     val started = CopyOnWriteArrayList<SandboxName>()
 
+    /** The image each session started on, and every image the server asked to have on the host. */
+    val startedOn = ConcurrentHashMap<SandboxName, String>()
+    val pulled = CopyOnWriteArrayList<String>()
+
     /** CPU microseconds each session reports; a test moves it by hand. */
     val cpu = ConcurrentHashMap<SandboxName, Long>()
     private val processes = ConcurrentHashMap<ExecId, Pair<SandboxName, FakeProcess>>()
@@ -61,9 +65,14 @@ class FakeRuntime : SandboxRuntime {
 
     override suspend fun initialize() = SandboxNetwork("test-sandboxes", "br-test", "172.30.0.0/16", "172.30.0.1")
 
-    override suspend fun startSession(sandbox: Sandbox, home: HomeMount): SessionHandle {
+    override suspend fun pull(image: String) {
+        pulled += image
+    }
+
+    override suspend fun startSession(sandbox: Sandbox, home: HomeMount, image: String): SessionHandle {
         sessions += sandbox.name
         started += sandbox.name
+        startedOn[sandbox.name] = image
         if (sandbox.network == NetworkPolicy.None) return SessionHandle("test-${sandbox.name}", null)
         attached += sandbox.name
 

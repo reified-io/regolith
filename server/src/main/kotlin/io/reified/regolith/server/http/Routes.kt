@@ -40,7 +40,8 @@ import io.reified.regolith.server.domain.requireValid
 import kotlinx.io.readByteArray
 
 internal fun Route.sandboxRoutes(services: Services) = route("/sandboxes") {
-    fun info(sandbox: Sandbox) = sandbox.toInfo(services.sessions.get(sandbox.name), services.sessions.lastEnd(sandbox.name))
+    fun info(sandbox: Sandbox) =
+        sandbox.toInfo(services.sessions.get(sandbox.name), services.sessions.lastEnd(sandbox.name), services.config.images)
 
     get {
         val query = call.request.queryParameters

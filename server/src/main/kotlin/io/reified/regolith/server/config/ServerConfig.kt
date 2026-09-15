@@ -1,6 +1,8 @@
 package io.reified.regolith.server.config
 
 import io.reified.regolith.server.domain.Cidr
+import io.reified.regolith.server.domain.ImageCatalog
+import io.reified.regolith.server.domain.ImageRef
 import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.RegolithError
@@ -28,13 +30,13 @@ data class ServerConfig(
     val blockedCidrs: List<Cidr>,
     val homeReadBps: String?,
     val homeWriteBps: String?,
+    val images: ImageCatalog,
     val defaults: Defaults,
     val limits: Limits,
 ) {
 
     /** Values a sandbox gets for whatever its creator left out. */
     data class Defaults(
-        val image: String,
         val resources: Resources,
         val network: NetworkPolicy,
         val lifecycle: Lifecycle,
@@ -43,7 +45,6 @@ data class ServerConfig(
 
     /** Ceilings no request can exceed. */
     data class Limits(
-        val images: List<String>,
         val maxCpus: Double,
         val maxMemoryMb: Int,
         val maxHomeMb: Int,
@@ -79,7 +80,6 @@ data class ServerConfig(
             val maxExecTimeout = read.int("REGOLITH_MAX_EXEC_TIMEOUT_SECONDS", 3600).seconds
 
             val limits = Limits(
-                images = (listOf(defaultImage) + extraImages).distinct(),
                 maxCpus = maxCpus,
                 maxMemoryMb = maxMemoryMb,
                 maxHomeMb = maxHomeMb,
@@ -94,7 +94,6 @@ data class ServerConfig(
                 unattendedCpu = read.int("REGOLITH_UNATTENDED_CPU_SECONDS", 600).seconds,
             )
             val defaults = Defaults(
-                image = defaultImage,
                 resources = Resources(
                     cpus = read.double("REGOLITH_CPUS", 1.0).also { check(it <= maxCpus) { "REGOLITH_CPUS exceeds REGOLITH_MAX_CPUS" } },
                     memoryMb = read.int("REGOLITH_MEMORY_MB", 1024).also { check(it <= maxMemoryMb) { "REGOLITH_MEMORY_MB exceeds REGOLITH_MAX_MEMORY_MB" } },
@@ -140,6 +139,7 @@ data class ServerConfig(
                 },
                 homeReadBps = read.rate("REGOLITH_HOME_READ_BPS", "100mb"),
                 homeWriteBps = read.rate("REGOLITH_HOME_WRITE_BPS", "50mb"),
+                images = ImageCatalog(defaultImage, (listOf(defaultImage) + extraImages).distinct()),
                 defaults = defaults,
                 limits = limits,
             )
@@ -173,9 +173,7 @@ data class ServerConfig(
 
         /** Rejects references that can change under the server: no tag, or `latest`. */
         internal fun requirePinned(name: String, image: String) {
-            val lastSegment = image.substringAfterLast('/')
-            val pinned = "@sha256:" in image || (':' in lastSegment && !lastSegment.endsWith(":latest"))
-            check(pinned) { "$name must name a tag other than `latest` or a digest, got `$image`" }
+            check(ImageRef.pinned(image)) { "$name must name a tag other than `latest` or a digest, got `$image`" }
         }
 
         private fun serverVersion(): String = ServerConfig::class.java.`package`?.implementationVersion ?: "dev"

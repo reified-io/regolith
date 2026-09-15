@@ -18,13 +18,19 @@ it when you need a detail this file leaves out.
   1-63 lowercase letters, digits and inner hyphens.
 - **Always `PUT` first.** `PUT /v1/sandboxes/{name}` creates the sandbox or returns the existing one
   unchanged, so it is safe at the start of every conversation. Its body only counts on creation: change
-  `network`, `lifecycle`, `env` or `labels` later with `PATCH`; image, CPUs, memory and home size stay.
+  `imagePolicy`, `network`, `lifecycle`, `env` or `labels` later with `PATCH`; CPUs, memory and home
+  size stay.
 - **Keep what matters in `/home/sandbox`.** It is the only thing that survives a session. `/tmp` and
   running processes are gone when the session stops (idle for 15 minutes by default).
 - **There is no root.** Commands run as uid 1000. Install tools into the home: a virtual environment
   for Python (`python3 -m venv ~/venv`; there is no system `pip`, the venv has one), `npm install -g`
   (the default image points it at the home), or binaries unpacked into `~/.local/bin`, which is on the
-  `PATH`.
+  `PATH`. The image can move to a newer version between sessions unless the sandbox pinned one, so if
+  such a tool stops working after a break, rebuild it rather than assuming the home is broken.
+- **A tool you cannot install may be in another image.** `GET /v1/info` lists what the server offers
+  under `limits.images`. If one of them carries what the task needs (FFmpeg, Chromium, Pandoc), send
+  `PATCH {"imagePolicy":{"mode":"track","image":"<that image without its tag>"}}` and then `stop` the
+  sandbox: the next session starts on it, and the home is untouched.
 - **Nothing runs unattended for long.** A process left in the background after its command ends stops
   with the session once it is idle, or sooner if it keeps using CPU. Keep long work inside a command.
 - **Commands get no stdin** unless you start them with `"stdin": true`. An interactive prompt ends instead

@@ -67,8 +67,15 @@ interface SandboxRuntime {
     /** Removes sessions left by a previous run of this namespace and makes sure the network exists. */
     suspend fun initialize(): SandboxNetwork
 
-    /** Starts the session attached to the sandbox network, or detached when its policy is `none`. */
-    suspend fun startSession(sandbox: Sandbox, home: HomeMount): SessionHandle
+    /** Makes sure [image] is on the host, pulling it if it is not; a session start would do it anyway. */
+    suspend fun pull(image: String)
+
+    /**
+     * Starts the session on [image], attached to the sandbox network, or detached when its policy is
+     * `none`. The image is the one the sandbox's choice resolved to, which is whatever the server
+     * offers for it now.
+     */
+    suspend fun startSession(sandbox: Sandbox, home: HomeMount, image: String): SessionHandle
 
     /** Attaches a running session to the sandbox network and returns its new address. */
     suspend fun attachNetwork(name: SandboxName): String

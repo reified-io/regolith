@@ -64,14 +64,23 @@ are advertised by `GET /v1/info`.
 | Variable | Default | Meaning |
 |---|---|---|
 | `REGOLITH_SANDBOX_IMAGE` | `ghcr.io/reified-io/regolith-sandbox:<server version>` | Default sandbox image |
-| `REGOLITH_ALLOWED_IMAGES` | — | Further images a sandbox may ask for, comma-separated |
+| `REGOLITH_ALLOWED_IMAGES` | — | Further images a sandbox may ask for, comma-separated; one per repository |
 | `REGOLITH_NETWORK` | `public` | Default network mode: `public` or `none` |
 | `REGOLITH_CPUS` / `REGOLITH_MAX_CPUS` | `1` / `2` | CPUs per session |
 | `REGOLITH_MEMORY_MB` / `REGOLITH_MAX_MEMORY_MB` | `1024` / `4096` | Memory per session, with no swap |
 | `REGOLITH_HOME_MB` / `REGOLITH_MAX_HOME_MB` | `4096` / `16384` | Home size, fixed when a sandbox is created |
 
 Every image must name a tag other than `latest`, or a digest: an image that changes under a running
-server changes every sandbox with it.
+server changes every sandbox with it. Two allowed images may not name the same repository, because a
+sandbox tracking that repository could not tell which of them it follows.
+
+These two variables are the whole catalogue: a sandbox may only ask for what they name, and a
+session starts on nothing else. Which of them a sandbox runs is
+[resolved at every session start](api.md#which-image-a-sandbox-runs), so raising the version in
+`REGOLITH_SANDBOX_IMAGE` — as a server upgrade does by itself — moves every sandbox that follows
+the default onto the new image at its next session, while a sandbox that pinned one stays there.
+Lowering it moves them back the same way. The server pulls the catalogue once at startup, so the
+first session after such a change does not wait for the download.
 
 ### Sandbox images
 
@@ -82,7 +91,34 @@ Two images are built from [`images/sandbox`](../images/sandbox/Dockerfile):
 - **`regolith-sandbox-full`** adds what nobody can install without root: FFmpeg, ImageMagick,
   Pandoc, SQLite, ripgrep, and a headless Chromium that runs without its own sandbox, because the
   container already is one. Point `REGOLITH_SANDBOX_IMAGE` at it for agents that convert media or
-  render pages.
+  render pages, or list it in `REGOLITH_ALLOWED_IMAGES` and let the sandboxes that need it ask for
+  it by name.
+
+### Your own image
+
+Nothing ties a sandbox to those two. Name any image in `REGOLITH_SANDBOX_IMAGE` or
+`REGOLITH_ALLOWED_IMAGES` and sandboxes can run it:
+
+```bash
+REGOLITH_ALLOWED_IMAGES=registry.example/agent-sandbox:2026.09
+```
+
+A caller never names an image the server was not given — it picks from the ones `GET /v1/info`
+reports, [by policy](api.md#which-image-a-sandbox-runs) — so allowing an image is an operator's
+decision, made once. What that image must hold follows from how a session runs it:
+
+- **`sleep`, a shell and GNU tools.** A session starts as `sleep infinity`, commands run as
+  `/bin/bash -c <script>` (`REGOLITH_SHELL`), and the file and signal helpers call `sh`, `stat`,
+  `find`, `grep`, `cat`, `mkdir`, `mv`, `rm` and `kill` with GNU options.
+- **A uid 1000 whose home is `/home/sandbox`.** Every process runs as uid and gid 1000, the
+  sandbox's home is mounted there, and it is the working directory.
+- **Nothing written outside that home and `/tmp`.** The root filesystem is read-only.
+- **No setuid binary.** Capabilities are dropped and `no-new-privileges` is set, but neither should
+  be the only thing between the sandbox user and root; both images above strip the bits.
+- **A repository of its own**, and a tag other than `latest`, or a digest.
+
+The host's Docker pulls it, so an image in a private registry needs a `docker login` on the host:
+the server holds no registry credentials of its own.
 
 ## Lifecycle
 

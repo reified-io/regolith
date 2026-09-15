@@ -6,6 +6,8 @@ import io.reified.regolith.server.app.Sessions
 import io.reified.regolith.server.domain.Cidr
 import io.reified.regolith.server.domain.ExecCommand
 import io.reified.regolith.server.domain.ExecId
+import io.reified.regolith.server.domain.ImageCatalog
+import io.reified.regolith.server.domain.ImagePolicy
 import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.Resources
@@ -55,9 +57,10 @@ class HostIntegrationTest {
             val runtime = DockerRuntime(docker, spec)
             val homes = HomeDisks(docker, helpers, namespace, stateDir, reserveMb = 256)
             val firewall = HostFirewall(docker, helpers, namespace, emptyList())
-            val sessions = Sessions(runtime, homes, firewall, Health(), Clock.System, maxSessions = 2)
+            val image = "regolith-sandbox:it"
+            val sessions = Sessions(runtime, homes, firewall, Health(), Clock.System, maxSessions = 2, images = ImageCatalog(image, listOf(image)))
             val now = Clock.System.now()
-            val sandbox = Sandbox(name, "regolith-sandbox:it", Resources(1.0, 512, 256), NetworkPolicy.Public, Lifecycle(5.minutes, 1.days, 1.days), emptyMap(), emptyMap(), now, now)
+            val sandbox = Sandbox(name, ImagePolicy.Default, Resources(1.0, 512, 256), NetworkPolicy.Public, Lifecycle(5.minutes, 1.days, 1.days), emptyMap(), emptyMap(), now, now)
             var network: io.reified.regolith.server.ports.SandboxNetwork? = null
 
             suspend fun sh(script: String): String {

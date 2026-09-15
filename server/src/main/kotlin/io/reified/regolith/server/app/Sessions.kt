@@ -1,6 +1,7 @@
 package io.reified.regolith.server.app
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.reified.regolith.server.domain.ImageCatalog
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Sandbox
@@ -28,6 +29,9 @@ import kotlin.time.Instant
  * that: the container starts with an idle entrypoint, and commands arrive only through [acquire].
  * Work holds a [Lease] for as long as it runs; a session with a lease is never reclaimed or
  * idle-stopped, only stopped explicitly or at its maximum lifetime.
+ *
+ * A sandbox's image is resolved here, once per session: a sandbox that follows the server starts on
+ * the image the server offers now, and the running session keeps the one it started with.
  */
 class Sessions(
     private val runtime: SandboxRuntime,
@@ -36,9 +40,16 @@ class Sessions(
     private val health: Health,
     private val clock: Clock,
     private val maxSessions: Int,
+    private val images: ImageCatalog,
 ) {
 
-    class Session internal constructor(handle: SessionHandle, val startedAt: Instant, val expiresAt: Instant) {
+    class Session internal constructor(
+        handle: SessionHandle,
+        val startedAt: Instant,
+        val expiresAt: Instant,
+        val image: String,
+    ) {
+
         @Volatile
         var handle: SessionHandle = handle
             internal set
@@ -141,10 +152,12 @@ class Sessions(
     private suspend fun start(sandbox: Sandbox): Session = capacity.withLock {
         health.require(Health.NETWORK)
         health.require(Health.STORAGE)
+        // before anything is reclaimed for it: a session with no image to start on never begins.
+        val image = images.resolve(sandbox.imagePolicy)
         if (live.size >= maxSessions) reclaimOne()
         val home = homes.open(sandbox.name, sandbox.resources.homeMb)
         val handle = try {
-            runtime.startSession(sandbox, home)
+            runtime.startSession(sandbox, home, image)
         } catch (e: Exception) {
             withContext(NonCancellable) { homes.close(sandbox.name) }
             throw e
@@ -162,9 +175,9 @@ class Sessions(
         }
 
         val now = clock.now()
-        Session(handle, now, now + sandbox.lifecycle.maxSession).also {
+        Session(handle, now, now + sandbox.lifecycle.maxSession, image).also {
             live[sandbox.name] = it
-            log.info { "Session started: sandbox=[${sandbox.name}]" }
+            log.info { "Session started: sandbox=[${sandbox.name}] image=[$image]" }
         }
     }
 

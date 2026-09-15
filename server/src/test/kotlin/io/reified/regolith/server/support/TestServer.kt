@@ -40,7 +40,7 @@ class TestServer(
     val health = Health()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val store = FileStateStore.open(stateDir, config.namespace)
-    val sessions = Sessions(runtime, homes, enforcer, health, clock, config.maxSessions)
+    val sessions = Sessions(runtime, homes, enforcer, health, clock, config.maxSessions, config.images)
     val execs = Execs(store, sessions, runtime, config, clock, scope)
     val sandboxes = Sandboxes(store, sessions, execs, homes, config, clock)
     val files = SandboxFiles(sandboxes, sessions, runtime, health, config)

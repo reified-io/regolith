@@ -11,8 +11,11 @@ file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 
 
 - A sandbox is named by you: 1-63 lowercase letters, digits and inner hyphens (`user-23`).
 - `PUT /v1/sandboxes/{name}` creates it or returns the existing one unchanged. It is safe to call first,
-  every time. Its body counts only on creation: change `network`, `lifecycle`, `env` or `labels` later
-  with `PATCH`; image, CPUs, memory and home size stay.
+  every time. Its body counts only on creation: change `imagePolicy`, `network`, `lifecycle`, `env` or
+  `labels` later with `PATCH`; CPUs, memory and home size stay.
+- The image is chosen again at every session start: unless the sandbox pinned one, an upgraded server
+  gives it a newer image. Your files are untouched, but a venv or a native module built into the home
+  may need rebuilding. `image` is what the next session runs, `session.image` what this one started on.
 - Commands run as uid 1000 with no root, in `/home/sandbox` by default. Only `/home/sandbox` survives a
   session; `/tmp` and running processes do not.
 - Install tools into the home: `python3 -m venv ~/venv` (there is no system `pip`), `npm install -g`, or
@@ -26,9 +29,9 @@ file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 
 
 ## Sandboxes
 
-- `PUT /v1/sandboxes/{name}` - body optional: `{"resources":{"cpus":1,"memoryMb":1024,"homeMb":4096},"network":{"mode":"public"},"lifecycle":{"idleStopSeconds":900,"maxSessionSeconds":86400,"retainDays":30},"env":{},"labels":{}}`. 201 created, 200 existing.
+- `PUT /v1/sandboxes/{name}` - body optional: `{"imagePolicy":{"mode":"default"},"resources":{"cpus":1,"memoryMb":1024,"homeMb":4096},"network":{"mode":"public"},"lifecycle":{"idleStopSeconds":900,"maxSessionSeconds":86400,"retainDays":30},"env":{},"labels":{}}`. 201 created, 200 existing.
 - `GET /v1/sandboxes/{name}`, `GET /v1/sandboxes?label=key=value&limit=100&cursor=`
-- `PATCH /v1/sandboxes/{name}` - `network`, `lifecycle`, `env`, `labels`; a network change applies to the running session at once.
+- `PATCH /v1/sandboxes/{name}` - `imagePolicy`, `network`, `lifecycle`, `env`, `labels`; a network change applies to the running session at once, the rest from the next session. `imagePolicy` is `{"mode":"default"}`, `{"mode":"track","image":"<image without its tag>"}` or `{"mode":"pin","image":"<exact image>"}`, from `limits.images`.
 - `POST /v1/sandboxes/{name}/start`, `POST /v1/sandboxes/{name}/stop`
 - `DELETE /v1/sandboxes/{name}` - deletes the home too; there is no undo.
 

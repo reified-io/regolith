@@ -4,6 +4,7 @@ import io.reified.regolith.server.domain.Exec
 import io.reified.regolith.server.domain.ExecCommand
 import io.reified.regolith.server.domain.ExecId
 import io.reified.regolith.server.domain.ExecOutcome
+import io.reified.regolith.server.domain.ImagePolicy
 import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.Cidr
@@ -31,7 +32,7 @@ class FileStateStoreTest {
 
     private val sandbox = Sandbox(
         name = SandboxName.parse("keeper"),
-        image = "example/sandbox:1",
+        imagePolicy = ImagePolicy.Pin("example/sandbox:1"),
         resources = Resources(1.5, 1024, 4096),
         network = NetworkPolicy.Allowlist(listOf(Cidr.parse("140.82.112.0/20"))),
         lifecycle = Lifecycle(15.minutes, 1.days, 14.days),

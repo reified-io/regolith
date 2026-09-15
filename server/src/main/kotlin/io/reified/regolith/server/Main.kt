@@ -26,6 +26,7 @@ import io.reified.regolith.server.docker.HostFirewall
 import io.reified.regolith.pages.PagesConfig
 import io.reified.regolith.pages.runPages
 import io.reified.regolith.server.domain.StopReason
+import io.reified.regolith.server.ports.SandboxRuntime
 import io.reified.regolith.server.http.regolithApi
 import io.reified.regolith.server.publish.PagesPublisher
 import io.reified.regolith.server.ops.Doctor
@@ -33,7 +34,9 @@ import io.reified.regolith.server.store.FileStateStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.system.exitProcess
 import kotlin.time.Clock
@@ -87,7 +90,7 @@ private class Application(val config: ServerConfig, val store: FileStateStore) {
     val helpers = Helpers(runBlocking { Helpers.resolveImage(docker, config.helperImage) }, config.namespace)
     val homes = HomeDisks(docker, helpers, config.namespace, config.stateDir, reserveMb = config.minFreeMb)
     val enforcer = HostFirewall(docker, helpers, config.namespace, config.blockedCidrs)
-    val sessions = Sessions(runtime, homes, enforcer, health, clock, config.maxSessions)
+    val sessions = Sessions(runtime, homes, enforcer, health, clock, config.maxSessions, config.images)
     val execs = Execs(store, sessions, runtime, config, clock, scope)
     val sandboxes = Sandboxes(store, sessions, execs, homes, config, clock)
     val files = SandboxFiles(sandboxes, sessions, runtime, health, config)
@@ -123,6 +126,7 @@ private fun serve(config: ServerConfig) {
     app.scope.every(10.seconds, "storage guard") { storageGuard.tick() }
     app.scope.every(5.minutes, "network guard") { networkGuard.tick() }
     app.scope.every(30.seconds, "cpu guard") { cpuGuard.tick() }
+    app.scope.launch { prefetch(app.runtime, config.images.allowed) }
 
     val services = Services(config, app.version, app.health, app.sandboxes, app.sessions, app.execs, app.files, app.sites)
     val server = embeddedServer(CIO, port = config.port, host = config.bind) { regolithApi(services) }
@@ -140,6 +144,23 @@ private fun serve(config: ServerConfig) {
     )
     log.info { "Regolith serving: version=[${app.version}] port=[${config.port}]" }
     server.start(wait = true)
+}
+
+/**
+ * Pulls what a session may start on, one image at a time, while the API already serves. A session
+ * start would pull the image itself, but it holds the server's session capacity while it does, so an
+ * upgrade that changed the images would make every sandbox wait for a download in turn.
+ */
+private suspend fun prefetch(runtime: SandboxRuntime, images: List<String>) {
+    for (image in images) {
+        try {
+            runtime.pull(image)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn { "Image not pulled, the first session that needs it will pull it: image=[$image] ${e.message}" }
+        }
+    }
 }
 
 private fun doctor(config: ServerConfig): Int {

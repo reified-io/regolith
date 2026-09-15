@@ -28,6 +28,8 @@ class ContainerSpec(
 
     fun container(name: SandboxName): String = "$namespace-$name"
 
+    fun pull(image: String): List<String> = listOf("pull", "--quiet", image)
+
     fun networkCreate(): List<String> = listOf(
         "network", "create",
         "--driver", "bridge",
@@ -42,7 +44,7 @@ class ContainerSpec(
      * escalation, a read-only root and an idle entrypoint: nothing of the caller's runs until the
      * first exec, which is what lets the network policy be applied after start and before use.
      */
-    fun run(sandbox: Sandbox, home: HomeMount): List<String> {
+    fun run(sandbox: Sandbox, home: HomeMount, image: String): List<String> {
         val memory = sandbox.resources.memoryMb
         val args = mutableListOf(
             "run", "--detach",
@@ -85,7 +87,7 @@ class ContainerSpec(
             homeWriteBps?.let { args += listOf("--device-write-bps", "$device:$it") }
         }
         for ((key, value) in sandbox.env) args += listOf("--env", "$key=$value")
-        args += listOf("--entrypoint", "sleep", sandbox.image, "infinity")
+        args += listOf("--entrypoint", "sleep", image, "infinity")
 
         return args
     }

@@ -3,6 +3,9 @@ package io.reified.regolith.server.domain
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class DomainTest {
     @Test
@@ -25,6 +28,55 @@ class DomainTest {
             assertFailsWith<RegolithError.Invalid>(raw) { NetworkPolicy.Allowlist(listOf(Cidr.parse(raw))) }
         }
         NetworkPolicy.Allowlist(listOf(Cidr.parse("0.0.0.0/0"), Cidr.parse("8.8.8.8")))
+    }
+
+    @Test
+    fun `a repository is a reference without its tag or digest`() {
+        assertEquals("ghcr.io/example/sandbox", ImageRef.repositoryOf("ghcr.io/example/sandbox:3.1"))
+        assertEquals("ghcr.io/example/sandbox", ImageRef.repositoryOf("ghcr.io/example/sandbox@sha256:abc"))
+        assertEquals("registry.local:5000/sandbox", ImageRef.repositoryOf("registry.local:5000/sandbox:2026.09"))
+        assertEquals("registry.local:5000/sandbox", ImageRef.repositoryOf("registry.local:5000/sandbox"))
+
+        assertTrue(ImageRef.pinned("registry.local:5000/sandbox:2026.09"))
+        assertTrue(ImageRef.pinned("example/sandbox@sha256:abc"))
+        assertFalse(ImageRef.pinned("registry.local:5000/sandbox"))
+        assertFalse(ImageRef.pinned("example/sandbox:latest"))
+    }
+
+    @Test
+    fun `a catalogue resolves what a sandbox follows and refuses what it does not offer`() {
+        val base = "ghcr.io/example/sandbox:3.1"
+        val full = "ghcr.io/example/sandbox-full:3.1"
+        val catalogue = ImageCatalog(base, listOf(base, full))
+
+        assertEquals(base, catalogue.resolve(ImagePolicy.Default))
+        assertEquals(full, catalogue.resolve(ImagePolicy.Track("ghcr.io/example/sandbox-full")))
+        assertEquals("ghcr.io/example/sandbox:1.0", catalogue.resolve(ImagePolicy.Pin("ghcr.io/example/sandbox:1.0")))
+
+        catalogue.requireAllowed(ImagePolicy.Track("ghcr.io/example/sandbox-full"))
+        catalogue.requireAllowed(ImagePolicy.Pin(base))
+        assertFailsWith<RegolithError.Invalid> { catalogue.requireAllowed(ImagePolicy.Track("ghcr.io/example/other")) }
+        assertFailsWith<RegolithError.Invalid> { catalogue.requireAllowed(ImagePolicy.Pin("ghcr.io/example/sandbox:1.0")) }
+        assertFailsWith<RegolithError.Invalid> { ImagePolicy.Pin("x".repeat(ImagePolicy.MAX_REFERENCE + 1)) }
+    }
+
+    @Test
+    fun `a newer catalogue moves what follows it and leaves a pin alone`() {
+        val old = ImageCatalog("ghcr.io/example/sandbox:3.1", listOf("ghcr.io/example/sandbox:3.1"))
+        val new = ImageCatalog("ghcr.io/example/sandbox:4.0", listOf("ghcr.io/example/sandbox:4.0"))
+        val tracked = ImagePolicy.Track("ghcr.io/example/sandbox")
+        val pinned = ImagePolicy.Pin(old.default)
+
+        assertEquals("ghcr.io/example/sandbox:4.0", new.resolve(ImagePolicy.Default))
+        assertEquals("ghcr.io/example/sandbox:4.0", new.resolve(tracked))
+        assertEquals("ghcr.io/example/sandbox:3.1", new.resolve(pinned))
+        assertEquals("ghcr.io/example/sandbox:3.1", old.resolve(tracked))
+
+        // a repository the server stopped offering strands its sandboxes until an operator moves them.
+        val elsewhere = ImageCatalog("ghcr.io/example/other:1", listOf("ghcr.io/example/other:1"))
+        assertNull(elsewhere.resolveOrNull(tracked))
+        assertFailsWith<RegolithError.Unavailable> { elsewhere.resolve(tracked) }
+        assertFailsWith<IllegalStateException> { ImageCatalog(old.default, listOf(old.default, new.default)) }
     }
 
     @Test

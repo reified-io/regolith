@@ -16,16 +16,26 @@ class JsonShapeTest {
     }
 
     @Test
+    fun `an image policy uses lowercase modes and leaves out the image it does not need`() {
+        fun json(policy: ImagePolicy) = RegolithJson.strict.encodeToString(ImagePolicy.serializer(), policy)
+
+        assertEquals("""{"mode":"default"}""", json(ImagePolicy(ImageMode.DEFAULT)))
+        assertEquals("""{"mode":"track","image":"ghcr.io/example/sandbox"}""", json(ImagePolicy(ImageMode.TRACK, "ghcr.io/example/sandbox")))
+        assertEquals("""{"mode":"pin","image":"ghcr.io/example/sandbox:3.1"}""", json(ImagePolicy(ImageMode.PIN, "ghcr.io/example/sandbox:3.1")))
+    }
+
+    @Test
     fun `instants travel as iso strings`() {
         val frame = SessionInfo(
             startedAt = Instant.parse("2026-09-13T10:00:00Z"),
             lastActiveAt = Instant.parse("2026-09-13T10:05:00Z"),
             expiresAt = Instant.parse("2026-09-14T10:00:00Z"),
+            image = "ghcr.io/example/sandbox:3.1",
         )
         val json = RegolithJson.strict.encodeToString(SessionInfo.serializer(), frame)
 
         assertEquals(
-            """{"startedAt":"2026-09-13T10:00:00Z","lastActiveAt":"2026-09-13T10:05:00Z","expiresAt":"2026-09-14T10:00:00Z"}""",
+            """{"startedAt":"2026-09-13T10:00:00Z","lastActiveAt":"2026-09-13T10:05:00Z","expiresAt":"2026-09-14T10:00:00Z","image":"ghcr.io/example/sandbox:3.1"}""",
             json,
         )
     }

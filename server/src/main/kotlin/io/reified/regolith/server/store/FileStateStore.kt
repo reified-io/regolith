@@ -2,6 +2,7 @@ package io.reified.regolith.server.store
 
 import io.reified.regolith.server.domain.Exec
 import io.reified.regolith.server.domain.ExecId
+import io.reified.regolith.server.domain.ImagePolicy
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxName
 import io.reified.regolith.server.ports.StateStore
@@ -86,15 +87,6 @@ class FileStateStore private constructor(private val root: Path, private val loc
 
     private fun execDir(name: SandboxName): Path = sandboxDir(name).resolve("execs")
 
-    private fun <T> readRecord(file: Path, serializer: KSerializer<T>): T {
-        val stored = json.decodeFromString(Stored.serializer(serializer), file.readText())
-        check(stored.schema == SCHEMA) {
-            "State file ${file.name} has schema ${stored.schema}, this server reads schema $SCHEMA"
-        }
-
-        return stored.value
-    }
-
     private fun <T> writeRecord(file: Path, value: T, serializer: KSerializer<T>) {
         Files.createDirectories(file.parent)
         val temporary = file.resolveSibling("${file.name}.tmp")
@@ -106,7 +98,7 @@ class FileStateStore private constructor(private val root: Path, private val loc
 
     companion object {
         /** Version of the persisted records; see the class comment. */
-        const val SCHEMA = 1
+        const val SCHEMA = 2
 
         private const val SANDBOX_FILE = "sandbox.json"
         private val json = Json { encodeDefaults = true }
@@ -117,6 +109,25 @@ class FileStateStore private constructor(private val root: Path, private val loc
             if (!dir.exists()) return emptyList()
 
             return dir.listDirectoryEntries().filter { it.resolve(SANDBOX_FILE).exists() }.map { it.name }.sorted()
+        }
+
+        /** How every recorded sandbox picks its image, by name, read without taking the lock. */
+        fun recordedImagePolicies(root: Path): Map<String, ImagePolicy> {
+            val dir = root.resolve("sandboxes")
+            if (!dir.exists()) return emptyMap()
+
+            return dir.listDirectoryEntries()
+                .filter { it.resolve(SANDBOX_FILE).exists() }
+                .associate { it.name to readRecord(it.resolve(SANDBOX_FILE), Sandbox.serializer()).imagePolicy }
+        }
+
+        private fun <T> readRecord(file: Path, serializer: KSerializer<T>): T {
+            val stored = json.decodeFromString(Stored.serializer(serializer), file.readText())
+            check(stored.schema == SCHEMA) {
+                "State file ${file.name} has schema ${stored.schema}, this server reads schema $SCHEMA"
+            }
+
+            return stored.value
         }
 
         /** Whether another process holds the lock on [root]. */

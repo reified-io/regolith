@@ -4,13 +4,40 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
+/** How a sandbox picks the image its sessions run; see [ImagePolicy]. */
+@Serializable
+public enum class ImageMode {
+    /** The server's default image, whichever that is when a session starts. */
+    @SerialName("default")
+    DEFAULT,
+
+    /** The image this server offers for one repository, whichever version that is. */
+    @SerialName("track")
+    TRACK,
+
+    /** One exact reference, which never moves while the sandbox exists. */
+    @SerialName("pin")
+    PIN,
+}
+
+/**
+ * How a sandbox chooses the image its sessions run. The choice is made again at the start of every
+ * session, so a sandbox that follows the server picks up a newer image without being recreated.
+ *
+ * [image] is what [ImageMode.TRACK] tracks or [ImageMode.PIN] pins, and is meaningless with
+ * [ImageMode.DEFAULT]. Tracking names a repository — an image from `GET /v1/info` without its tag
+ * or digest; pinning names one of those images exactly.
+ */
+@Serializable
+public data class ImagePolicy(val mode: ImageMode, val image: String? = null)
+
 /**
  * Body of `PUT /v1/sandboxes/{name}`. Every field is optional; an omitted one takes the server
  * default advertised by `GET /v1/info`. An existing sandbox is returned unchanged.
  */
 @Serializable
 public data class CreateSandboxRequest(
-    val image: String? = null,
+    val imagePolicy: ImagePolicy? = null,
     val resources: ResourcesSpec? = null,
     val network: NetworkPolicy? = null,
     val lifecycle: LifecycleSpec? = null,
@@ -24,6 +51,7 @@ public data class CreateSandboxRequest(
  */
 @Serializable
 public data class UpdateSandboxRequest(
+    val imagePolicy: ImagePolicy? = null,
     val network: NetworkPolicy? = null,
     val lifecycle: LifecycleSpec? = null,
     val env: Map<String, String>? = null,
@@ -113,12 +141,19 @@ public enum class SandboxState {
     STOPPING,
 }
 
-/** The running instance of a sandbox; a sandbox spans as many sessions as it is used for. */
+/**
+ * The running instance of a sandbox; a sandbox spans as many sessions as it is used for.
+ *
+ * [image] is what this session actually started on. It differs from the sandbox's
+ * [SandboxInfo.image] when the server has been offered a newer image since — the session keeps the
+ * one it started with, and the next one takes the newer.
+ */
 @Serializable
 public data class SessionInfo(
     val startedAt: Instant,
     val lastActiveAt: Instant,
     val expiresAt: Instant,
+    val image: String,
 )
 
 /**
@@ -131,11 +166,17 @@ public data class SessionEndInfo(
     val at: Instant,
 )
 
-/** A sandbox as the server reports it. [lastSessionEnd] is known only for sessions this server ended. */
+/**
+ * A sandbox as the server reports it. [lastSessionEnd] is known only for sessions this server ended.
+ *
+ * [image] is the exact reference the sandbox's next session runs, and is null only when the server
+ * no longer offers the image [imagePolicy] tracks, which no session can start on.
+ */
 @Serializable
 public data class SandboxInfo(
     val name: String,
-    val image: String,
+    val image: String?,
+    val imagePolicy: ImagePolicy,
     val resources: Resources,
     val network: NetworkPolicy,
     val lifecycle: Lifecycle,

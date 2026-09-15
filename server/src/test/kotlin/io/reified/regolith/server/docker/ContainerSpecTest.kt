@@ -2,6 +2,7 @@ package io.reified.regolith.server.docker
 
 import io.reified.regolith.server.domain.ExecCommand
 import io.reified.regolith.server.domain.ExecId
+import io.reified.regolith.server.domain.ImagePolicy
 import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.Resources
@@ -22,7 +23,7 @@ class ContainerSpecTest {
     private val name = SandboxName.parse("keeper")
     private val sandbox = Sandbox(
         name = name,
-        image = "example/sandbox:1",
+        imagePolicy = ImagePolicy.Default,
         resources = Resources(0.5, 768, 4096),
         network = NetworkPolicy.Public,
         lifecycle = Lifecycle(15.minutes, 1.days, 14.days),
@@ -36,7 +37,7 @@ class ContainerSpecTest {
 
     @Test
     fun `a session runs unprivileged, bounded and idle until its first exec`() {
-        val args = spec.run(sandbox, HomeMount("regolith-keeper-home"))
+        val args = spec.run(sandbox, HomeMount("regolith-keeper-home"), "example/sandbox:1")
 
         assertEquals(listOf("1000:1000"), args.valueAfter("--user"))
         assertEquals(listOf("ALL"), args.valueAfter("--cap-drop"))
@@ -56,7 +57,7 @@ class ContainerSpecTest {
 
     @Test
     fun `a none sandbox starts with no network and its home device is throttled`() {
-        val args = spec.run(sandbox.copy(network = NetworkPolicy.None), HomeMount("regolith-keeper-home", "/dev/loop7"))
+        val args = spec.run(sandbox.copy(network = NetworkPolicy.None), HomeMount("regolith-keeper-home", "/dev/loop7"), "example/sandbox:1")
 
         assertEquals(listOf("none"), args.valueAfter("--network"))
         assertEquals(emptyList(), args.valueAfter("--dns"))

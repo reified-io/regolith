@@ -31,6 +31,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /** [SandboxRuntime] on one Docker host, driven through [DockerCli]. */
@@ -58,11 +59,15 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
         return SandboxNetwork(name = spec.network, bridge = "br-${id.take(12)}", subnet = subnet, gateway = gateway)
     }
 
-    override suspend fun startSession(sandbox: Sandbox, home: HomeMount): SessionHandle {
+    override suspend fun pull(image: String) {
+        docker.run(spec.pull(image), timeout = PULL_TIMEOUT).requireOk("Pulling $image")
+    }
+
+    override suspend fun startSession(sandbox: Sandbox, home: HomeMount, image: String): SessionHandle {
         val container = spec.container(sandbox.name)
         // a container can survive a crash between its start and its registration; it is never reused.
         docker.run(listOf("rm", "--force", container))
-        docker.run(spec.run(sandbox, home)).requireOk("Starting session ${sandbox.name}")
+        docker.run(spec.run(sandbox, home, image), timeout = START_TIMEOUT).requireOk("Starting session ${sandbox.name}")
         if (sandbox.network == NetworkPolicy.None) return SessionHandle(container, address = null)
 
         return try {
@@ -300,6 +305,12 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
 
     private companion object {
         val log = KotlinLogging.logger {}
+
+        /** A pull runs in the background, so it may take as long as a large image needs. */
+        val PULL_TIMEOUT = 20.minutes
+
+        /** Starting holds the server's session capacity, so an image not on the host yet gets one try. */
+        val START_TIMEOUT = 5.minutes
         const val MAX_STDERR = 16 * 1024
         const val COPY_CHUNK = 64 * 1024
         const val ENTRY_BYTES_ESTIMATE = 512

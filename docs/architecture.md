@@ -68,16 +68,25 @@ container it runs in — so what it checks and what it runs come from one build.
 Starting a session:
 
 1. Check the health gates.
-2. If the pool is full, reclaim an idle session.
-3. Open the home.
-4. Start the container with an idle entrypoint, attached to the sandbox network — or, for `none`, to
-   nothing.
-5. Apply the network policy to its address.
-6. Publish the session.
+2. Resolve the sandbox's image against the catalogue.
+3. If the pool is full, reclaim an idle session.
+4. Open the home.
+5. Start the container on that image with an idle entrypoint, attached to the sandbox network — or,
+   for `none`, to nothing.
+6. Apply the network policy to its address.
+7. Publish the session.
 
-Nothing of the caller's can run before step 5. Commands only arrive through a lease on a published
+Nothing of the caller's can run before step 6. Commands only arrive through a lease on a published
 session, and until its policy is applied the container's address matches no policy and reaches
 nothing. If the policy cannot be applied, the container is removed and the request fails.
+
+**The image.** A sandbox records an image policy, not an image: the server's default, a repository
+it tracks, or one pinned reference. Step 2 applies it against `ImageCatalog`, which answers with a
+reference from the configured images and nothing else, so an upgraded server hands its sandboxes a
+newer image at their next session while a pinned sandbox stays where it is. The running session
+keeps the image it started on, and `SandboxInfo` reports both that one and the next. A tracked
+repository the configuration stopped offering resolves to nothing and the session start fails,
+rather than quietly starting on another image; `doctor` names such sandboxes.
 
 **Leases.** Work holds a `Lease` while it runs: an exec from its start to its recorded outcome, a
 file operation for its duration. A session with a lease is never reclaimed or stopped for being idle
@@ -187,6 +196,10 @@ Then four loops run in the background:
 | Storage guard | 10 s | Fails the `storage` health check, and with it new sessions and uploads, while free space is below the reserve |
 | CPU guard | 30 s | Stops sessions that burn CPU with nothing of their own running |
 | Network guard | 5 min | Re-reads the firewall and repairs drift in place |
+
+Once, alongside them, the server pulls every image in its catalogue. A session start would pull what
+it needs anyway, but it holds the session capacity while it does, so after an upgrade that changed
+the images each sandbox in turn would wait for a download.
 
 A floor the network guard cannot restore latches the `network` health check to failing and stops
 every session. The latch does not clear on its own.

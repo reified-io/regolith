@@ -2,6 +2,7 @@ package io.reified.regolith.server.http
 
 import io.reified.regolith.protocol.ExecInfo
 import io.reified.regolith.protocol.ExecStatus
+import io.reified.regolith.protocol.ImageMode
 import io.reified.regolith.protocol.NetworkAllow
 import io.reified.regolith.protocol.NetworkMode
 import io.reified.regolith.protocol.OutcomeType
@@ -25,8 +26,11 @@ import io.reified.regolith.server.domain.Exec
 import io.reified.regolith.server.domain.ExecCommand
 import io.reified.regolith.server.domain.ExecOutcome
 import io.reified.regolith.server.domain.FileEntry
+import io.reified.regolith.server.domain.ImageCatalog
+import io.reified.regolith.server.domain.ImagePolicy
 import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.NetworkPolicy
+import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SessionEnd
@@ -42,6 +46,7 @@ import io.reified.regolith.protocol.EntryType as WireEntryType
 import io.reified.regolith.protocol.ExecOutcome as WireOutcome
 import io.reified.regolith.protocol.ExecRequest as WireExecRequest
 import io.reified.regolith.protocol.FileEntry as WireFileEntry
+import io.reified.regolith.protocol.ImagePolicy as WireImagePolicy
 import io.reified.regolith.protocol.Lifecycle as WireLifecycle
 import io.reified.regolith.protocol.LifecycleSpec as WireLifecycleSpec
 import io.reified.regolith.protocol.NetworkPolicy as WireNetworkPolicy
@@ -53,16 +58,17 @@ import io.reified.regolith.protocol.UpdateSandboxRequest as WireUpdateSandbox
  * in by the domain constructors; responses are plain copies on the way out.
  */
 
-internal fun Sandbox.toInfo(session: Sessions.Session?, lastEnd: SessionEnd?): SandboxInfo = SandboxInfo(
+internal fun Sandbox.toInfo(session: Sessions.Session?, lastEnd: SessionEnd?, images: ImageCatalog): SandboxInfo = SandboxInfo(
     name = name.value,
-    image = image,
+    image = images.resolveOrNull(imagePolicy),
+    imagePolicy = imagePolicy.toWire(),
     resources = resources.toWire(),
     network = network.toWire(),
     lifecycle = lifecycle.toWire(),
     env = env,
     labels = labels,
     state = if (session != null) SandboxState.RUNNING else SandboxState.STOPPED,
-    session = session?.let { SessionInfo(it.startedAt, it.lastActiveAt, it.expiresAt) },
+    session = session?.let { SessionInfo(it.startedAt, it.lastActiveAt, it.expiresAt, it.image) },
     lastSessionEnd = lastEnd?.let { SessionEndInfo(it.reason.name.lowercase(), it.at) },
     createdAt = createdAt,
     lastUsedAt = lastUsedAt,
@@ -70,6 +76,24 @@ internal fun Sandbox.toInfo(session: Sessions.Session?, lastEnd: SessionEnd?): S
 )
 
 internal fun Resources.toWire() = WireResources(cpus, memoryMb, homeMb)
+
+internal fun ImagePolicy.toWire(): WireImagePolicy = when (this) {
+    ImagePolicy.Default -> WireImagePolicy(ImageMode.DEFAULT)
+    is ImagePolicy.Track -> WireImagePolicy(ImageMode.TRACK, repository)
+    is ImagePolicy.Pin -> WireImagePolicy(ImageMode.PIN, reference)
+}
+
+internal fun WireImagePolicy.toDomain(): ImagePolicy = when (mode) {
+    ImageMode.DEFAULT -> {
+        requireValid(image == null) { "image is only meaningful with the track and pin modes" }
+        ImagePolicy.Default
+    }
+    ImageMode.TRACK -> ImagePolicy.Track(named())
+    ImageMode.PIN -> ImagePolicy.Pin(named())
+}
+
+private fun WireImagePolicy.named(): String =
+    image ?: throw RegolithError.Invalid("image is required with the `${mode.name.lowercase()}` mode")
 
 internal fun Lifecycle.toWire() = WireLifecycle(
     idleStopSeconds = idleStop.inWholeSeconds.toInt(),
@@ -100,7 +124,7 @@ internal fun WireLifecycleSpec.toDomain() = LifecycleRequest(
 )
 
 internal fun WireCreateSandbox.toDomain() = SandboxRequest(
-    image = image,
+    imagePolicy = imagePolicy?.toDomain(),
     cpus = resources?.cpus,
     memoryMb = resources?.memoryMb,
     homeMb = resources?.homeMb,
@@ -111,6 +135,7 @@ internal fun WireCreateSandbox.toDomain() = SandboxRequest(
 )
 
 internal fun WireUpdateSandbox.toDomain() = SandboxPatch(
+    imagePolicy = imagePolicy?.toDomain(),
     network = network?.toDomain(),
     lifecycle = lifecycle?.toDomain(),
     env = env,
@@ -175,7 +200,7 @@ internal fun FileEntry.toWire() = WireFileEntry(
     mode = mode,
 )
 
-internal fun ServerConfig.Defaults.toWire() = ServerDefaults(
+internal fun ServerConfig.Defaults.toWire(image: String) = ServerDefaults(
     image = image,
     resources = resources.toWire(),
     network = network.toWire(),
@@ -183,7 +208,7 @@ internal fun ServerConfig.Defaults.toWire() = ServerDefaults(
     execTimeoutSeconds = execTimeout.inWholeSeconds.toInt(),
 )
 
-internal fun ServerConfig.Limits.toWire() = ServerLimits(
+internal fun ServerConfig.Limits.toWire(images: List<String>) = ServerLimits(
     images = images,
     maxCpus = maxCpus,
     maxMemoryMb = maxMemoryMb,

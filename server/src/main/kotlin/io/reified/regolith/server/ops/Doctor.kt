@@ -85,13 +85,24 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
         }
     }
 
+    /**
+     * Every image a session could start on: the allowed ones, and whatever the recorded sandboxes
+     * resolve to — a sandbox pinned to an image that has since left the allowlist still runs it.
+     */
     private suspend fun sandboxImages(): Check {
-        val missing = config.limits.images.filterNot { docker.run(listOf("image", "inspect", "--format", "{{.Id}}", it)).ok }
+        val recorded = withContext(Dispatchers.IO) { FileStateStore.recordedImagePolicies(config.stateDir) }
+        val stranded = recorded.filterValues { config.images.resolveOrNull(it) == null }.keys
+        val references = (config.images.allowed + recorded.values.mapNotNull { config.images.resolveOrNull(it) }).distinct()
+        val missing = references.filterNot { docker.run(listOf("image", "inspect", "--format", "{{.Id}}", it)).ok }
 
-        return if (missing.isEmpty()) {
-            ok("sandbox-images", "All ${config.limits.images.size} allowed images are on this host")
-        } else {
-            warn("sandbox-images", "Not on this host yet, pulled by the first session that uses them: ${missing.joinToString()}")
+        return when {
+            stranded.isNotEmpty() -> warn(
+                "sandbox-images",
+                "These sandboxes track an image this server no longer offers and cannot start: ${stranded.joinToString()}; " +
+                    "name it in REGOLITH_ALLOWED_IMAGES again, or move them with PATCH",
+            )
+            missing.isNotEmpty() -> warn("sandbox-images", "Not on this host yet, pulled by the first session that uses them: ${missing.joinToString()}")
+            else -> ok("sandbox-images", "All ${references.size} images a session could start on are on this host")
         }
     }
 

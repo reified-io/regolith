@@ -16,7 +16,7 @@ wraps it.
 | `PUT` | `/v1/sandboxes/{name}` | Create a sandbox, or return the one that exists |
 | `GET` | `/v1/sandboxes/{name}` | One sandbox |
 | `GET` | `/v1/sandboxes` | Sandboxes, filtered by label |
-| `PATCH` | `/v1/sandboxes/{name}` | Change its network, lifecycle, environment or labels |
+| `PATCH` | `/v1/sandboxes/{name}` | Change its image policy, network, lifecycle, environment or labels |
 | `POST` | `/v1/sandboxes/{name}/start` | Start a session ahead of time |
 | `POST` | `/v1/sandboxes/{name}/stop` | End the session; the home stays |
 | `DELETE` | `/v1/sandboxes/{name}` | Delete the sandbox and its home |
@@ -154,6 +154,10 @@ hard-coding them.
 }
 ```
 
+`defaults.image` is what a sandbox that follows the server runs, and `limits.images` is every image
+this server offers: a sandbox [pins one of them or tracks one](#which-image-a-sandbox-runs) and can
+run nothing else.
+
 `publishing` says whether this server has a [pages role](pages.md). With `false`, `publish` answers
 `not_implemented`, and a client can leave publishing out of what it offers instead of trying.
 
@@ -183,7 +187,7 @@ The body may be empty; whatever it leaves out takes the default from `GET /v1/in
 
 ```json
 {
-  "image": "ghcr.io/reified-io/regolith-sandbox:0.1.0",
+  "imagePolicy": {"mode": "default"},
   "resources": {"cpus": 1.0, "memoryMb": 1024, "homeMb": 4096},
   "network": {"mode": "public"},
   "lifecycle": {"idleStopSeconds": 900, "maxSessionSeconds": 86400, "retainDays": 30},
@@ -192,20 +196,26 @@ The body may be empty; whatever it leaves out takes the default from `GET /v1/in
 }
 ```
 
+- That is the whole body: there is no other field, and an unknown one is
+  [refused](#requests-and-responses). The values shown are the stock defaults — `GET /v1/info` gives
+  the ones the server you are talking to actually uses — except `env` and `labels`, which are empty
+  unless you set them.
 - The body is applied only when the sandbox is created. For an existing one, change settings with
   [`PATCH`](#patch-v1sandboxesname).
-- `image` must be one of the server's allowed images. `image` and `resources` are fixed for the
-  sandbox's life.
+- `imagePolicy` picks which image the sandbox runs — see [below](#which-image-a-sandbox-runs).
+  `network` is a [network policy](#network-policy). `resources` are fixed for the sandbox's life.
 - `lifecycle.retainDays: 0` makes the sandbox ephemeral: it is deleted once its session stops.
 - `env` applies to every command. Everything in the sandbox can read it, so it is no place for
   secrets.
+- `labels` are yours to choose; `GET /v1/sandboxes` filters by them.
 
 The response is a `SandboxInfo`:
 
 ```json
 {
   "name": "user-23",
-  "image": "ghcr.io/reified-io/regolith-sandbox:0.1.0",
+  "image": "ghcr.io/reified-io/regolith-sandbox:0.2.0",
+  "imagePolicy": {"mode": "default"},
   "resources": {"cpus": 1.0, "memoryMb": 1024, "homeMb": 4096},
   "network": {"mode": "public", "allow": []},
   "lifecycle": {"idleStopSeconds": 900, "maxSessionSeconds": 86400, "retainDays": 30},
@@ -215,7 +225,8 @@ The response is a `SandboxInfo`:
   "session": {
     "startedAt": "2026-09-13T12:00:00Z",
     "lastActiveAt": "2026-09-13T12:04:10Z",
-    "expiresAt": "2026-09-14T12:00:00Z"
+    "expiresAt": "2026-09-14T12:00:00Z",
+    "image": "ghcr.io/reified-io/regolith-sandbox:0.1.0"
   },
   "lastSessionEnd": {"reason": "idle", "at": "2026-09-13T11:40:00Z"},
   "createdAt": "2026-09-01T09:30:00Z",
@@ -226,8 +237,38 @@ The response is a `SandboxInfo`:
 
 - `state` is `stopped`, `starting`, `running` or `stopping`. `session` is present only while there
   is one.
+- `image` is the exact reference the sandbox's next session runs, `session.image` the one the
+  running session started on, and `imagePolicy` the rule that picked them. The first two differ, as
+  above, when the server has been offered a newer image since that session started.
 - `deleteAfter` is when retention deletes the sandbox, unless it is used before then.
 - `lastSessionEnd` says how the previous session ended — see below.
+
+### Which image a sandbox runs
+
+A sandbox runs one of the images its server offers, which `GET /v1/info` lists under
+`limits.images`; an image outside that list is refused, and a caller cannot bring one of its own.
+Which of them it runs is decided by its `imagePolicy`, applied again at the start of every session,
+so an upgraded server hands its sandboxes a newer image without them being recreated, and without
+touching a home.
+
+```json
+{"mode": "default"}
+{"mode": "track", "image": "ghcr.io/reified-io/regolith-sandbox-full"}
+{"mode": "pin", "image": "ghcr.io/reified-io/regolith-sandbox-full:0.1.0"}
+```
+
+- `default` — the server's default image, whichever that is when a session starts. This is what a
+  sandbox created without an `imagePolicy` gets, and what most callers want.
+- `track` — the image the server offers for one repository, named as an image from `limits.images`
+  without its tag or digest. A sandbox that needs the tools of another image, but not a particular
+  version of it, tracks that image.
+- `pin` — one exact image from `limits.images`, which never moves. For a sandbox whose tools must
+  not change under its caller; it stays there even after the server stops offering that image.
+
+A change takes effect at the next session: the running one keeps the image it started on. Nothing in
+a home is touched, but tools a sandbox installed for itself can be bound to the version of an
+interpreter the image carried — a Python virtual environment, a native npm module — so an agent that
+keeps such a thing in its home should be ready to build it again.
 
 ### How the last session ended
 
@@ -256,14 +297,17 @@ last page.
 
 ### `PATCH /v1/sandboxes/{name}`
 
-Changes `network`, `lifecycle`, `env` or `labels`; fields left out stay as they are.
+Changes `imagePolicy`, `network`, `lifecycle`, `env` or `labels`; fields left out stay as they are.
 
 ```json
 {"network": {"mode": "none"}}
+{"imagePolicy": {"mode": "pin", "image": "ghcr.io/reified-io/regolith-sandbox:0.1.0"}}
+{"imagePolicy": {"mode": "default"}}
 ```
 
 A network policy applies to the running session immediately — install dependencies with `public`,
-then switch to `none` before running untrusted code. Everything else applies from the next session.
+then switch to `none` before running untrusted code. Everything else applies from the next session,
+so pinning a sandbox that is running takes hold once its session ends; `stop` makes that now.
 
 ### `POST /v1/sandboxes/{name}/start`, `POST /v1/sandboxes/{name}/stop`
 

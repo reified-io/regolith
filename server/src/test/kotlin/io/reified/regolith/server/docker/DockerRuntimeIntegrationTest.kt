@@ -3,6 +3,7 @@ package io.reified.regolith.server.docker
 import io.reified.regolith.server.domain.EntryType
 import io.reified.regolith.server.domain.ExecCommand
 import io.reified.regolith.server.domain.ExecId
+import io.reified.regolith.server.domain.ImagePolicy
 import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.RegolithError
@@ -47,8 +48,9 @@ class DockerRuntimeIntegrationTest {
                 runtime.initialize()
                 docker.run(listOf("volume", "create", volume)).requireOk("volume create")
                 val now = Clock.System.now()
-                val sandbox = Sandbox(name, "debian:trixie-slim", Resources(0.5, 256, 512), NetworkPolicy.Public, Lifecycle(5.minutes, 1.days, 1.days), emptyMap(), emptyMap(), now, now)
-                runtime.startSession(sandbox, HomeMount(volume))
+                val image = "debian:trixie-slim"
+                val sandbox = Sandbox(name, ImagePolicy.Pin(image), Resources(0.5, 256, 512), NetworkPolicy.Public, Lifecycle(5.minutes, 1.days, 1.days), emptyMap(), emptyMap(), now, now)
+                runtime.startSession(sandbox, HomeMount(volume), image)
 
                 val idle = runtime.cpuMicros(name)
                 val burner = runtime.exec(name, ExecSpec(ExecId.random(), ExecCommand.Shell("timeout 1 sh -c 'while :; do :; done'; true"), "/tmp", emptyMap(), stdin = false))

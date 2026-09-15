@@ -85,8 +85,8 @@ fun Application.regolithApi(services: Services) {
                     ServerInfo(
                         version = services.version,
                         protocol = PROTOCOL_VERSION,
-                        defaults = services.config.defaults.toWire(),
-                        limits = services.config.limits.toWire(),
+                        defaults = services.config.defaults.toWire(services.config.images.default),
+                        limits = services.config.limits.toWire(services.config.images.allowed),
                         publishing = services.sites.available,
                     ),
                 )

@@ -91,6 +91,8 @@ Rules that keep it that way:
 - Interrupt before you stop: whoever ends a session marks its execs with `Execs.interrupt` first, so
   an outcome records why it ended instead of a killed process's exit code.
 - Work inside a session holds a `Sessions.Lease` for as long as it runs; idle means no lease.
+- A sandbox stores an image policy, never a resolved image: `ImageCatalog` answers it at each
+  session start, and only with a reference the configuration names.
 - Errors a caller can act on are `RegolithError` subtypes, mapped to status, code and title in
   `http/Api.kt` only; anything else is a 500 and is logged. `/v1` wire types map to domain types in
   `http/Mapping.kt` only.

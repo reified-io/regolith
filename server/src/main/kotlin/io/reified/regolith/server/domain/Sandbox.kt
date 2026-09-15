@@ -20,7 +20,7 @@ object SandboxLayout {
 @Serializable
 data class Sandbox(
     val name: SandboxName,
-    val image: String,
+    val imagePolicy: ImagePolicy,
     val resources: Resources,
     val network: NetworkPolicy,
     val lifecycle: Lifecycle,

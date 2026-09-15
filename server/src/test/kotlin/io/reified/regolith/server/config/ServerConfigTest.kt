@@ -18,8 +18,8 @@ class ServerConfigTest {
     fun `defaults pin the sandbox image to the server version`() {
         val config = load()
 
-        assertEquals("ghcr.io/reified-io/regolith-sandbox:1.2.3", config.defaults.image)
-        assertEquals(listOf(config.defaults.image), config.limits.images)
+        assertEquals("ghcr.io/reified-io/regolith-sandbox:1.2.3", config.images.default)
+        assertEquals(listOf(config.images.default), config.images.allowed)
         assertEquals(NetworkPolicy.Public, config.defaults.network)
         assertEquals(900.seconds, config.defaults.lifecycle.idleStop)
         assertEquals(30.days, config.defaults.lifecycle.retain)
@@ -49,8 +49,13 @@ class ServerConfigTest {
     fun `images must be pinned`() {
         assertFailsWith<IllegalStateException> { load("REGOLITH_SANDBOX_IMAGE" to "debian") }
         assertFailsWith<IllegalStateException> { load("REGOLITH_SANDBOX_IMAGE" to "registry.local:5000/sandbox:latest") }
-        assertEquals("registry.local:5000/sandbox:2026.09", load("REGOLITH_SANDBOX_IMAGE" to "registry.local:5000/sandbox:2026.09").defaults.image)
-        assertEquals(2, load("REGOLITH_ALLOWED_IMAGES" to "example/sandbox@sha256:abc").limits.images.size)
+        assertEquals("registry.local:5000/sandbox:2026.09", load("REGOLITH_SANDBOX_IMAGE" to "registry.local:5000/sandbox:2026.09").images.default)
+        assertEquals(2, load("REGOLITH_ALLOWED_IMAGES" to "example/sandbox@sha256:abc").images.allowed.size)
+    }
+
+    @Test
+    fun `two allowed images cannot share a repository`() {
+        assertFailsWith<IllegalStateException> { load("REGOLITH_ALLOWED_IMAGES" to "ghcr.io/reified-io/regolith-sandbox:1.2.2") }
     }
 
     @Test

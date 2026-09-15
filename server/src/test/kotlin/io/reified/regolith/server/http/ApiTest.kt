@@ -16,6 +16,8 @@ import io.reified.regolith.protocol.CreateSandboxRequest
 import io.reified.regolith.protocol.ErrorCodes
 import io.reified.regolith.protocol.ExecRequest
 import io.reified.regolith.protocol.HealthStatus
+import io.reified.regolith.protocol.ImageMode
+import io.reified.regolith.protocol.ImagePolicy
 import io.reified.regolith.protocol.NetworkAllow
 import io.reified.regolith.protocol.NetworkMode
 import io.reified.regolith.protocol.NetworkPolicy
@@ -34,6 +36,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import io.reified.regolith.server.domain.NetworkPolicy as DomainPolicy
+
+private const val FULL_REPOSITORY = "ghcr.io/example/sandbox-full"
+private const val FULL_IMAGE = "$FULL_REPOSITORY:3.1"
 
 class ApiTest {
     @Test
@@ -86,6 +91,40 @@ class ApiTest {
         assertEquals("research", again.labels["team"])
         assertEquals(SandboxState.STOPPED, again.state)
         assertEquals(listOf("user-23"), client.sandboxes(labels = mapOf("team" to "research")).sandboxes.map { it.name })
+    }
+
+    @Test
+    fun `a sandbox follows the server image, or the one it pins`() = apiTest(
+        mapOf("REGOLITH_ALLOWED_IMAGES" to FULL_IMAGE),
+    ) { server, client ->
+        val default = server.config.images.default
+        val sandbox = client.sandbox("user-23")
+        val created = sandbox.getOrCreate()
+
+        assertEquals(ImagePolicy(ImageMode.DEFAULT), created.imagePolicy)
+        assertEquals(default, created.image)
+        assertEquals(default, sandbox.start().session?.image)
+        assertEquals(default, server.runtime.startedOn[SandboxName.parse("user-23")])
+
+        // a pin applies from the next session; the running one keeps the image it started on.
+        val pinned = sandbox.update(UpdateSandboxRequest(imagePolicy = ImagePolicy(ImageMode.PIN, FULL_IMAGE)))
+        assertEquals(FULL_IMAGE, pinned.image)
+        assertEquals(default, pinned.session?.image)
+        sandbox.stop()
+        assertEquals(FULL_IMAGE, sandbox.start().session?.image)
+
+        val tracking = client.sandbox("user-24").getOrCreate(CreateSandboxRequest(imagePolicy = ImagePolicy(ImageMode.TRACK, FULL_REPOSITORY)))
+        assertEquals(FULL_IMAGE, tracking.image)
+    }
+
+    @Test
+    fun `an image this server does not offer is refused`() = apiTest { _, client ->
+        val refused = listOf(ImagePolicy(ImageMode.PIN, FULL_IMAGE), ImagePolicy(ImageMode.TRACK, FULL_REPOSITORY), ImagePolicy(ImageMode.TRACK))
+
+        refused.forEachIndexed { index, policy ->
+            val failure = assertFailsWith<RegolithException> { client.sandbox("user-2$index").getOrCreate(CreateSandboxRequest(imagePolicy = policy)) }
+            assertEquals(ErrorCodes.INVALID_REQUEST, failure.code, "$policy was not refused")
+        }
     }
 
     @Test

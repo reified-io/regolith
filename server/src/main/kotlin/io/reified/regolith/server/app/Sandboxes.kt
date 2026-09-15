@@ -3,6 +3,7 @@ package io.reified.regolith.server.app
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.reified.regolith.server.config.ServerConfig
 import io.reified.regolith.server.domain.StopReason
+import io.reified.regolith.server.domain.ImagePolicy
 import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.Metadata
 import io.reified.regolith.server.domain.NetworkPolicy
@@ -21,7 +22,7 @@ import kotlin.time.Duration.Companion.seconds
 
 /** What a caller asks for when creating a sandbox; `null` takes the server default. */
 data class SandboxRequest(
-    val image: String? = null,
+    val imagePolicy: ImagePolicy? = null,
     val cpus: Double? = null,
     val memoryMb: Int? = null,
     val homeMb: Int? = null,
@@ -35,6 +36,7 @@ data class LifecycleRequest(val idleStop: Duration? = null, val maxSession: Dura
 
 /** A change to an existing sandbox; only non-null fields apply. */
 data class SandboxPatch(
+    val imagePolicy: ImagePolicy? = null,
     val network: NetworkPolicy? = null,
     val lifecycle: LifecycleRequest? = null,
     val env: Map<String, String>? = null,
@@ -82,8 +84,8 @@ class Sandboxes(
         records[name]?.let { return@withLock it to false }
         val defaults = config.defaults
         val limits = config.limits
-        val image = request.image ?: defaults.image
-        requireValid(image in limits.images) { "Image `$image` is not allowed on this server" }
+        val imagePolicy = request.imagePolicy ?: ImagePolicy.Default
+        config.images.requireAllowed(imagePolicy)
         val resources = Resources(
             cpus = request.cpus ?: defaults.resources.cpus,
             memoryMb = request.memoryMb ?: defaults.resources.memoryMb,
@@ -97,7 +99,7 @@ class Sandboxes(
         val now = clock.now()
         val sandbox = Sandbox(
             name = name,
-            image = image,
+            imagePolicy = imagePolicy,
             resources = resources,
             network = request.network ?: defaults.network,
             lifecycle = lifecycle(defaults.lifecycle, request.lifecycle),
@@ -122,7 +124,7 @@ class Sandboxes(
         val now = clock.now()
         val sandbox = Sandbox(
             name = name,
-            image = defaults.image,
+            imagePolicy = ImagePolicy.Default,
             resources = defaults.resources.copy(homeMb = homeMb),
             network = defaults.network,
             lifecycle = defaults.lifecycle,
@@ -139,9 +141,11 @@ class Sandboxes(
 
     suspend fun update(name: SandboxName, patch: SandboxPatch): Sandbox = locks.withLock(name) {
         val current = require(name)
+        patch.imagePolicy?.let(config.images::requireAllowed)
         patch.env?.let(Metadata::requireEnv)
         patch.labels?.let { Metadata.requireLabels(it, config.limits.maxLabels) }
         val updated = current.copy(
+            imagePolicy = patch.imagePolicy ?: current.imagePolicy,
             network = patch.network ?: current.network,
             lifecycle = patch.lifecycle?.let { lifecycle(current.lifecycle, it) } ?: current.lifecycle,
             env = patch.env ?: current.env,
