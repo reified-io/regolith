@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
 /**
- * Body of `POST /v1/sandboxes/{name}/execs`. Exactly one of [shell] and [argv] must be set.
+ * Body of `POST /v1/sandboxes/{id}/execs`. Exactly one of [shell] and [argv] must be set.
  *
  * A relative [cwd] resolves against the sandbox home. With [stdin] unset the command reads an
  * empty input, so a program waiting for a keypress ends instead of hanging until its timeout.

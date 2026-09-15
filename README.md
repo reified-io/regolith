@@ -70,7 +70,7 @@ dependencies {
 
 ```kotlin
 RegolithClient("http://127.0.0.1:8080", token).use { client ->
-    // your own name for it; the same one finds this sandbox again next time
+    // the alias is your own name for it; the same alias finds this sandbox again next time
     val sandbox = client.getOrCreate("field-notes")
 
     val result = sandbox.run("python3 -c 'import platform; print(platform.system())'")

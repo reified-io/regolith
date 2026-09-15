@@ -84,92 +84,92 @@ class FakeRuntime : SandboxRuntime {
         return SessionHandle("test-${sandbox.id}", "172.30.0.${sessions.size + 1}")
     }
 
-    override suspend fun attachNetwork(name: SandboxId): String {
-        attached += name
+    override suspend fun attachNetwork(sandbox: SandboxId): String {
+        attached += sandbox
 
         return "172.30.1.${attached.size}"
     }
 
-    override suspend fun detachNetwork(name: SandboxId) {
-        attached -= name
+    override suspend fun detachNetwork(sandbox: SandboxId) {
+        attached -= sandbox
     }
 
-    override suspend fun stopSession(name: SandboxId) {
-        sessions -= name
-        attached -= name
-        processes.values.filter { it.first == name }.forEach { it.second.kill(137) }
+    override suspend fun stopSession(sandbox: SandboxId) {
+        sessions -= sandbox
+        attached -= sandbox
+        processes.values.filter { it.first == sandbox }.forEach { it.second.kill(137) }
     }
 
-    override suspend fun exec(name: SandboxId, spec: ExecSpec): RunningProcess {
-        check(name in sessions) { "No session for $name" }
-        val process = FakeProcess(spec.stdin) { limits.merge(name, LimitEvents(1, 0)) { a, b -> LimitEvents(a.oomKills + b.oomKills, a.forksRefused) } }
-        processes[spec.id] = name to process
+    override suspend fun exec(sandbox: SandboxId, spec: ExecSpec): RunningProcess {
+        check(sandbox in sessions) { "No session for $sandbox" }
+        val process = FakeProcess(spec.stdin) { limits.merge(sandbox, LimitEvents(1, 0)) { a, b -> LimitEvents(a.oomKills + b.oomKills, a.forksRefused) } }
+        processes[spec.id] = sandbox to process
         scope.launch { process.run(spec.command) }
 
         return process
     }
 
-    override suspend fun cpuMicros(name: SandboxId): Long = cpu[name] ?: 0
+    override suspend fun cpuMicros(sandbox: SandboxId): Long = cpu[sandbox] ?: 0
 
     /** Limit counters each session reports; a fake command `oom` bumps them the way the kernel would. */
     val limits = ConcurrentHashMap<SandboxId, LimitEvents>()
 
-    override suspend fun limitEvents(name: SandboxId): LimitEvents = limits[name] ?: LimitEvents(0, 0)
+    override suspend fun limitEvents(sandbox: SandboxId): LimitEvents = limits[sandbox] ?: LimitEvents(0, 0)
 
-    override suspend fun signal(name: SandboxId, exec: ExecId, signal: Signal) {
+    override suspend fun signal(sandbox: SandboxId, exec: ExecId, signal: Signal) {
         processes[exec]?.second?.kill(if (signal == Signal.TERM) 143 else 137)
     }
 
     /** Puts a file in a session without going through the api, for a test that needs one to exist. */
-    fun place(name: SandboxId, path: String, text: String) {
-        files["$name:$path"] = text.toByteArray()
+    fun place(sandbox: SandboxId, path: String, text: String) {
+        files["$sandbox:$path"] = text.toByteArray()
     }
 
     /** What a session holds at [path], or null. */
-    fun content(name: SandboxId, path: String): String? = files["$name:$path"]?.decodeToString()
+    fun content(sandbox: SandboxId, path: String): String? = files["$sandbox:$path"]?.decodeToString()
 
-    override suspend fun stat(name: SandboxId, path: String): FileEntry {
-        val bytes = files["$name:$path"]
-        val isDirectory = files.keys.any { it.startsWith("$name:${path.trimEnd('/')}/") }
+    override suspend fun stat(sandbox: SandboxId, path: String): FileEntry {
+        val bytes = files["$sandbox:$path"]
+        val isDirectory = files.keys.any { it.startsWith("$sandbox:${path.trimEnd('/')}/") }
         if (bytes == null && !isDirectory) throw RegolithError.NotFound("`$path` does not exist")
 
         return entry(path, bytes)
     }
 
-    override suspend fun list(name: SandboxId, path: String, maxEntries: Int): List<FileEntry> {
-        val prefix = "$name:${path.trimEnd('/')}/"
+    override suspend fun list(sandbox: SandboxId, path: String, maxEntries: Int): List<FileEntry> {
+        val prefix = "$sandbox:${path.trimEnd('/')}/"
 
         return files.entries.filter { it.key.startsWith(prefix) && '/' !in it.key.removePrefix(prefix) }
             .map { entry(it.key.substringAfter(':'), it.value) }
             .sortedBy { it.name }
     }
 
-    override suspend fun read(name: SandboxId, path: String, sink: OutputStream, maxBytes: Long) {
-        sink.write(files["$name:$path"] ?: throw RegolithError.NotFound("`$path` does not exist"))
+    override suspend fun read(sandbox: SandboxId, path: String, sink: OutputStream, maxBytes: Long) {
+        sink.write(files["$sandbox:$path"] ?: throw RegolithError.NotFound("`$path` does not exist"))
     }
 
-    override suspend fun write(name: SandboxId, path: String, source: InputStream, maxBytes: Long): FileEntry {
+    override suspend fun write(sandbox: SandboxId, path: String, source: InputStream, maxBytes: Long): FileEntry {
         val bytes = runInterruptible { source.readAllBytes() }
         if (bytes.size > maxBytes) throw RegolithError.TooLarge("Files are limited to $maxBytes bytes")
         if (diskFull) throw RegolithError.InsufficientStorage("The disk that holds `$path` is full; delete files to make room")
-        files["$name:$path"] = bytes
+        files["$sandbox:$path"] = bytes
 
         return entry(path, bytes)
     }
 
-    override suspend fun delete(name: SandboxId, path: String, recursive: Boolean) {
-        files.remove("$name:$path") ?: throw RegolithError.NotFound("`$path` does not exist")
+    override suspend fun delete(sandbox: SandboxId, path: String, recursive: Boolean) {
+        files.remove("$sandbox:$path") ?: throw RegolithError.NotFound("`$path` does not exist")
     }
 
-    override suspend fun tree(name: SandboxId, path: String, maxFiles: Int): List<TreeFile> =
-        files.filterKeys { it.startsWith("$name:${path.trimEnd('/')}/") }
-            .map { (key, bytes) -> TreeFile(key.substringAfter("$name:${path.trimEnd('/')}/"), bytes.size.toLong()) }
+    override suspend fun tree(sandbox: SandboxId, path: String, maxFiles: Int): List<TreeFile> =
+        files.filterKeys { it.startsWith("$sandbox:${path.trimEnd('/')}/") }
+            .map { (key, bytes) -> TreeFile(key.substringAfter("$sandbox:${path.trimEnd('/')}/"), bytes.size.toLong()) }
 
-    override suspend fun copyOut(name: SandboxId, path: String, destination: Path) {
-        for (file in tree(name, path, Int.MAX_VALUE)) {
+    override suspend fun copyOut(sandbox: SandboxId, path: String, destination: Path) {
+        for (file in tree(sandbox, path, Int.MAX_VALUE)) {
             val target = destination.resolve(file.path)
             Files.createDirectories(target.parent)
-            Files.write(target, files.getValue("$name:${path.trimEnd('/')}/${file.path}"))
+            Files.write(target, files.getValue("$sandbox:${path.trimEnd('/')}/${file.path}"))
         }
     }
 
@@ -389,13 +389,13 @@ class FakeEnforcer : NetworkEnforcer {
 
     override suspend fun verifyAndRepair(): Boolean = holds
 
-    override suspend fun apply(name: SandboxId, address: String, policy: NetworkPolicy) {
+    override suspend fun apply(sandbox: SandboxId, address: String, policy: NetworkPolicy) {
         check(policy != NetworkPolicy.None) { "none is never applied to an address" }
-        applied[name] = policy
+        applied[sandbox] = policy
     }
 
-    override suspend fun release(name: SandboxId) {
-        applied.remove(name)
+    override suspend fun release(sandbox: SandboxId) {
+        applied.remove(sandbox)
     }
 }
 
