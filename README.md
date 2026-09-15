@@ -26,7 +26,8 @@ sandbox it cannot confine.
 - **Sandboxes that remember.** Give one your own name for it, and its files are still there next time.
 - **Commands you can reconnect to.** Output stays on the server, so a dropped client just resumes.
 - **A network boundary that checks itself.** No way to the host or your LAN, in any mode.
-- **Cleans up after itself.** Idle sessions stop, and sandboxes nobody uses are deleted.
+- **Cleans up after itself.** Idle sessions stop, and sandboxes nobody uses are deleted, unless
+  they have a site up.
 - **Upgrades reach existing sandboxes.** A new image takes hold at the next session, unless a
   sandbox pinned the one it has.
 - **Failures a model can act on.** `oom_killed` instead of a bare exit code 137.

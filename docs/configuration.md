@@ -128,7 +128,7 @@ the server holds no registry credentials of its own.
 |---|---|---|
 | `REGOLITH_IDLE_STOP_SECONDS` | `900` | A session with no running command or transfer stops after this long |
 | `REGOLITH_MAX_SESSION_SECONDS` | `86400` | Default and ceiling for a session's lifetime, busy or not |
-| `REGOLITH_RETAIN_DAYS` / `REGOLITH_MAX_RETAIN_DAYS` | `30` / `90` | A sandbox unused this long is deleted with its home; `0` makes it ephemeral |
+| `REGOLITH_RETAIN_DAYS` / `REGOLITH_MAX_RETAIN_DAYS` | `30` / `90` | A sandbox unused this long is deleted with its home, never while its site is up; `0` makes it ephemeral |
 | `REGOLITH_UNATTENDED_CPU_SECONDS` | `600` | CPU seconds a session may burn while none of its commands runs — a process left behind in the background — before it is stopped. Commands' own CPU never counts |
 
 ## Commands and transfers
