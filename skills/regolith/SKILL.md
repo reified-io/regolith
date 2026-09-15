@@ -123,7 +123,8 @@ Errors are RFC 9457 problem documents. Branch on `code`, show `detail` to people
 - `payload_too_large` — a file, body or site beyond the limits; `detail` names it.
 - `insufficient_storage` — the home is full: delete what is no longer needed, then write again.
 - `invalid_request` — fix what `detail` says; do not retry unchanged.
-- `not_found` — the sandbox or exec does not exist; `PUT` the sandbox first.
+- `not_found` — the sandbox, exec, file or site does not exist; `detail` says which. For a sandbox,
+  `PUT` it first.
 
 ## Kotlin
 

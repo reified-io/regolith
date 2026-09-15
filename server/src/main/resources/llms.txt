@@ -78,3 +78,4 @@ Paths are absolute or relative to `/home/sandbox`.
 - `payload_too_large` (413): a file, body or site beyond its limit; `detail` names it.
 - `insufficient_storage` (507): the home is full. Delete files from it before writing again.
 - `invalid_request` (400): the `detail` member says what to fix.
+- `not_found` (404): the sandbox, exec, file or site does not exist; `detail` says which. `PUT` a missing sandbox.

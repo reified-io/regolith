@@ -94,7 +94,7 @@ problem; `detail` explains this occurrence, for people.
 |---|---|---|
 | 400 | `invalid_request` | A malformed body, an invalid value, or a value outside a limit |
 | 401 | `unauthorized` | Missing or wrong token |
-| 404 | `not_found` | No such sandbox, exec, file or endpoint |
+| 404 | `not_found` | No such sandbox, exec, file, published site or endpoint |
 | 409 | `conflict` | The request contradicts current state: stdin already closed, a directory not empty |
 | 409 | `busy` | The sandbox already runs as many commands as allowed |
 | 413 | `payload_too_large` | A body, file or output beyond its limit |
