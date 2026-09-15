@@ -50,9 +50,11 @@ private const val USAGE = """usage: server [serve | pages | doctor | orphans [ad
   serve            run the control plane API (the default)
   pages            run the public role: serve published sites and take in releases
   doctor           check this host against every startup precondition, changing nothing
-  orphans          list homes no sandbox record claims
+  orphans          list homes no sandbox record claims, beside a running server or not
   orphans adopt    give each of them a record again, keeping its files
   orphans delete   delete them and their files
+
+Adopting and deleting take the state lock, so they need the server stopped; the rest do not.
 
 Each role reads its own REGOLITH_* variables; see docs/configuration.md."""
 
@@ -170,8 +172,35 @@ private fun doctor(config: ServerConfig): Int {
     return Doctor.exitCode(checks)
 }
 
-/** Resolves orphaned homes; needs the state lock, so the server must be stopped. */
-private fun orphans(config: ServerConfig, action: String?): Int {
+private fun orphans(config: ServerConfig, action: String?): Int =
+    if (action == null) listOrphans(config) else resolveOrphans(config, action)
+
+/**
+ * Lists orphaned homes the way `doctor` reads them — records off disk, no state lock — so an operator
+ * can look while a server is serving rather than stopping one to find out whether it needs to.
+ */
+private fun listOrphans(config: ServerConfig): Int = try {
+    runBlocking {
+        val docker = DockerCli(config.docker)
+        val helpers = Helpers(Helpers.resolveImage(docker, config.helperImage), config.namespace)
+        val homes = HomeDisks(docker, helpers, config.namespace, config.stateDir, reserveMb = config.minFreeMb)
+        val recorded = FileStateStore.recordedIds(config.stateDir).toSet()
+        val found = homes.list().filterNot { it.value in recorded }.sortedBy { it.value }
+        val unrecognized = homes.unrecognized().sorted()
+
+        if (found.isEmpty() && unrecognized.isEmpty()) println("no orphaned homes")
+        found.forEach { println("orphan   $it  ${homes.sizeMb(it) ?: "?"} MB") }
+        // nothing here can adopt or delete these: only an operator knows what they held.
+        unrecognized.forEach { println("unknown  $it  (no sandbox id; remove with docker volume rm)") }
+    }
+    0
+} catch (e: Exception) {
+    System.err.println(e.message)
+    1
+}
+
+/** Adopts or deletes orphaned homes, which writes records: it takes the lock the server holds. */
+private fun resolveOrphans(config: ServerConfig, action: String): Int {
     val app = open(config)
 
     return try {
@@ -179,15 +208,7 @@ private fun orphans(config: ServerConfig, action: String?): Int {
             app.sandboxes.load()
             when (action) {
                 "adopt" -> app.orphans.adopt().forEach { println("adopted  ${it.id}  ${it.resources.homeMb} MB") }
-                "delete" -> app.orphans.delete().forEach { println("deleted  $it") }
-                else -> {
-                    val found = app.orphans.find()
-                    val unrecognized = app.orphans.unrecognized()
-                    if (found.isEmpty() && unrecognized.isEmpty()) println("no orphaned homes")
-                    found.forEach { println("orphan   $it  ${app.homes.sizeMb(it) ?: "?"} MB") }
-                    // nothing here can adopt or delete these: only an operator knows what they held.
-                    unrecognized.forEach { println("unknown  $it  (no sandbox id; remove with docker volume rm)") }
-                }
+                else -> app.orphans.delete().forEach { println("deleted  $it") }
             }
         }
         0

@@ -46,7 +46,7 @@ class OrphanHomes(private val sandboxes: Sandboxes, private val homes: HomeStore
         fun message(orphans: List<String>): String =
             "Homes with no sandbox record: ${orphans.joinToString()}. The state directory may be lost or wrong, and " +
                 "serving now would leave their files where no call reaches them and retention never deletes them. " +
-                "With the server stopped, run `orphans` to review them, then `orphans adopt` to give them records " +
+                "Run `orphans` to review them, then, with the server stopped, `orphans adopt` to give them records " +
                 "again or `orphans delete` to delete them and their files."
     }
 }

@@ -238,7 +238,9 @@ live server. It checks:
 - the state directory, its namespace, and orphaned homes;
 - when one is configured, whether the pages role answers and accepts this server's token.
 
-`orphans` takes the state lock, so the server must be stopped first.
+`orphans` reads records off disk and takes no lock, so it answers beside a running server.
+`orphans adopt` and `orphans delete` write records, so they take the state lock and need the server
+stopped.
 
 ## Pages
 

@@ -189,9 +189,9 @@ Each sandbox's home is a preallocated ext4 image of its own size (`HomeDisks`).
 - **Never forgotten.** A home is found by its sandbox's id, and retention only walks records. If the
   state directory is lost or points somewhere else, every home keeps somebody's files where no call
   reaches them and retention never deletes them. So the server refuses to start while a home disk
-  exists that no record claims, and says which. An operator decides, with the server stopped:
-  `orphans adopt` gives each home a record again (label `regolith.adopted=true`), and
-  `orphans delete` deletes them.
+  exists that no record claims, and says which. `orphans` lists them beside a running server; an
+  operator then decides, with the server stopped: `orphans adopt` gives each home a record again
+  (label `regolith.adopted=true`), and `orphans delete` deletes them.
 - **Nothing it cannot name.** A home disk whose name holds no sandbox id — one from a server older
   than ids, or made by hand — stops startup the same way. No record can claim it and no command here
   adopts or deletes it, since only an operator knows what it held: `orphans` lists it, and it is
