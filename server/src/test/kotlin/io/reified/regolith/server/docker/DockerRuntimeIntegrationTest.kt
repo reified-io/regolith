@@ -22,6 +22,7 @@ import java.io.InputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
@@ -80,6 +81,11 @@ class DockerRuntimeIntegrationTest {
                 assertEquals("hello regolith", sink.toString())
                 assertEquals(listOf("file.txt"), runtime.list(name, "/tmp/probe/nested", 100).map { it.name })
                 assertEquals(EntryType.DIRECTORY, runtime.stat(name, "/tmp/probe").type)
+                assertTrue(runtime.readable(name, "/tmp/probe/nested/file.txt"))
+                // 0640 root:shadow in this image: stat answers where a read would fail, which is why the
+                // read is refused on this answer rather than on a stream that already promised 200.
+                assertEquals(EntryType.FILE, runtime.stat(name, "/etc/shadow").type)
+                assertFalse(runtime.readable(name, "/etc/shadow"), "uid 1000 must not read /etc/shadow")
                 assertFailsWith<RegolithError.TooLarge> { runtime.write(name, "/tmp/probe/big", ByteArray(4096).inputStream(), 1024) }
                 assertFailsWith<RegolithError.NotFound> { runtime.stat(name, "/tmp/probe/big") }
 
