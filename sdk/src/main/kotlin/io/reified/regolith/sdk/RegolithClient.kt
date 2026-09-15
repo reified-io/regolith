@@ -13,6 +13,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.content.TextContent
 import io.ktor.http.isSuccess
@@ -23,6 +24,8 @@ import io.reified.regolith.protocol.SandboxPage
 import io.reified.regolith.protocol.ServerInfo
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * A client for one Regolith server.
@@ -132,6 +135,8 @@ public class RegolithClient(
     private suspend fun failure(response: HttpResponse): RegolithException {
         val text = response.bodyAsText()
         val status = response.status
+        // only the delay form: a server that names a date instead leaves the wait to the caller.
+        val retryAfter = response.headers[HttpHeaders.RetryAfter]?.trim()?.toLongOrNull()?.seconds
         val body = try {
             RegolithJson.lenient.decodeFromString(ErrorBody.serializer(), text)
         } catch (_: SerializationException) {
@@ -141,9 +146,9 @@ public class RegolithClient(
         }
 
         return if (body != null) {
-            RegolithException(status.value, body.code, body.detail)
+            RegolithException(status.value, body.code, body.detail, retryAfter)
         } else {
-            RegolithException(status.value, "http_${status.value}", text.take(MAX_ERROR_CHARS).ifBlank { status.description })
+            RegolithException(status.value, "http_${status.value}", text.take(MAX_ERROR_CHARS).ifBlank { status.description }, retryAfter)
         }
     }
 
@@ -156,10 +161,13 @@ public class RegolithClient(
 /**
  * A request the server refused. [code] is one of the stable codes in
  * [io.reified.regolith.protocol.ErrorCodes], or `http_<status>` when the response came from
- * something other than Regolith, such as a proxy in front of it.
+ * something other than Regolith, such as a proxy in front of it. [detail] explains this refusal to
+ * people, and [retryAfter] is how long the server asked a client to wait before trying again, when it
+ * asked.
  */
 public class RegolithException(
     public val status: Int,
     public val code: String,
-    message: String,
-) : RuntimeException("$code: $message")
+    public val detail: String,
+    public val retryAfter: Duration? = null,
+) : RuntimeException("$code: $detail")
