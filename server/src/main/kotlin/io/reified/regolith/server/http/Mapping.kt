@@ -8,6 +8,7 @@ import io.reified.regolith.protocol.NetworkMode
 import io.reified.regolith.protocol.OutcomeType
 import io.reified.regolith.protocol.OutputFrame
 import io.reified.regolith.protocol.OutputKind
+import io.reified.regolith.protocol.Reasons
 import io.reified.regolith.protocol.SandboxInfo
 import io.reified.regolith.protocol.SandboxState
 import io.reified.regolith.protocol.ServerDefaults
@@ -25,6 +26,7 @@ import io.reified.regolith.server.domain.EntryType
 import io.reified.regolith.server.domain.Exec
 import io.reified.regolith.server.domain.ExecCommand
 import io.reified.regolith.server.domain.ExecOutcome
+import io.reified.regolith.server.domain.ExitCause
 import io.reified.regolith.server.domain.FileEntry
 import io.reified.regolith.server.domain.ImageCatalog
 import io.reified.regolith.server.domain.ImagePolicy
@@ -34,6 +36,7 @@ import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SessionEnd
+import io.reified.regolith.server.domain.StopReason
 import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.output.Frame
 import io.reified.regolith.server.output.FrameKind
@@ -69,7 +72,7 @@ internal fun Sandbox.toInfo(session: Sessions.Session?, lastEnd: SessionEnd?, im
     labels = labels,
     state = if (session != null) SandboxState.RUNNING else SandboxState.STOPPED,
     session = session?.let { SessionInfo(it.startedAt, it.lastActiveAt, it.expiresAt, it.image) },
-    lastSessionEnd = lastEnd?.let { SessionEndInfo(it.reason.name.lowercase(), it.at) },
+    lastSessionEnd = lastEnd?.let { SessionEndInfo(it.reason.toWire(), it.at) },
     createdAt = createdAt,
     lastUsedAt = lastUsedAt,
     deleteAfter = deleteAfter,
@@ -169,10 +172,26 @@ internal fun Exec.toInfo(stdinOpen: Boolean) = ExecInfo(
 )
 
 internal fun ExecOutcome.toWire(): WireOutcome = when (this) {
-    is ExecOutcome.Exited -> WireOutcome(OutcomeType.EXITED, exitCode = code, reason = cause?.name?.lowercase())
+    is ExecOutcome.Exited -> WireOutcome(OutcomeType.EXITED, exitCode = code, reason = cause?.toWire())
     ExecOutcome.TimedOut -> WireOutcome(OutcomeType.TIMED_OUT)
     ExecOutcome.Cancelled -> WireOutcome(OutcomeType.CANCELLED)
-    is ExecOutcome.Interrupted -> WireOutcome(OutcomeType.INTERRUPTED, reason = reason.name.lowercase())
+    is ExecOutcome.Interrupted -> WireOutcome(OutcomeType.INTERRUPTED, reason = reason.toWire())
+}
+
+internal fun ExitCause.toWire(): String = when (this) {
+    ExitCause.OOM_KILLED -> Reasons.OOM_KILLED
+    ExitCause.PIDS_LIMITED -> Reasons.PIDS_LIMITED
+}
+
+internal fun StopReason.toWire(): String = when (this) {
+    StopReason.STOPPED -> Reasons.STOPPED
+    StopReason.IDLE -> Reasons.IDLE
+    StopReason.SESSION_EXPIRED -> Reasons.SESSION_EXPIRED
+    StopReason.CAPACITY -> Reasons.CAPACITY
+    StopReason.CPU_LIMIT -> Reasons.CPU_LIMIT
+    StopReason.POLICY_FAILED -> Reasons.POLICY_FAILED
+    StopReason.SANDBOX_DELETED -> Reasons.SANDBOX_DELETED
+    StopReason.SERVER_RESTARTED -> Reasons.SERVER_RESTARTED
 }
 
 internal fun Frame.toWire() = OutputFrame(

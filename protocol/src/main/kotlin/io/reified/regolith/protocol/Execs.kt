@@ -48,8 +48,8 @@ public enum class OutcomeType {
 
 /**
  * How an exec ended. For [OutcomeType.EXITED], [reason] names a limit the session hit while the command
- * ran, when one explains the exit: `oom_killed` (the memory limit) or `pids_limited` (the process limit).
- * For [OutcomeType.INTERRUPTED] it says why the session ended. Accept values you do not know.
+ * ran, when one explains the exit: [Reasons.OOM_KILLED] or [Reasons.PIDS_LIMITED]. For
+ * [OutcomeType.INTERRUPTED] it says why the session ended. Accept values you do not know.
  */
 @Serializable
 public data class ExecOutcome(
@@ -57,6 +57,43 @@ public data class ExecOutcome(
     val exitCode: Int? = null,
     val reason: String? = null,
 )
+
+/**
+ * Every reason this version of the server sends, in [ExecOutcome.reason] and [SessionEndInfo.reason].
+ * Kept as strings rather than an enum, like [ErrorCodes], so a client never fails to decode a reason a
+ * newer server adds.
+ */
+public object Reasons {
+    /** The kernel killed a process for exceeding the session's memory limit while the command ran. */
+    public const val OOM_KILLED: String = "oom_killed"
+
+    /** The session hit its process limit while the command ran, so a fork failed. */
+    public const val PIDS_LIMITED: String = "pids_limited"
+
+    /** The session was stopped through the API. */
+    public const val STOPPED: String = "stopped"
+
+    /** No command or transfer for the sandbox's idle window. */
+    public const val IDLE: String = "idle"
+
+    /** The session reached its maximum lifetime. */
+    public const val SESSION_EXPIRED: String = "session_expired"
+
+    /** Reclaimed while idle, to start another sandbox's session. */
+    public const val CAPACITY: String = "capacity"
+
+    /** Processes left behind burned more CPU than allowed while no command ran. */
+    public const val CPU_LIMIT: String = "cpu_limit"
+
+    /** The network floor could not be restored. */
+    public const val POLICY_FAILED: String = "policy_failed"
+
+    /** The sandbox was deleted under the command. */
+    public const val SANDBOX_DELETED: String = "sandbox_deleted"
+
+    /** The server restarted under the command. */
+    public const val SERVER_RESTARTED: String = "server_restarted"
+}
 
 /**
  * An exec as the server reports it. [outputEnd] is the offset just past the output recorded so

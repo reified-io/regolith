@@ -157,8 +157,8 @@ public data class SessionInfo(
 )
 
 /**
- * How a sandbox's last session ended. [reason] is `stopped`, `idle`, `session_expired`, `capacity`,
- * `cpu_limit`, `policy_failed` or `server_restarted`; a client should accept values it does not know.
+ * How a sandbox's last session ended. [reason] is one of [Reasons]; a client should accept values it
+ * does not know.
  */
 @Serializable
 public data class SessionEndInfo(
