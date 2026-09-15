@@ -173,7 +173,9 @@ class HostFirewall(
         docker.run(listOf("exec", probe, "bash", "-c", script)).requireOk("Running the network probe").text.lines().filter { it.isNotBlank() }
 
     private suspend fun removeContainers(vararg names: String) {
-        docker.run(listOf("rm", "--force") + names)
+        // these run with --rm, and a forced removal takes the place of docker's own; --volumes keeps
+        // anonymous volumes from outliving it the way --rm would have.
+        docker.run(listOf("rm", "--force", "--volumes") + names)
     }
 
     private suspend fun run(args: List<String>, input: String? = null): String =

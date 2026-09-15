@@ -47,7 +47,9 @@ COPY --from=build /src/server/build/install/server /opt/regolith
 COPY LICENSE /opt/regolith/LICENSE
 
 ENV REGOLITH_STATE_DIR=/var/lib/regolith
-VOLUME /var/lib/regolith
+# the state directory is deliberately not a VOLUME: every helper runs this same image and mounts
+# nothing there, so a declared volume makes docker create an anonymous one per helper run. a
+# deployment mounts a named volume, and the server creates the directory when it is not mounted.
 
 # the pages role serves the public and holds no socket, so it runs unprivileged. docker copies this
 # ownership onto a fresh named volume, which is what lets uid 1000 write its releases.
