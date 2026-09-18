@@ -40,8 +40,21 @@ tasks.jar {
 
 tasks.test {
     // real docker tests run only when asked for, since they start containers on the machine running the build.
-    environment("REGOLITH_DOCKER_TESTS", System.getenv("REGOLITH_DOCKER_TESTS") ?: "")
+    val dockerTests = System.getenv("REGOLITH_DOCKER_TESTS") ?: ""
     // host tests also change this machine's firewall and loop devices, so they have a switch of their own.
-    environment("REGOLITH_HOST_TESTS", System.getenv("REGOLITH_HOST_TESTS") ?: "")
+    val hostTests = System.getenv("REGOLITH_HOST_TESTS") ?: ""
+    environment("REGOLITH_DOCKER_TESTS", dockerTests)
+    environment("REGOLITH_HOST_TESTS", hostTests)
     environment("REGOLITH_HOST_TEST_LAN", System.getenv("REGOLITH_HOST_TEST_LAN") ?: "")
+
+    // a test task's environment is not one of its inputs: without these, a result stored without a
+    // switch is served to a run with it, and the other way round.
+    inputs.property("dockerTests", dockerTests)
+    inputs.property("hostTests", hostTests)
+    // and a run against a real daemon or a real machine is never the same run twice: the helper
+    // scripts, the images and the host it checks are no inputs of this task, so it would otherwise
+    // report itself up to date after exactly the changes it exists to check.
+    val real = dockerTests == "1" || hostTests == "1"
+    outputs.upToDateWhen { !real }
+    outputs.cacheIf { !real }
 }
