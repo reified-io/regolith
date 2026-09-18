@@ -81,7 +81,7 @@ On top of the floor, each sandbox has a mode:
 | Mode | What it means |
 |---|---|
 | `public` | The rest of the internet. Names resolve through Docker's embedded resolver |
-| `allowlist` | Only the listed networks — even `0.0.0.0/0` cannot reopen the floor, which is checked first. Names still resolve through the embedded resolver, which forwards queries from the Docker daemon itself, so DNS stays a channel out, as in every address-based allowlist |
+| `allowlist` | Only the listed networks — even `0.0.0.0/0` cannot reopen the floor, which is checked first. Names still resolve: the two public resolvers a sandbox is given answer on port 53 under any allowlist, so DNS stays a channel out, as in every address-based allowlist |
 | `none` | The session is detached from every network. Its only interface is loopback, and the embedded resolver is gone with the network: nothing leaves, DNS included |
 
 A policy change applies to a running session at once. Every transition passes through a moment in

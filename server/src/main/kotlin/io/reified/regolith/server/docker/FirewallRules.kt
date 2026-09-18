@@ -22,7 +22,8 @@ object PublicResolvers {
  *        DNS -> N · everything -> D
  *   N    only the given public resolvers
  *   D    source address -> that sandbox's chain; an address with no policy is rejected
- *   S…   public: return · allowlist: listed networks return, the rest rejected
+ *   S…   public: return · allowlist: the given resolvers on port 53 and the listed networks return,
+ *        the rest rejected
  * INPUT -> P_IN     the host offers a sandbox nothing
  * ```
  */
@@ -77,6 +78,12 @@ class FirewallRules(
             when (policy) {
                 NetworkPolicy.Public -> rule(chain, "-j RETURN")
                 is NetworkPolicy.Allowlist -> {
+                    // a sandbox is given resolvers of its own, so docker's resolver asks them from inside
+                    // the sandbox's namespace and the query arrives here like any other packet. a name has
+                    // to resolve under any allowlist, and only for an address that has a policy at all.
+                    PublicResolvers.addresses.forEach { resolver ->
+                        listOf("udp", "tcp").forEach { rule(chain, "-d $resolver/32 -p $it -m $it --dport 53 -j RETURN") }
+                    }
                     policy.cidrs.forEach { rule(chain, "-d $it -j RETURN") }
                     rule(chain, "-j REJECT")
                 }

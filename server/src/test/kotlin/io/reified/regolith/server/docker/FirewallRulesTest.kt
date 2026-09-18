@@ -61,7 +61,12 @@ class FirewallRulesTest {
         val lines = render(mapOf("172.30.0.7" to NetworkPolicy.Allowlist(listOf(Cidr.parse("140.82.112.0/20")))))
         val chain = lines.first { it.startsWith("-A ${prefix}_D -s 172.30.0.7/32") }.substringAfter("-g ")
 
-        assertEquals(listOf("-A $chain -d 140.82.112.0/20 -j RETURN", "-A $chain -j REJECT"), lines.rules(chain))
+        val resolvers = listOf("1.1.1.1", "9.9.9.9").flatMap { resolver ->
+            listOf("udp", "tcp").map { "-A $chain -d $resolver/32 -p $it -m $it --dport 53 -j RETURN" }
+        }
+
+        // names resolve under any allowlist: the resolvers a sandbox is given answer on port 53 and nothing else.
+        assertEquals(resolvers + listOf("-A $chain -d 140.82.112.0/20 -j RETURN", "-A $chain -j REJECT"), lines.rules(chain))
         assertEquals(listOf("-A ${prefix}_N -d 1.1.1.1/32 -j RETURN", "-A ${prefix}_N -d 9.9.9.9/32 -j RETURN", "-A ${prefix}_N -j REJECT"), lines.rules("${prefix}_N"))
     }
 

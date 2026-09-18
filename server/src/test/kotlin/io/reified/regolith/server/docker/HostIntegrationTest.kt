@@ -125,6 +125,15 @@ class HostIntegrationTest {
                     assertTrue(!reach("9.9.9.9", 443), "an address outside the allowlist")
                 }
 
+                // names resolve under any allowlist, one that names no resolver included, and the
+                // resolver's address is open for nothing else.
+                val narrow = sandbox.copy(network = NetworkPolicy.Allowlist(listOf(Cidr.parse("140.82.112.0/20"))))
+                sessions.applyNetwork(narrow)
+                sessions.withLease(narrow) {
+                    assertTrue("no-dns" !in sh("getent hosts one.one.one.one || echo no-dns"), "names under an allowlist that names no resolver")
+                    assertTrue(!reach("1.1.1.1", 443), "the resolver's address, for anything but names")
+                }
+
                 val offline = sandbox.copy(network = NetworkPolicy.None)
                 sessions.applyNetwork(offline)
                 sessions.withLease(offline) {
