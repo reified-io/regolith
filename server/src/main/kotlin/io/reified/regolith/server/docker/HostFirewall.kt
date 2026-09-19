@@ -118,7 +118,7 @@ class HostFirewall(
 
             probeAddress = address
             applyLocked()
-            val policed = probeOutput(probe, probeScript(network.gateway, lan))
+            val policed = probeOutput(probe, PROBE_SCRIPT, listOf("${network.gateway}:$CONTROL_PORT") + lan)
             val leaks = policed.filter { it.startsWith("leak ") }
             check(leaks.isEmpty()) { "The network floor is not in effect: ${leaks.joinToString()}" }
             val egress = "egress" in policed
@@ -181,8 +181,10 @@ class HostFirewall(
         error("Cannot prove the network floor: the control listener on $gateway:$CONTROL_PORT never answered")
     }
 
-    private suspend fun probeOutput(probe: String, script: String): List<String> =
-        docker.run(listOf("exec", probe, "bash", "-c", script)).requireOk("Running the network probe").text.lines().filter { it.isNotBlank() }
+    /** Runs one of the fixed scripts in the probe; [targets] reach it as positional parameters, never as text. */
+    private suspend fun probeOutput(probe: String, script: String, targets: List<String> = emptyList()): List<String> =
+        docker.run(listOf("exec", probe, "bash", "-c", script, "probe") + targets)
+            .requireOk("Running the network probe").text.lines().filter { it.isNotBlank() }
 
     private suspend fun removeContainers(vararg names: String) {
         // these run with --rm, and a forced removal takes the place of docker's own; --volumes keeps
@@ -193,27 +195,30 @@ class HostFirewall(
     private suspend fun helper(args: List<String>, input: String? = null): String =
         docker.run(args, input = input?.toByteArray()).requireOk("Firewall helper ${args.lastOrNull()}").text.trim()
 
-    private fun probeScript(gateway: String, lan: List<String>): String = """
-        reach() { timeout 3 bash -c "exec 3<>/dev/tcp/${'$'}1/${'$'}2" 2>/dev/null; }
-        reach $gateway $CONTROL_PORT && echo "leak host $gateway:$CONTROL_PORT"
-        for target in ${lan.joinToString(" ")}; do
-          reach "${'$'}{target%:*}" "${'$'}{target#*:}" && echo "leak lan ${'$'}target"
-        done
-        for target in 169.254.169.254:80 10.255.255.254:80 172.31.255.254:80 192.168.255.254:80 100.100.100.100:80; do
-          reach "${'$'}{target%:*}" "${'$'}{target#*:}" && echo "leak ${'$'}target"
-        done
-        if reach 1.1.1.1 443; then
-          echo egress
-          reach 8.8.4.4 53 && echo "leak resolver 8.8.4.4:53"
-        fi
-        exit 0
-    """.trimIndent()
-
     private companion object {
         val log = KotlinLogging.logger {}
         const val CONTROL_PORT = 49531
         const val CONTROL_ATTEMPTS = 50
         val LAN_PORTS = listOf(443, 80, 53)
+
+        // the control listener first, then the devices that answered the host, each as address:port.
+        val PROBE_SCRIPT = """
+            reach() { timeout 3 bash -c 'exec 3<>"/dev/tcp/${'$'}1/${'$'}2"' reach "${'$'}1" "${'$'}2" 2>/dev/null; }
+            control="${'$'}1"; shift
+            reach "${'$'}{control%:*}" "${'$'}{control#*:}" && echo "leak host ${'$'}control"
+            for target in "${'$'}@"; do
+              reach "${'$'}{target%:*}" "${'$'}{target#*:}" && echo "leak lan ${'$'}target"
+            done
+            for target in 169.254.169.254:80 10.255.255.254:80 172.31.255.254:80 192.168.255.254:80 100.100.100.100:80; do
+              reach "${'$'}{target%:*}" "${'$'}{target#*:}" && echo "leak ${'$'}target"
+            done
+            if reach 1.1.1.1 443; then
+              echo egress
+              reach 8.8.4.4 53 && echo "leak resolver 8.8.4.4:53"
+            fi
+            exit 0
+        """.trimIndent()
+
         const val EGRESS_SCRIPT = """timeout 5 bash -c "exec 3<>/dev/tcp/1.1.1.1/443" 2>/dev/null && echo egress; exit 0"""
     }
 }
