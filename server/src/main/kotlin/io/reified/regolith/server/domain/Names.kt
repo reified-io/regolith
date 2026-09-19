@@ -8,7 +8,7 @@ import java.util.UUID
  * A sandbox identifier, made by the server. Callers find a sandbox by its [Alias]; this is what
  * addresses it in the API, in its container and in its records, and it says nothing about whose it is.
  */
-@Serializable
+@Serializable(with = SandboxIdSerializer::class)
 @JvmInline
 value class SandboxId private constructor(val value: String) {
     override fun toString(): String = value
@@ -29,7 +29,7 @@ value class SandboxId private constructor(val value: String) {
  * a user, a project, a task — so it never has to keep a table of its own. It is opaque text and
  * reaches nothing public.
  */
-@Serializable
+@Serializable(with = AliasSerializer::class)
 @JvmInline
 value class Alias private constructor(val value: String) {
     override fun toString(): String = value
@@ -52,7 +52,7 @@ value class Alias private constructor(val value: String) {
  * the sandbox, because it is public: an address built from a caller's own identity hands that
  * identity to everyone with the link, and makes every other site guessable from one.
  */
-@Serializable
+@Serializable(with = SiteLabelSerializer::class)
 @JvmInline
 value class SiteLabel private constructor(val value: String) {
     override fun toString(): String = value
@@ -75,7 +75,7 @@ value class SiteLabel private constructor(val value: String) {
 }
 
 /** A server-generated exec identifier. */
-@Serializable
+@Serializable(with = ExecIdSerializer::class)
 @JvmInline
 value class ExecId private constructor(val value: String) {
     override fun toString(): String = value

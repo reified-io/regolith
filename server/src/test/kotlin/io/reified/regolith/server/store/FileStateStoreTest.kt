@@ -7,6 +7,7 @@ import io.reified.regolith.server.domain.ExecOutcome
 import io.reified.regolith.server.domain.ImagePolicy
 import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.NetworkPolicy
+import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Alias
 import io.reified.regolith.server.domain.Cidr
 import io.reified.regolith.server.domain.Resources
@@ -70,6 +71,17 @@ class FileStateStoreTest {
             store.delete(sandbox.id)
             assertEquals(emptyList(), store.sandboxes())
             assertTrue(!Files.exists(store.outputFile(sandbox.id, exec.id)))
+        }
+    }
+
+    @Test
+    fun `a record edited by hand is read through the same parsers as a request`() = runBlocking {
+        FileStateStore.open(root, "regolith").use { store ->
+            store.save(sandbox)
+            val record = root.resolve("sandboxes").resolve(sandbox.id.value).resolve("sandbox.json")
+            Files.writeString(record, Files.readString(record).replace("140.82.112.0/20", "140.82.112.0 -j RETURN\\n-A X -s 1.1.1.1/20"))
+
+            assertFailsWith<RegolithError.Invalid> { store.sandboxes() }
         }
     }
 

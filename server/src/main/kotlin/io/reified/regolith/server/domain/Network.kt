@@ -35,7 +35,7 @@ sealed interface NetworkPolicy {
 }
 
 /** An IPv4 network in canonical form: host bits cleared, prefix always written. */
-@Serializable
+@Serializable(with = CidrSerializer::class)
 @JvmInline
 value class Cidr private constructor(val value: String) {
     val prefix: Int get() = value.substringAfter('/').toInt()
