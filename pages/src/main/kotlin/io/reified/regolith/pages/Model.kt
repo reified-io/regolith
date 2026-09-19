@@ -2,6 +2,8 @@ package io.reified.regolith.pages
 
 import io.reified.regolith.protocol.Ids
 import kotlinx.serialization.Serializable
+import kotlin.contracts.ExperimentalContracts
+import kotlin.contracts.contract
 import kotlin.time.Instant
 
 /**
@@ -18,7 +20,10 @@ sealed class PagesError(message: String) : RuntimeException(message) {
     class Conflict(message: String) : PagesError(message)
 }
 
+@OptIn(ExperimentalContracts::class)
 internal inline fun requireValid(value: Boolean, message: () -> String) {
+    contract { returns() implies value }
+
     if (!value) throw PagesError.Invalid(message())
 }
 

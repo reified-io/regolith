@@ -13,15 +13,18 @@ import kotlinx.serialization.json.Json
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
-import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.moveTo
 import kotlin.io.path.name
 import kotlin.io.path.readText
+import kotlin.io.path.writeText
 
 /**
  * Records as JSON files under the state directory:
@@ -70,8 +73,8 @@ class FileStateStore private constructor(private val root: Path, private val loc
     }
 
     override suspend fun deleteExec(sandbox: SandboxId, id: ExecId) = io {
-        Files.deleteIfExists(execDir(sandbox).resolve("$id.json"))
-        Files.deleteIfExists(outputFile(sandbox, id))
+        execDir(sandbox).resolve("$id.json").deleteIfExists()
+        outputFile(sandbox, id).deleteIfExists()
         Unit
     }
 
@@ -87,10 +90,10 @@ class FileStateStore private constructor(private val root: Path, private val loc
     private fun execDir(sandbox: SandboxId): Path = sandboxDir(sandbox).resolve("execs")
 
     private fun <T> writeRecord(file: Path, value: T, serializer: KSerializer<T>) {
-        Files.createDirectories(file.parent)
+        file.parent.createDirectories()
         val temporary = file.resolveSibling("${file.name}.tmp")
-        Files.writeString(temporary, json.encodeToString(Stored.serializer(serializer), Stored(SCHEMA, value)))
-        Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        temporary.writeText(json.encodeToString(Stored.serializer(serializer), Stored(SCHEMA, value)))
+        temporary.moveTo(file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
 
     private suspend fun <T> io(action: () -> T): T = withContext(Dispatchers.IO) { action() }
@@ -150,7 +153,7 @@ class FileStateStore private constructor(private val root: Path, private val loc
          * own the other's sessions.
          */
         fun open(root: Path, namespace: String): FileStateStore {
-            Files.createDirectories(root)
+            root.createDirectories()
             val channel = FileChannel.open(root.resolve("lock"), StandardOpenOption.CREATE, StandardOpenOption.WRITE)
             // another process holding the lock yields null; this process holding it throws instead.
             val lock = try {
@@ -170,7 +173,7 @@ class FileStateStore private constructor(private val root: Path, private val loc
                 val pinned = pin.readText().trim()
                 check(pinned == namespace) { "$root belongs to namespace `$pinned`, not `$namespace`" }
             } else {
-                Files.writeString(pin, namespace)
+                pin.writeText(namespace)
             }
 
             return FileStateStore(root, lock)

@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import kotlin.io.path.createDirectories
 import kotlin.io.path.isRegularFile
 
 /**
@@ -68,7 +69,7 @@ internal object TarSnapshot {
             skip(input, size)
             return
         }
-        Files.createDirectories(target.parent)
+        target.parent.createDirectories()
         Files.newOutputStream(target).use { out -> copy(input, out, size) }
     }
 
@@ -78,7 +79,7 @@ internal object TarSnapshot {
         val target = safePath(destination, name)
         if (source != null && target != null && source.isRegularFile()) {
             tally.count(name, Files.size(source))
-            Files.createDirectories(target.parent)
+            target.parent.createDirectories()
             Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
         }
         skip(input, size)

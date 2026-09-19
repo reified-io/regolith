@@ -1,7 +1,8 @@
 package io.reified.regolith.pages
 
-import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.Path
+import kotlin.io.path.readText
 
 /**
  * Everything the pages role is configured with, read once at startup from `REGOLITH_PAGES_*`.
@@ -88,7 +89,7 @@ data class PagesConfig(
                 token = readToken(env),
                 domain = domain.lowercase(),
                 scheme = scheme,
-                dir = Path.of(text("REGOLITH_PAGES_DIR").ifEmpty { "/var/lib/regolith-pages" }),
+                dir = Path(text("REGOLITH_PAGES_DIR").ifEmpty { "/var/lib/regolith-pages" }),
                 reserved = RESERVED + text("REGOLITH_PAGES_RESERVED").split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() },
                 // a site cannot be framed, and its forms cannot post credentials to another origin.
                 csp = text("REGOLITH_PAGES_CSP").ifEmpty { "frame-ancestors 'none'; form-action 'self'" },
@@ -119,14 +120,14 @@ data class PagesConfig(
 
             check(certificate.isNotEmpty() && key.isNotEmpty()) { "Set both ${prefix}_CERT and ${prefix}_KEY, or neither" }
 
-            return Tls(Path.of(certificate), Path.of(key), clientCa.ifEmpty { null }?.let { Path.of(it) })
+            return Tls(Path(certificate), Path(key), clientCa.ifEmpty { null }?.let { Path(it) })
         }
 
         private fun readToken(env: Map<String, String>): String {
             val inline = env["REGOLITH_PAGES_TOKEN"]?.trim().orEmpty()
             val file = env["REGOLITH_PAGES_TOKEN_FILE"]?.trim().orEmpty()
             check(inline.isEmpty() || file.isEmpty()) { "Set REGOLITH_PAGES_TOKEN or REGOLITH_PAGES_TOKEN_FILE, not both" }
-            val token = if (file.isNotEmpty()) Files.readString(Path.of(file)).trim() else inline
+            val token = if (file.isNotEmpty()) Path(file).readText().trim() else inline
             // there is no unauthenticated intake: whoever reaches it could otherwise publish as anyone.
             check(token.length >= MIN_TOKEN_CHARS) { "REGOLITH_PAGES_TOKEN must be at least $MIN_TOKEN_CHARS characters" }
 

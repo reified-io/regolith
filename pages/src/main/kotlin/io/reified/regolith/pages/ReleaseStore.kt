@@ -14,11 +14,16 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.io.path.createDirectories
+import kotlin.io.path.createTempFile
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.moveTo
 import kotlin.io.path.name
 import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
@@ -62,7 +67,7 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
 
         val release = Release(ReleaseId.random().value, site.value, Manifest(entries), clock.now())
         io {
-            Files.createDirectories(releasesDir(site))
+            releasesDir(site).createDirectories()
             write(releaseFile(site, release.id), Release.serializer(), release)
         }
         ReleaseStarted(release.id, entries.map { it.hash }.distinct().filterNot { io { blobPath(it).exists() } })
@@ -81,8 +86,8 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
             return@io
         }
 
-        Files.createDirectories(target.parent)
-        val temporary = Files.createTempFile(target.parent, "incoming-", ".part")
+        target.parent.createDirectories()
+        val temporary = createTempFile(target.parent, "incoming-", ".part")
         var size = 0L
 
         try {
@@ -97,11 +102,11 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
                     out.write(buffer, 0, read)
                 }
             }
-            val written = digest.digest().joinToString("") { "%02x".format(it) }
+            val written = digest.digest().toHexString()
             if (written != hash) throw PagesError.Invalid("The uploaded bytes hash to $written, not $hash")
-            Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            temporary.moveTo(target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         } finally {
-            Files.deleteIfExists(temporary)
+            temporary.deleteIfExists()
         }
     }
 
@@ -162,7 +167,7 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
             val ordered = releases.sortedByDescending { it.second.createdAt }
             val retained = ordered.take(limits.releasesKept).map { it.second.id }.toSet() + keep.id
             for ((file, release) in ordered) {
-                if (release.id !in retained) Files.deleteIfExists(file)
+                if (release.id !in retained) file.deleteIfExists()
             }
         }
         collect()
@@ -192,7 +197,7 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
                         for (file in releases) {
                             val release = runCatching { read(file, Release.serializer()) }.getOrNull() ?: continue
                             if (sweeping && release.id != current && release.createdAt < cutoff) {
-                                Files.deleteIfExists(file)
+                                file.deleteIfExists()
                                 continue
                             }
                             release.manifest.files.forEach { referenced += it.hash }
@@ -208,7 +213,7 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
             for (bucket in blobRoot.listDirectoryEntries().filter { it.isDirectory() }) {
                 for (blob in bucket.listDirectoryEntries()) {
                     if (blob.name !in referenced && !blob.name.startsWith("incoming-")) {
-                        Files.deleteIfExists(blob)
+                        blob.deleteIfExists()
                         removed++
                     }
                 }
@@ -236,10 +241,10 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
         writeText(file, RegolithJson.strict.encodeToString(serializer, value))
 
     private fun writeText(file: Path, text: String) {
-        Files.createDirectories(file.parent)
+        file.parent.createDirectories()
         val temporary = file.resolveSibling("${file.name}.tmp")
-        Files.writeString(temporary, text)
-        Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        temporary.writeText(text)
+        temporary.moveTo(file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
 
     private fun hash(raw: String): String {

@@ -108,7 +108,7 @@ class FirewallRules(
         fun prefixFor(namespace: String): String = "RGL_" + digest(namespace).take(8).uppercase()
 
         private fun digest(text: String): String =
-            MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+            MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).toHexString()
     }
 }
 

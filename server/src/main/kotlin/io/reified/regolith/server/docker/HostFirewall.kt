@@ -38,7 +38,7 @@ class HostFirewall(
 
     override suspend fun install(network: SandboxNetwork) = mutex.withLock {
         this.network = network
-        val hostAddresses = run(helpers.firewall("addresses")).lines().filter { it.isNotBlank() }.map(Cidr::parse)
+        val hostAddresses = helper(helpers.firewall("addresses")).lines().filter { it.isNotBlank() }.map(Cidr::parse)
         refused = (PlatformFloor.refused + hostAddresses + extraRefused).distinct()
         applyLocked()
         val lan = prove(network)
@@ -48,7 +48,7 @@ class HostFirewall(
     override suspend fun verifyAndRepair(): Boolean = mutex.withLock {
         val network = this.network ?: return@withLock false
         val current = try {
-            run(helpers.firewall("check", prefix, network.bridge))
+            helper(helpers.firewall("check", prefix, network.bridge))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -60,7 +60,7 @@ class HostFirewall(
 
         try {
             applyLocked()
-            run(helpers.firewall("check", prefix, network.bridge)) == fingerprint
+            helper(helpers.firewall("check", prefix, network.bridge)) == fingerprint
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -88,7 +88,7 @@ class HostFirewall(
         val network = checkNotNull(network) { "The firewall is not installed" }
         val addresses = policies.byAddress() + listOfNotNull(probeAddress).associateWith { NetworkPolicy.Public }
         val rules = FirewallRules(prefix, network, refused, addresses).render()
-        fingerprint = run(helpers.firewall("apply", prefix, network.bridge), input = rules)
+        fingerprint = helper(helpers.firewall("apply", prefix, network.bridge), input = rules)
     }
 
     /**
@@ -163,7 +163,7 @@ class HostFirewall(
      * failing to reach it is evidence, not silence. Connections only, never a login.
      */
     private suspend fun lanControls(listener: String): List<String> {
-        val gateways = run(helpers.firewall("gateways")).lines().filter { it.isNotBlank() }
+        val gateways = helper(helpers.firewall("gateways")).lines().filter { it.isNotBlank() }
             .filter { gateway -> runCatching { PlatformFloor.refuses(Cidr.parse(gateway)) }.getOrDefault(false) }
 
         return gateways.mapNotNull { gateway ->
@@ -190,7 +190,7 @@ class HostFirewall(
         docker.run(listOf("rm", "--force", "--volumes") + names)
     }
 
-    private suspend fun run(args: List<String>, input: String? = null): String =
+    private suspend fun helper(args: List<String>, input: String? = null): String =
         docker.run(args, input = input?.toByteArray()).requireOk("Firewall helper ${args.lastOrNull()}").text.trim()
 
     private fun probeScript(gateway: String, lan: List<String>): String = """

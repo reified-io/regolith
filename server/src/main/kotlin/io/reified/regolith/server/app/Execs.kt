@@ -7,12 +7,12 @@ import io.reified.regolith.server.domain.ExecCommand
 import io.reified.regolith.server.domain.ExecId
 import io.reified.regolith.server.domain.ExecOutcome
 import io.reified.regolith.server.domain.ExitCause
-import io.reified.regolith.server.domain.StopReason
 import io.reified.regolith.server.domain.Metadata
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Sandbox
-import io.reified.regolith.server.domain.SandboxLayout
 import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.SandboxLayout
+import io.reified.regolith.server.domain.StopReason
 import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.output.Frame
 import io.reified.regolith.server.output.FrameKind
@@ -48,6 +48,7 @@ import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.contract
+import kotlin.io.path.createDirectories
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -163,7 +164,7 @@ class Execs(
             store.save(exec)
             val file = store.outputFile(sandbox.id, exec.id)
             val out = withContext(Dispatchers.IO) {
-                Files.createDirectories(file.parent)
+                file.parent.createDirectories()
                 BufferedOutputStream(Files.newOutputStream(file, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE))
             }
             val writer = OutputLogWriter(out, limits.maxOutputBytes, TAIL_BYTES)

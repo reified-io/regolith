@@ -160,7 +160,7 @@ class PagesPublisher(
             }
         }
 
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        return digest.digest().toHexString()
     }
 
     private companion object {

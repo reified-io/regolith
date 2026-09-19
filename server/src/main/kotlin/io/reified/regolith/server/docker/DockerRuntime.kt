@@ -7,19 +7,19 @@ import io.reified.regolith.server.domain.FileEntry
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Sandbox
-import io.reified.regolith.server.domain.SandboxLayout
 import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.SandboxLayout
 import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.ports.ExecSpec
 import io.reified.regolith.server.ports.HomeMount
 import io.reified.regolith.server.ports.LimitEvents
-import io.reified.regolith.server.ports.SnapshotBounds
-import io.reified.regolith.server.ports.TreeFile
 import io.reified.regolith.server.ports.RunningProcess
 import io.reified.regolith.server.ports.SandboxNetwork
 import io.reified.regolith.server.ports.SandboxRuntime
 import io.reified.regolith.server.ports.SessionHandle
 import io.reified.regolith.server.ports.Signal
+import io.reified.regolith.server.ports.SnapshotBounds
+import io.reified.regolith.server.ports.TreeFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -30,9 +30,9 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
+import kotlin.io.path.createDirectories
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
@@ -282,7 +282,7 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
     }
 
     override suspend fun copyOut(sandbox: SandboxId, path: String, destination: Path, bounds: SnapshotBounds) = withContext(Dispatchers.IO) {
-        Files.createDirectories(destination)
+        destination.createDirectories()
         val process = docker.start(spec.copyOut(sandbox, path), stdin = false)
         coroutineScope {
             val stderr = async(Dispatchers.IO) { quietly { process.errorStream.readNBytes(MAX_STDERR).toString(StandardCharsets.UTF_8) } }

@@ -1,7 +1,8 @@
 package io.reified.regolith.server.docker
 
-import java.nio.file.Files
-import java.nio.file.Path
+import java.io.IOException
+import kotlin.io.path.Path
+import kotlin.io.path.readLines
 
 /**
  * Short-lived trusted containers that do what the server itself must not: change the host's firewall
@@ -105,6 +106,8 @@ class Helpers(private val image: String, private val namespace: String) {
     )
 
     companion object {
+        private val CONTAINER_ID = Regex("/containers/([0-9a-f]{64})/")
+
         const val SCRIPTS = "/opt/regolith/scripts"
 
         /**
@@ -121,12 +124,14 @@ class Helpers(private val image: String, private val namespace: String) {
         }
 
         private suspend fun ownImage(docker: DockerCli): String? {
-            val mounts = runCatching { Files.readAllLines(Path.of("/proc/self/mountinfo")) }.getOrDefault(emptyList())
+            val mounts = try {
+                Path("/proc/self/mountinfo").readLines()
+            } catch (_: IOException) {
+                emptyList()
+            }
             val container = mounts.firstNotNullOfOrNull { CONTAINER_ID.find(it)?.groupValues?.get(1) } ?: return null
 
             return docker.run(listOf("inspect", "--format", "{{.Image}}", container)).takeIf { it.ok }?.text?.trim()
         }
-
-        private val CONTAINER_ID = Regex("/containers/([0-9a-f]{64})/")
     }
 }

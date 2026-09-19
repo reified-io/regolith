@@ -3,14 +3,13 @@ package io.reified.regolith.server.docker
 import io.reified.regolith.server.domain.RegolithError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
-import java.nio.charset.StandardCharsets
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
@@ -24,7 +23,7 @@ class DockerCli(private val binary: String) {
     class Result(val exitCode: Int, val stdout: ByteArray, val stderr: String) {
         val ok: Boolean get() = exitCode == 0
 
-        val text: String get() = String(stdout, StandardCharsets.UTF_8)
+        val text: String get() = stdout.decodeToString()
     }
 
     /**
@@ -39,23 +38,21 @@ class DockerCli(private val binary: String) {
     ): Result =
         withContext(Dispatchers.IO) {
             val process = start(args, stdin = input != null)
-            coroutineScope {
-                if (input != null) launch(Dispatchers.IO) { process.outputStream.use { it.write(input) } }
-                val out = async(Dispatchers.IO) { drain(process.inputStream, maxStdout) }
-                val err = async(Dispatchers.IO) { drain(process.errorStream, MAX_STDERR) }
-                val exited = withTimeoutOrNull(timeout) { process.onExit().await() }
-                if (exited == null) {
-                    process.destroyForcibly()
-                    throw RegolithError.Unavailable("docker ${args.firstOrNull()} did not finish within $timeout")
-                }
-                Result(process.exitValue(), out.await(), String(err.await(), StandardCharsets.UTF_8).trim())
+            if (input != null) launch { process.outputStream.use { it.write(input) } }
+            val out = async { drain(process.inputStream, maxStdout) }
+            val err = async { drain(process.errorStream, MAX_STDERR) }
+            val exited = withTimeoutOrNull(timeout) { process.onExit().await() }
+            if (exited == null) {
+                process.destroyForcibly()
+                throw RegolithError.Unavailable("docker ${args.firstOrNull()} did not finish within $timeout")
             }
+            Result(process.exitValue(), out.await(), err.await().decodeToString().trim())
         }
 
     /** Starts docker and hands the streams to the caller; with [stdin] unset the child reads nothing. */
     fun start(args: List<String>, stdin: Boolean): Process {
         val builder = ProcessBuilder(listOf(binary) + args)
-        if (!stdin) builder.redirectInput(ProcessBuilder.Redirect.from(java.io.File("/dev/null")))
+        if (!stdin) builder.redirectInput(ProcessBuilder.Redirect.from(File("/dev/null")))
 
         return builder.start()
     }

@@ -13,9 +13,9 @@ import io.reified.regolith.server.ports.SitePublisher
 import io.reified.regolith.server.ports.TreeFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
+import kotlin.io.path.createDirectories
 
 /**
  * Publishing a directory of a sandbox to the public pages role.
@@ -44,7 +44,7 @@ class SitePublishing(
     val available: Boolean get() = publisher != null
 
     suspend fun publish(id: SandboxId, path: String): PublishedSite = locks.withLock(id) {
-        val pages = require()
+        val pages = configured()
         val limits = pages.limits()
         val directory = resolvePath(path)
 
@@ -55,7 +55,7 @@ class SitePublishing(
         try {
             sessions.withLease(sandbox) {
                 val files = runtime.tree(id, directory, limits.maxFiles + 1)
-                check(files, limits, directory)
+                checkLimits(files, limits, directory)
                 // bounded again as it arrives: the listing was a moment ago, and the sandbox keeps writing.
                 runtime.copyOut(id, directory, snapshot, limits.bounds)
             }
@@ -70,14 +70,14 @@ class SitePublishing(
     }
 
     suspend fun published(id: SandboxId): PublishedSite {
-        val pages = require()
+        val pages = configured()
         val label = label(id)
 
         return pages.published(label.value) ?: throw RegolithError.NotFound("Nothing is published for sandbox `$id`")
     }
 
     suspend fun unpublish(id: SandboxId) = locks.withLock(id) {
-        val pages = require()
+        val pages = configured()
         val label = label(id)
         pages.unpublish(label.value)
         sandboxes.site(id, null)
@@ -88,7 +88,7 @@ class SitePublishing(
         sandboxes.require(id).site ?: throw RegolithError.NotFound("Nothing is published for sandbox `$id`")
 
     /** What the pages role would refuse, refused here: before a byte leaves the sandbox. */
-    private fun check(files: List<TreeFile>, limits: SiteLimits, directory: String) {
+    private fun checkLimits(files: List<TreeFile>, limits: SiteLimits, directory: String) {
         requireValid(files.isNotEmpty()) { "`$directory` holds no files to publish" }
         val oversized = files.firstOrNull { it.size > limits.maxFileBytes }
         val total = files.sumOf { it.size }
@@ -101,11 +101,11 @@ class SitePublishing(
         throw RegolithError.TooLarge(refusal)
     }
 
-    private fun require(): SitePublisher =
+    private fun configured(): SitePublisher =
         publisher ?: throw RegolithError.NotImplemented("This server publishes nothing: no pages role is configured")
 
     private suspend fun snapshotDir(): Path = withContext(Dispatchers.IO) {
-        Files.createDirectories(config.stateDir.resolve("publish").resolve(UUID.randomUUID().toString()))
+        config.stateDir.resolve("publish").resolve(UUID.randomUUID().toString()).createDirectories()
     }
 
     private companion object {

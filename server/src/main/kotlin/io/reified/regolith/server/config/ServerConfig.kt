@@ -7,8 +7,9 @@ import io.reified.regolith.server.domain.Lifecycle
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Resources
-import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.Path
+import kotlin.io.path.readText
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.seconds
@@ -122,7 +123,7 @@ data class ServerConfig(
                 port = read.int("REGOLITH_PORT", 8080),
                 token = readToken(env),
                 namespace = namespace,
-                stateDir = Path.of(env["REGOLITH_STATE_DIR"]?.trim().orEmpty().ifEmpty { "/var/lib/regolith" }),
+                stateDir = Path(env["REGOLITH_STATE_DIR"]?.trim().orEmpty().ifEmpty { "/var/lib/regolith" }),
                 docker = env["REGOLITH_DOCKER"]?.trim().orEmpty().ifEmpty { "docker" },
                 shell = env["REGOLITH_SHELL"]?.trim().orEmpty().ifEmpty { "/bin/bash" },
                 maxSessions = read.int("REGOLITH_MAX_SESSIONS", 2),
@@ -153,7 +154,7 @@ data class ServerConfig(
             val inline = env["REGOLITH_PAGES_TOKEN"]?.trim().orEmpty()
             val file = env["REGOLITH_PAGES_TOKEN_FILE"]?.trim().orEmpty()
             check(inline.isEmpty() || file.isEmpty()) { "Set REGOLITH_PAGES_TOKEN or REGOLITH_PAGES_TOKEN_FILE, not both" }
-            val token = if (file.isNotEmpty()) Files.readString(Path.of(file)).trim() else inline
+            val token = if (file.isNotEmpty()) Path(file).readText().trim() else inline
             check(token.length >= MIN_TOKEN_CHARS) { "REGOLITH_PAGES_URL needs REGOLITH_PAGES_TOKEN of at least $MIN_TOKEN_CHARS characters" }
 
             return token
@@ -163,7 +164,7 @@ data class ServerConfig(
             val inline = env["REGOLITH_TOKEN"]?.trim().orEmpty()
             val file = env["REGOLITH_TOKEN_FILE"]?.trim().orEmpty()
             check(inline.isEmpty() || file.isEmpty()) { "Set REGOLITH_TOKEN or REGOLITH_TOKEN_FILE, not both" }
-            val token = if (file.isNotEmpty()) Files.readString(Path.of(file)).trim() else inline
+            val token = if (file.isNotEmpty()) Path(file).readText().trim() else inline
             // there is no unauthenticated mode: whoever reaches the api could otherwise run code.
             check(token.isNotEmpty()) { "REGOLITH_TOKEN or REGOLITH_TOKEN_FILE is required" }
             check(token.length >= MIN_TOKEN_CHARS) { "The API token must be at least $MIN_TOKEN_CHARS characters" }
