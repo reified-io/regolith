@@ -10,13 +10,6 @@ before changing request flow, sessions, execs, output, storage or startup, and
 [`docs/sandbox-security.md`](docs/sandbox-security.md) before touching what creates, confines or
 reaches into a container.
 
-## Local files
-
-- `notes/` — gitignored and possibly absent: prose on *why* things are the way they are. Read
-  `notes/README.md` first, then only the notes the task needs.
-- `deploy/` — gitignored: an operator's scripts for pushing images, which nothing tracked depends
-  on. The moving tag they push is for a host you redeploy yourself, never for anything else to pull.
-
 ## Modules
 
 | Module | Holds | Depends on |
