@@ -31,12 +31,11 @@ class FirewallRules(
     val prefix: String,
     private val network: SandboxNetwork,
     private val refused: List<Cidr>,
-    private val sandboxes: Map<String, NetworkPolicy>,
+    private val sandboxes: Map<String, NetworkPolicy.Attached>,
 ) {
 
     init {
         require(PREFIX.matches(prefix)) { "Invalid chain prefix $prefix" }
-        require(sandboxes.values.none { it == NetworkPolicy.None }) { "A detached sandbox has no address to police" }
         require(sandboxes.keys.all { ADDRESS.matches(it) }) { "Sandbox addresses must be IPv4" }
     }
 
@@ -87,7 +86,6 @@ class FirewallRules(
                     policy.cidrs.forEach { rule(chain, "-d $it -j RETURN") }
                     rule(chain, "-j REJECT")
                 }
-                NetworkPolicy.None -> error("unreachable")
             }
         }
 
@@ -115,5 +113,5 @@ class FirewallRules(
 }
 
 /** Keyed by sandbox so a release finds its address; rendered by address. */
-internal fun Map<SandboxId, Pair<String, NetworkPolicy>>.byAddress(): Map<String, NetworkPolicy> =
+internal fun Map<SandboxId, Pair<String, NetworkPolicy.Attached>>.byAddress(): Map<String, NetworkPolicy.Attached> =
     values.associate { (address, policy) -> address to policy }

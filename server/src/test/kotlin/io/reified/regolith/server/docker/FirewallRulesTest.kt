@@ -6,7 +6,6 @@ import io.reified.regolith.server.domain.PlatformFloor
 import io.reified.regolith.server.ports.SandboxNetwork
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -14,7 +13,7 @@ class FirewallRulesTest {
     private val network = SandboxNetwork("regolith-sandboxes", "br-0123456789ab", "172.30.0.0/16", "172.30.0.1")
     private val prefix = FirewallRules.prefixFor("regolith")
 
-    private fun render(sandboxes: Map<String, NetworkPolicy> = emptyMap()) =
+    private fun render(sandboxes: Map<String, NetworkPolicy.Attached> = emptyMap()) =
         FirewallRules(prefix, network, PlatformFloor.refused + Cidr.parse("192.168.88.252"), sandboxes).render().lines()
 
     private fun List<String>.rules(chain: String) = filter { it.startsWith("-A $chain ") }
@@ -68,10 +67,5 @@ class FirewallRulesTest {
         // names resolve under any allowlist: the resolvers a sandbox is given answer on port 53 and nothing else.
         assertEquals(resolvers + listOf("-A $chain -d 140.82.112.0/20 -j RETURN", "-A $chain -j REJECT"), lines.rules(chain))
         assertEquals(listOf("-A ${prefix}_N -d 1.1.1.1/32 -j RETURN", "-A ${prefix}_N -d 9.9.9.9/32 -j RETURN", "-A ${prefix}_N -j REJECT"), lines.rules("${prefix}_N"))
-    }
-
-    @Test
-    fun `a detached sandbox is never rendered`() {
-        assertFailsWith<IllegalArgumentException> { render(mapOf("172.30.0.9" to NetworkPolicy.None)) }
     }
 }

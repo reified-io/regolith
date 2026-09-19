@@ -30,7 +30,7 @@ class HostFirewall(
 
     private val mutex = Mutex()
     private val prefix = FirewallRules.prefixFor(namespace)
-    private val policies = LinkedHashMap<SandboxId, Pair<String, NetworkPolicy>>()
+    private val policies = LinkedHashMap<SandboxId, Pair<String, NetworkPolicy.Attached>>()
     private var network: SandboxNetwork? = null
     private var refused: List<Cidr> = PlatformFloor.refused
     private var probeAddress: String? = null
@@ -69,8 +69,7 @@ class HostFirewall(
         }
     }
 
-    override suspend fun apply(sandbox: SandboxId, address: String, policy: NetworkPolicy) = mutex.withLock {
-        require(policy != NetworkPolicy.None) { "A detached sandbox has no address to police" }
+    override suspend fun apply(sandbox: SandboxId, address: String, policy: NetworkPolicy.Attached) = mutex.withLock {
         val previous = policies.put(sandbox, address to policy)
 
         try {

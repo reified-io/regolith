@@ -116,20 +116,20 @@ class Sessions(
     suspend fun applyNetwork(sandbox: Sandbox) = locks.withLock(sandbox.id) {
         val session = live[sandbox.id] ?: return@withLock
         val attached = session.handle.address
-        val detached = sandbox.network == NetworkPolicy.None
+        val policy = sandbox.network
 
         when {
-            detached && attached != null -> {
+            policy !is NetworkPolicy.Attached -> if (attached != null) {
                 network.release(sandbox.id)
                 runtime.detachNetwork(sandbox.id)
                 session.handle = session.handle.copy(address = null)
             }
-            !detached && attached == null -> {
+            attached == null -> {
                 val address = runtime.attachNetwork(sandbox.id)
                 session.handle = session.handle.copy(address = address)
-                network.apply(sandbox.id, address, sandbox.network)
+                network.apply(sandbox.id, address, policy)
             }
-            attached != null -> network.apply(sandbox.id, attached, sandbox.network)
+            else -> network.apply(sandbox.id, attached, policy)
         }
     }
 
@@ -170,7 +170,10 @@ class Sessions(
         }
 
         try {
-            handle.address?.let { network.apply(sandbox.id, it, sandbox.network) }
+            handle.address?.let { address ->
+                val policy = checkNotNull(sandbox.network as? NetworkPolicy.Attached) { "A detached sandbox was given an address" }
+                network.apply(sandbox.id, address, policy)
+            }
         } catch (e: CancellationException) {
             discard(sandbox.id)
             throw e

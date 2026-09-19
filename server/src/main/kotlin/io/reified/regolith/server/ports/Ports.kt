@@ -225,7 +225,7 @@ interface NetworkEnforcer {
      * applied before. An address with no policy applied reaches nothing, so a session is confined from
      * the moment it has an address. [policy] is never `none`: that session has no address.
      */
-    suspend fun apply(sandbox: SandboxId, address: String, policy: NetworkPolicy)
+    suspend fun apply(sandbox: SandboxId, address: String, policy: NetworkPolicy.Attached)
 
     suspend fun release(sandbox: SandboxId)
 }

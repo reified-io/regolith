@@ -9,9 +9,13 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 sealed interface NetworkPolicy {
+    /** A policy that leaves the sandbox on the network, which is what rules can be rendered for. */
+    @Serializable
+    sealed interface Attached : NetworkPolicy
+
     @Serializable
     @SerialName("public")
-    data object Public : NetworkPolicy
+    data object Public : Attached
 
     @Serializable
     @SerialName("none")
@@ -19,7 +23,7 @@ sealed interface NetworkPolicy {
 
     @Serializable
     @SerialName("allowlist")
-    data class Allowlist(val cidrs: List<Cidr>) : NetworkPolicy {
+    data class Allowlist(val cidrs: List<Cidr>) : Attached {
         init {
             requireValid(cidrs.size <= MAX_ENTRIES) { "An allowlist holds at most $MAX_ENTRIES entries" }
 

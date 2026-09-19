@@ -457,8 +457,7 @@ class FakeEnforcer : NetworkEnforcer {
 
     override suspend fun verifyAndRepair(): Boolean = holds
 
-    override suspend fun apply(sandbox: SandboxId, address: String, policy: NetworkPolicy) {
-        check(policy != NetworkPolicy.None) { "none is never applied to an address" }
+    override suspend fun apply(sandbox: SandboxId, address: String, policy: NetworkPolicy.Attached) {
         applied[sandbox] = policy
     }
 
