@@ -137,11 +137,24 @@ class HostFirewall(
         } finally {
             withContext(NonCancellable) {
                 removeContainers(listener, probe)
-                if (probeAddress != null) {
-                    probeAddress = null
-                    runCatching { applyLocked() }
-                }
+                if (probeAddress != null) dropProbeLocked()
             }
+        }
+    }
+
+    /**
+     * Takes the probe's policy out after a proof that ended early. What stays behind if this fails
+     * names an address nobody holds, and the next change of a policy renders the rules without it.
+     */
+    private suspend fun dropProbeLocked() {
+        probeAddress = null
+
+        try {
+            applyLocked()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn(e) { "Could not take the probe's policy out of the rules" }
         }
     }
 

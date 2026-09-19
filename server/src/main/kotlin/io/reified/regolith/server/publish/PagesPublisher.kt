@@ -29,6 +29,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -128,7 +129,12 @@ class PagesPublisher(
 
     /** Its problems are this project's problems, so a caller sees the reason rather than a status code. */
     private suspend fun failure(response: HttpResponse): RegolithError {
-        val body = runCatching { RegolithJson.lenient.decodeFromString(ErrorBody.serializer(), response.bodyAsText()) }.getOrNull()
+        val text = response.bodyAsText()
+        val body = try {
+            RegolithJson.lenient.decodeFromString(ErrorBody.serializer(), text)
+        } catch (_: SerializationException) {
+            null
+        }
         val detail = body?.detail ?: "The pages role answered ${response.status.value}"
 
         return when (body?.code) {

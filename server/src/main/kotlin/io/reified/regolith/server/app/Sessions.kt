@@ -210,7 +210,13 @@ class Sessions(
         live.remove(sandbox) ?: return
         ends[sandbox] = SessionEnd(reason, clock.now())
         withContext(NonCancellable) {
-            runCatching { network.release(sandbox) }.onFailure { log.warn(it) { "Network release failed: sandbox=[$sandbox]" } }
+            try {
+                network.release(sandbox)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn(e) { "Network release failed: sandbox=[$sandbox]" }
+            }
             runtime.stopSession(sandbox)
             homes.close(sandbox)
         }

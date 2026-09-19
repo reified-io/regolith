@@ -17,6 +17,7 @@ import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.ports.HomeStore
 import io.reified.regolith.server.ports.SitePublisher
 import io.reified.regolith.server.ports.StateStore
+import kotlinx.coroutines.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -211,8 +212,13 @@ class Sandboxes(
         execs.awaitNone(id)
         // a site outlives the home unless it is taken down here: nothing else knows where it was served.
         sandbox.site?.let { label ->
-            runCatching { sites?.unpublish(label.value) }
-                .onFailure { log.warn(it) { "Site left behind by a deleted sandbox: sandbox=[$id] site=[$label]" } }
+            try {
+                sites?.unpublish(label.value)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn(e) { "Site left behind by a deleted sandbox: sandbox=[$id] site=[$label]" }
+            }
         }
         homes.destroy(id)
         store.delete(id)
