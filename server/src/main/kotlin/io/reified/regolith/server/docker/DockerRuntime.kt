@@ -39,6 +39,9 @@ import kotlin.time.Instant
 /** [SandboxRuntime] on one Docker host, driven through [DockerCli]. */
 class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSpec) : SandboxRuntime {
     override suspend fun initialize(): SandboxNetwork {
+        // before anything is created: on such a daemon the floor installs and proves itself, and means nothing.
+        val refusals = DockerHost.refusals(docker)
+        check(refusals.isEmpty()) { "This Docker host cannot be policed: ${refusals.joinToString("; ")}" }
         val leftovers = docker.run(listOf("ps", "--all", "--quiet", "--filter", "label=${spec.namespaceLabel}"))
             .requireOk("Listing leftover sessions").text.lines().filter { it.isNotBlank() }
 

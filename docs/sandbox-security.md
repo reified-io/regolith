@@ -96,6 +96,11 @@ with `--network host`, only `NET_ADMIN` and `NET_RAW`, a read-only root and no n
 
 - **Outside the sandbox.** The rules live in the host's namespace and match the sandbox bridge.
   Nothing inside a sandbox can see or change them, and a sandbox holds no capability at all.
+- **A host it can police.** The server refuses a daemon whose containers leave past the host's
+  firewall: Docker Desktop, which keeps them in a VM, a rootless daemon, which routes them through a
+  user-space network, and Docker's native nftables backend, which has no `DOCKER-USER` chain. On
+  each of them the rules would install, read back clean and hold against private space, while the
+  machine's own public addresses stayed open.
 - **The right netfilter.** The helper uses whichever iptables backend shows Docker's own rules, and
   refuses to run when neither does: rules written to the other backend land in tables nothing
   traverses.

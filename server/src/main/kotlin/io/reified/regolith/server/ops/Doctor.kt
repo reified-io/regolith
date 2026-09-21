@@ -4,6 +4,7 @@ import io.reified.regolith.server.app.OrphanHomes
 import io.reified.regolith.server.app.OrphanSites
 import io.reified.regolith.server.config.ServerConfig
 import io.reified.regolith.server.docker.DockerCli
+import io.reified.regolith.server.docker.DockerHost
 import io.reified.regolith.server.docker.FirewallRules
 import io.reified.regolith.server.docker.Helpers
 import io.reified.regolith.server.docker.HomeDisks
@@ -46,6 +47,7 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
         }
 
         checks += ok("docker", "Docker ${version.text.trim()}")
+        checks += attempt("docker-host") { dockerHost() }
         checks += attempt("cgroups") { cgroups() }
         val helpers = try {
             Helpers(Helpers.resolveImage(docker, config.helperImage), config.namespace).also {
@@ -75,6 +77,16 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
 
     private suspend fun claimedSites(): Set<String> =
         withContext(Dispatchers.IO) { FileStateStore.recorded(config.stateDir) }.mapNotNull { it.site?.value }.toSet()
+
+    private suspend fun dockerHost(): Check {
+        val refusals = DockerHost.refusals(docker)
+
+        return if (refusals.isEmpty()) {
+            ok("docker-host", "A rootful Docker Engine that programs iptables, so host firewall rules police its containers")
+        } else {
+            fail("docker-host", refusals.joinToString("; "))
+        }
+    }
 
     private suspend fun cgroups(): Check {
         // read as json: a go template names struct fields, which differ from the json keys docker documents.

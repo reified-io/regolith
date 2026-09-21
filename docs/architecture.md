@@ -187,8 +187,9 @@ Startup runs its preconditions before the API listens, and any failure exits:
 1. Open the state directory: take the lock, check the namespace.
 2. Resolve the helper image.
 3. Load sandboxes; close unfinished exec records.
-4. Initialize the runtime: remove containers left by a previous run of this namespace, and ensure
-   the sandbox network exists.
+4. Initialize the runtime: refuse a Docker host that host firewall rules cannot police (see
+   [security](sandbox-security.md#the-network-floor)), remove containers left by a previous run of
+   this namespace, and ensure the sandbox network exists.
 5. Release home attachments left by a previous run.
 6. Refuse to start while a home exists that no sandbox record claims, or whose name holds no
    sandbox id (see [security](sandbox-security.md#homes)); `orphans` resolves the first, and an
@@ -231,7 +232,8 @@ The server image runs one program, which takes a command:
 `doctor` changes nothing — no rule, no loop attachment, no pull, no lock — so it can run beside a
 live server. It checks:
 
-- the Docker daemon, and cgroup v2 with memory, pids and CPU limits;
+- the Docker daemon, that it is a rootful engine programming iptables, and cgroup v2 with memory,
+  pids and CPU limits;
 - the helper image and the sandbox images;
 - the netfilter backend and hook positions, and a LAN control for the network proof;
 - loop devices and free space;
