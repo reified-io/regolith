@@ -7,7 +7,6 @@
   <a href="https://central.sonatype.com/search?namespace=io.reified.regolith"><img src="https://img.shields.io/maven-central/v/io.reified.regolith/sdk?label=maven%20central" alt="Maven Central"></a>
   <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Freified-io%2Fregolith%2Fmain%2Fgradle%2Flibs.versions.toml&query=%24.versions.kotlin&logo=kotlin&label=kotlin&color=blue" alt="Kotlin"></a>
   <a href="https://github.com/orgs/reified-io/packages/container/package/regolith"><img src="https://img.shields.io/badge/ghcr-regolith-blue?logo=docker" alt="GHCR"></a>
-  <img src="https://img.shields.io/badge/status-pre--release-orange" alt="Status: pre-release">
 </p>
 
 <h1></h1>
@@ -17,9 +16,6 @@ Self-hosted sandboxes for AI agents.
 Each sandbox is a persistent Linux home behind an HTTP API, where an agent runs commands and keeps
 its files. Regolith runs on any Docker host — no KVM, no cloud account — and refuses to serve a
 sandbox it cannot confine.
-
-> **Pre-release.** It works end to end; multi-tenancy, domain rules and snapshots are
-> [still ahead](docs/architecture.md#what-v1-leaves-out).
 
 ## What it does
 

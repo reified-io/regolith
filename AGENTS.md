@@ -4,11 +4,9 @@ Regolith is a self-hosted sandbox service for AI agents: persistent, named Linux
 Docker host behind an HTTP API, with a Kotlin SDK and a Koog integration. These are the rules for
 working on it (`CLAUDE.md` imports this file); the product is in `README.md` and `docs/`.
 
-Pre-1.0 and unpublished: change the protocol, the storage schema and the module layout freely, and
-prefer a clean removal to a compatibility shim. Read [`docs/architecture.md`](docs/architecture.md)
-before changing request flow, sessions, execs, output, storage or startup, and
-[`docs/sandbox-security.md`](docs/sandbox-security.md) before touching what creates, confines or
-reaches into a container.
+Read [`docs/architecture.md`](docs/architecture.md) before changing request flow, sessions, execs,
+output, storage or startup, and [`docs/sandbox-security.md`](docs/sandbox-security.md) before
+touching what creates, confines or reaches into a container.
 
 ## Modules
 
