@@ -219,6 +219,8 @@ class HostFirewall(
             exit 0
         """.trimIndent()
 
-        const val EGRESS_SCRIPT = """timeout 5 bash -c "exec 3<>/dev/tcp/1.1.1.1/443" 2>/dev/null && echo egress; exit 0"""
+        // a resolver counts as egress too: an allowance for names is the likeliest way for an address
+        // with no policy to be let through by mistake.
+        const val EGRESS_SCRIPT = """for port in 443 53; do timeout 5 bash -c "exec 3<>/dev/tcp/1.1.1.1/${'$'}port" 2>/dev/null && echo egress; done; exit 0"""
     }
 }

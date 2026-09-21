@@ -125,8 +125,9 @@ The server does not take the ruleset on trust. Before it listens:
 3. A throwaway container on the sandbox network, confined like a session and given a `public`
    policy, tries those controls, the metadata address, private addresses and a resolver it was not
    given. Anything that answers stops the server.
-4. Its policy is removed, and it must no longer reach the internet. That is checked only when it
-   could before, because silence without a control proves nothing.
+4. Its policy is removed, and it must no longer reach the internet — a resolver included, since an
+   allowance for names is the likeliest way through for an address with no policy. That is checked
+   only when it could before, because silence without a control proves nothing.
 
 The log line names the network controls that were used. With none, the floor is proven against the
 host only.
