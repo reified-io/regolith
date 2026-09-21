@@ -160,11 +160,29 @@ class HostIntegrationTest {
                 // drift: somebody deletes the rule that shields the host; the guard's check puts it back.
                 val prefix = FirewallRules.prefixFor(namespace)
                 val bridge = checkNotNull(network).bridge
-                docker.run(tools("iptables-nft", "-D", "${prefix}_IN", "-i", bridge, "-j", "DROP")).requireOk("deleting a rule")
+                val iptables = docker.run(helpers.firewall("backend")).requireOk("finding the backend").text.trim()
+                docker.run(tools(iptables, "-D", "${prefix}_IN", "-i", bridge, "-j", "DROP")).requireOk("deleting a rule")
                 assertTrue(firewall.verifyAndRepair(), "drift is repaired")
-                assertTrue(docker.run(tools("iptables-nft", "-C", "${prefix}_IN", "-i", bridge, "-j", "DROP")).ok, "the rule is back")
+                assertTrue(docker.run(tools(iptables, "-C", "${prefix}_IN", "-i", bridge, "-j", "DROP")).ok, "the rule is back")
+
+                // every rule still there and nothing pointing at them: only this namespace's own hook is
+                // taken out, since whatever else this machine keeps in DOCKER-USER is not the test's to flush.
+                docker.run(tools(iptables, "-D", "DOCKER-USER", "-j", prefix)).requireOk("unhooking the rules")
+                assertTrue(firewall.verifyAndRepair(), "an unhooked chain is repaired")
+                assertEquals("-A DOCKER-USER -j $prefix", firstRule(iptables, "DOCKER-USER"), "the hook is back, and first")
+
+                // anything that could accept ahead of the hook is drift, though every rule is where it was.
+                docker.run(tools(iptables, "-I", "INPUT", "1", "-i", bridge, "-j", "ACCEPT")).requireOk("an accept ahead of the hook")
+                assertTrue(firewall.verifyAndRepair(), "a displaced hook is repaired")
+                assertEquals("-A INPUT -j ${prefix}_IN", firstRule(iptables, "INPUT"), "the hook is first again")
+                docker.run(tools(iptables, "-D", "INPUT", "-i", bridge, "-j", "ACCEPT")).requireOk("taking the accept out")
+                sessions.withLease(sandbox) {
+                    assertTrue(!reach(checkNotNull(network).gateway, 22), "the host, after all of that")
+                }
             } finally {
                 withContext(NonCancellable) {
+                    // the one rule the test writes outside its own chains; gone already unless it failed midway.
+                    network?.let { docker.run(tools("sh", "-c", "for t in iptables-nft iptables-legacy; do \$t -D INPUT -i \"\$1\" -j ACCEPT; done 2>/dev/null; true", "sh", it.bridge)) }
                     sessions.stopAll(StopReason.STOPPED)
                     runCatching { homes.destroy(name) }
                     docker.run(helpers.firewall("remove", FirewallRules.prefixFor(namespace)))
@@ -196,6 +214,9 @@ class HostIntegrationTest {
 
         return gateway to port
     }
+
+    private suspend fun firstRule(iptables: String, chain: String): String? =
+        docker.run(tools(iptables, "-S", chain)).requireOk("reading $chain").text.lines().firstOrNull { it.startsWith("-A ") }
 
     private fun tools(vararg command: String): List<String> =
         listOf("run", "--rm", "--network=host", "--cap-drop=ALL", "--cap-add=NET_ADMIN", "--cap-add=NET_RAW", "--entrypoint", command.first(), "regolith-tools:it") + command.drop(1)
