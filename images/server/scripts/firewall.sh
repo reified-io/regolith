@@ -4,6 +4,7 @@
 #
 #   firewall.sh addresses                        the host's own ipv4 addresses, one per line
 #   firewall.sh gateways                         the host's default ipv4 gateways, one per line
+#   firewall.sh backend                          the iptables variant docker's own rules are in; read-only
 #   firewall.sh apply PREFIX BRIDGE < RULES      replace the PREFIX chains with RULES, print the fingerprint
 #   firewall.sh check PREFIX BRIDGE              print the fingerprint
 #   firewall.sh remove PREFIX                    unhook and delete every PREFIX chain
@@ -29,9 +30,6 @@ if [[ "$action" == gateways ]]; then
   exit 0
 fi
 
-prefix="${2:?missing chain prefix}"
-[[ "$prefix" =~ ^RGL_[0-9A-F]{8}$ ]] || fail "invalid chain prefix"
-
 # the daemon programs one netfilter backend, and rules written to the other land in tables nothing
 # traverses. use the backend whose FORWARD chain shows docker's own rules; never guess.
 # (no pipe into grep -q: it would close the pipe early and pipefail would read that as a failure.)
@@ -44,6 +42,15 @@ for candidate in iptables-nft iptables-legacy; do
   fi
 done
 [[ -n "$ip4" ]] || fail "docker's iptables rules are not visible from here: unknown netfilter backend"
+
+if [[ "$action" == backend ]]; then
+  echo "$ip4"
+  exit 0
+fi
+
+prefix="${2:?missing chain prefix}"
+[[ "$prefix" =~ ^RGL_[0-9A-F]{8}$ ]] || fail "invalid chain prefix"
+
 ip6="${ip4/iptables/ip6tables}"
 ipv6=false
 if "$ip6" -S FORWARD >/dev/null 2>&1; then ipv6=true; fi
