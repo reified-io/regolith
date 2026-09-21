@@ -14,8 +14,10 @@ import io.reified.regolith.server.ports.ExecSpec
 import io.reified.regolith.server.ports.HomeMount
 import io.reified.regolith.server.ports.Signal
 import io.reified.regolith.server.ports.SnapshotBounds
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -29,9 +31,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -155,7 +159,12 @@ class DockerRuntimeIntegrationTest {
                 val killer = runtime.exec(name, ExecSpec(ExecId.random(), ExecCommand.Shell("for p in /proc/[0-9]*; do [ \"\$(tr '\\0' ' ' < \$p/cmdline 2>/dev/null)\" = 'sleep infinity ' ] && kill \${p#/proc/}; done; sleep 5"), "/tmp", emptyMap(), stdin = false))
                 withTimeout(30.seconds) { killer.awaitExit() }
                 killer.detach()
-                assertFalse(runtime.isRunning(name), "killing the entrypoint ends the container")
+                // the command dies with the container's last process, which is before the daemon has
+                // finished taking the container down: on a slow host it still reads as running for a moment.
+                val ended = withTimeoutOrNull(10.seconds) {
+                    while (runtime.isRunning(name)) delay(100.milliseconds)
+                }
+                assertNotNull(ended, "killing the entrypoint ends the container")
             } finally {
                 runtime.stopSession(name)
                 docker.run(listOf("volume", "rm", "--force", volume))
