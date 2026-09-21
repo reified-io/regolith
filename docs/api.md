@@ -549,9 +549,11 @@ larger than that is refused with `payload_too_large` before any of it is sent, j
 the sandbox user cannot open is refused with `invalid_request` the same way, before the response
 starts. The home itself cannot be replaced or deleted — delete the sandbox for that.
 
-A write lands only once its whole body has arrived: a failed upload leaves the file as it was. A home
-is a fixed-size disk, and a write it has no room for is refused with `insufficient_storage`; deleting
-files makes room, while a larger `payload_too_large` limit would not.
+A write outside what the sandbox user can write — the root of a sandbox is read-only, so that is
+everything but the home and `/tmp` — is refused with `invalid_request`. A write lands only once its
+whole body has arrived: a failed upload leaves the file as it was. A home is a fixed-size disk, and
+a write it has no room for is refused with `insufficient_storage`; deleting files makes room, while
+a larger `payload_too_large` limit would not.
 
 ## Publishing
 

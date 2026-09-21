@@ -322,6 +322,9 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
                 RegolithError.Unavailable("The session ended while `$path` was being accessed")
             "No such file or directory" in reason -> RegolithError.NotFound("`$path` does not exist")
             "Permission denied" in reason -> RegolithError.Invalid("Permission denied: `$path`")
+            // the root of a sandbox is read-only, and the shell's word for a parent it cannot make a file in.
+            "Read-only file system" in reason || "Directory nonexistent" in reason ->
+                RegolithError.Invalid("`$path` cannot be written: only the home and /tmp take files")
             "Not a directory" in reason || "Is a directory" in reason -> RegolithError.Invalid(reason.lineSequence().first())
             "Directory not empty" in reason -> RegolithError.Conflict("`$path` is not empty; delete it recursively")
             // gnu tar's words for a tree written under it: the snapshot is not one moment, so it is refused.
