@@ -2,7 +2,7 @@
 kotlin = "2.4.20"
 kotlinx-serialization = "1.11.0"
 kotlinx-coroutines = "1.11.0"
-ktor = "3.5.2"
+ktor = "3.6.0"
 # agents-ext, which holds ShellCommandExecutor, is published only as a beta beside the stable core.
 koog-ext = "1.2.0-beta"
 kotlin-logging = "8.0.4"
