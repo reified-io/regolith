@@ -446,6 +446,29 @@ class ApiTest {
         assertTrue("event: end" in body, body)
     }
 
+    // once the first event is out an error can only end the stream, and a client would read an
+    // empty one as a command that printed nothing
+    @Test
+    fun `an event stream that cannot start is a problem document, not an empty stream`() = apiTest { _, client ->
+        val sandbox = client.getOrCreate("refused-events")
+        val exec = sandbox.startExec(ExecRequest(shell = "echo streamed"))
+        exec.await()
+
+        suspend fun stream(path: String, lastEventId: String? = null) = createClient {}.get(path) {
+            header(HttpHeaders.Authorization, "Bearer $TEST_TOKEN")
+            header(HttpHeaders.Accept, ContentType.Text.EventStream.toString())
+            lastEventId?.let { header("Last-Event-ID", it) }
+        }
+
+        val missing = stream("/v1/sandboxes/${sandbox.id}/execs/${"0".repeat(32)}/output")
+        assertEquals(HttpStatusCode.NotFound, missing.status)
+        assertTrue(ErrorCodes.NOT_FOUND in missing.bodyAsText())
+        val midFrame = stream("/v1/sandboxes/${sandbox.id}/execs/${exec.id}/output", lastEventId = "3")
+        assertEquals(HttpStatusCode.BadRequest, midFrame.status)
+        assertTrue(ErrorCodes.INVALID_REQUEST in midFrame.bodyAsText())
+        assertEquals(HttpStatusCode.BadRequest, stream("/v1/sandboxes/${sandbox.id}/execs/${exec.id}/output", lastEventId = "soon").status)
+    }
+
     @Test
     fun `a failing network check refuses new sessions and shows in health`() = apiTest { server, client ->
         val sandbox = client.getOrCreate("unhealthy")

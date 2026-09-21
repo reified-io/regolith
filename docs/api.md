@@ -481,7 +481,9 @@ id: 51
 data: {"id":"5b0c3b2e9f7d4c1a8e6f0a1b2c3d4e5f","status":"finished",...}
 ```
 
-Reconnecting with `Last-Event-ID` resumes after that event.
+Reconnecting with `Last-Event-ID` resumes after that event. A stream that cannot start — no such
+exec, an id that is not the end of a frame — is refused with a problem document like any other
+request, never answered with an empty stream.
 
 Either way:
 

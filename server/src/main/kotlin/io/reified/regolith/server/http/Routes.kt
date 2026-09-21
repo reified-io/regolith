@@ -2,6 +2,8 @@ package io.reified.regolith.server.http
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.createRouteScopedPlugin
 import io.ktor.server.request.contentLength
 import io.ktor.server.request.receiveChannel
 import io.ktor.server.request.receiveStream
@@ -39,6 +41,7 @@ import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.requireValid
 import kotlinx.io.readByteArray
+import kotlin.time.Duration
 
 internal fun Route.sandboxRoutes(services: Services) = route("/sandboxes") {
     fun info(sandbox: Sandbox) =
@@ -136,11 +139,16 @@ internal fun Route.execRoutes(services: Services) = route("/sandboxes/{id}/execs
             // the same resource as a live event stream, for browsers and clients without an sdk. only an
             // explicit text/event-stream selects it: a client sending */* keeps getting json pages.
             createChild(EventStreamRequested).apply {
+                // a stream that cannot start is refused here, while the answer can still be a problem
+                // document: once sse has sent its headers an error only ends the stream, and a client
+                // reads an empty one as a command that printed nothing.
+                install(BeforeStream) {
+                    check = { call -> execs.read(call.sandboxId(), call.execId(), call.streamOffset(), maxBytes = 1, wait = Duration.ZERO) }
+                }
                 sse {
                     val sandbox = call.sandboxId()
                     val id = call.execId()
-                    var offset = (call.request.headers["Last-Event-ID"] ?: call.request.queryParameters["offset"])
-                        ?.let { it.toLongOrNull() ?: throw RegolithError.Invalid("offset must be a whole number") } ?: 0L
+                    var offset = call.streamOffset()
                     while (true) {
                         val slice = execs.read(sandbox, id, offset, PAGE_BYTES, MAX_WAIT)
                         for (frame in slice.frames) {
@@ -172,7 +180,7 @@ internal fun Route.execRoutes(services: Services) = route("/sandboxes/{id}/execs
 internal fun Route.fileRoutes(services: Services) = route("/sandboxes/{id}/files") {
     val files = services.files
 
-    fun io.ktor.server.application.ApplicationCall.pathParameter(): String =
+    fun ApplicationCall.pathParameter(): String =
         request.queryParameters["path"] ?: throw RegolithError.Invalid("The path query parameter is required")
 
     get("/content") {
@@ -196,6 +204,18 @@ internal fun Route.fileRoutes(services: Services) = route("/sandboxes/{id}/files
         files.delete(call.sandboxId(), call.pathParameter(), recursive = call.request.queryParameters["recursive"] == "true")
         call.respond(HttpStatusCode.NoContent)
     }
+}
+
+private fun ApplicationCall.streamOffset(): Long = (request.headers["Last-Event-ID"] ?: request.queryParameters["offset"])
+    ?.let { it.toLongOrNull() ?: throw RegolithError.Invalid("offset must be a whole number") } ?: 0L
+
+private class BeforeStreamConfig {
+    var check: suspend (ApplicationCall) -> Unit = {}
+}
+
+private val BeforeStream = createRouteScopedPlugin("BeforeStream", ::BeforeStreamConfig) {
+    val check = pluginConfig.check
+    onCall { call -> check(call) }
 }
 
 private object EventStreamRequested : RouteSelector() {
