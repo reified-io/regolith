@@ -7,13 +7,14 @@ import kotlin.io.path.readLines
 /**
  * Short-lived trusted containers that do what the server itself must not: change the host's firewall
  * and attach loop devices. Each runs one fixed script from [image] with only the capability that
- * script needs, no network unless the script works on the host's, and no mount but its own.
+ * script needs, no network unless the script works on the host's, and no mount but its own. None
+ * runs the image's health check, which asks for a server that a helper is not.
  */
 class Helpers(private val image: String, private val namespace: String) {
     private val label = "${ContainerSpec.LABEL_PREFIX}.namespace=$namespace"
 
     fun firewall(vararg args: String): List<String> = listOf(
-        "run", "--rm", "--interactive", "--pull=never",
+        "run", "--rm", "--interactive", "--pull=never", "--no-healthcheck",
         "--label", label,
         "--network=host",
         "--read-only",
@@ -25,7 +26,7 @@ class Helpers(private val image: String, private val namespace: String) {
     ) + args
 
     fun homeDisk(diskVolume: String, vararg args: String): List<String> = listOf(
-        "run", "--rm", "--pull=never",
+        "run", "--rm", "--pull=never", "--no-healthcheck",
         "--label", label,
         "--network=none",
         "--read-only",
@@ -44,7 +45,7 @@ class Helpers(private val image: String, private val namespace: String) {
 
     /** Asks the home disk helper for a free loop device, without any disk: a read-only check. */
     fun homeDiskProbe(): List<String> = listOf(
-        "run", "--rm", "--pull=never",
+        "run", "--rm", "--pull=never", "--no-healthcheck",
         "--label", label,
         "--network=none",
         "--read-only",
@@ -60,7 +61,7 @@ class Helpers(private val image: String, private val namespace: String) {
 
     /** Whether [address]:[port] answers from the host's own network namespace; a connection only. */
     fun hostReach(address: String, port: Int): List<String> = listOf(
-        "run", "--rm", "--pull=never",
+        "run", "--rm", "--pull=never", "--no-healthcheck",
         "--label", label,
         "--network=host",
         "--read-only",
@@ -74,7 +75,7 @@ class Helpers(private val image: String, private val namespace: String) {
 
     /** A listener on the host's side of the bridge, for the network probe to fail to reach. */
     fun controlListener(name: String, address: String, port: Int): List<String> = listOf(
-        "run", "--detach", "--rm", "--pull=never",
+        "run", "--detach", "--rm", "--pull=never", "--no-healthcheck",
         "--name", name,
         "--label", label,
         "--network=host",
@@ -89,7 +90,7 @@ class Helpers(private val image: String, private val namespace: String) {
 
     /** A throwaway sandbox-shaped container on the sandbox network, confined like a real session. */
     fun probe(name: String, network: String): List<String> = listOf(
-        "run", "--detach", "--rm", "--pull=never",
+        "run", "--detach", "--rm", "--pull=never", "--no-healthcheck",
         "--name", name,
         "--label", label,
         "--network", network,
