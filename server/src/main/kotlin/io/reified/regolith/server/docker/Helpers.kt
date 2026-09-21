@@ -84,8 +84,10 @@ class Helpers(private val image: String, private val namespace: String) {
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
         "--pids-limit=16", "--memory=64m",
-        "--entrypoint", "nc",
-        image, "-l", "-k", address, port.toString(),
+        // bounded like the probe: a server killed in the middle of a proof cleans nothing up, and a
+        // listener with no end would hold its port in the host's namespace until docker restarted.
+        "--entrypoint", "timeout",
+        image, LIFETIME_SECONDS.toString(), "nc", "-l", "-k", address, port.toString(),
     )
 
     /** A throwaway sandbox-shaped container on the sandbox network, confined like a real session. */
@@ -103,13 +105,14 @@ class Helpers(private val image: String, private val namespace: String) {
         "--security-opt=no-new-privileges",
         "--pids-limit=64", "--memory=128m",
         "--entrypoint", "sleep",
-        image, "600",
+        image, LIFETIME_SECONDS.toString(),
     )
 
     companion object {
         private val CONTAINER_ID = Regex("/containers/([0-9a-f]{64})/")
 
         const val SCRIPTS = "/opt/regolith/scripts"
+        const val LIFETIME_SECONDS = 600
 
         /**
          * The image helpers run: [configured] when set, otherwise the image of the container this server
