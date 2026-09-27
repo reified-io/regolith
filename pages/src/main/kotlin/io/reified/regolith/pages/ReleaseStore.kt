@@ -18,6 +18,7 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.createTempFile
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
+import kotlin.io.path.getLastModifiedTime
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.moveTo
@@ -27,6 +28,7 @@ import kotlin.io.path.writeText
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
+import kotlin.time.toKotlinInstant
 
 /**
  * Releases on disk, addressed by content:
@@ -87,7 +89,7 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
         }
 
         target.parent.createDirectories()
-        val temporary = createTempFile(target.parent, "incoming-", ".part")
+        val temporary = createTempFile(target.parent, INCOMING, ".part")
         var size = 0L
 
         try {
@@ -142,7 +144,7 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
         io { dir.toFile().deleteRecursively() }
         active.remove(site.value)
         log.info { "Site taken down: site=[$site]" }
-        collect()
+        collect(held = site)
         true
     }
 
@@ -170,7 +172,7 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
                 if (release.id !in retained) file.deleteIfExists()
             }
         }
-        collect()
+        collect(held = site)
     }
 
     /**
@@ -179,10 +181,14 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
      *
      * An abandoned release is one older than [STALE_RELEASE] that is not the site's current one. Every
      * site is looked at, not only the one that was just published, because a site whose publisher gave
-     * up is exactly the one that will not be published again. A site whose lock is held is skipped: its
-     * releases are being changed by the holder, and the next sweep gets it.
+     * up is exactly the one that will not be published again. A site whose lock another call holds is
+     * skipped: its releases are being changed there, and the next sweep gets it. [held] is the site the
+     * caller has locked itself, and it is swept like a free one.
+     *
+     * An upload a killed process left half written is swept once it is as old as an abandoned release;
+     * one still arriving is never that old.
      */
-    private suspend fun collect() = blobs.withLock {
+    private suspend fun collect(held: SiteName) = blobs.withLock {
         val cutoff = clock.now() - STALE_RELEASE
         io {
             val referenced = mutableSetOf<String>()
@@ -190,7 +196,9 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
             if (sites.exists()) {
                 for (site in sites.listDirectoryEntries().filter { it.isDirectory() }) {
                     val lock = locks.computeIfAbsent(site.name) { Mutex() }
-                    val sweeping = lock.tryLock()
+                    val own = site.name == held.value
+                    val locked = !own && lock.tryLock()
+                    val sweeping = own || locked
                     try {
                         val current = site.resolve("current").takeIf { it.exists() }?.readText()?.trim()
                         val releases = site.resolve("releases").takeIf { it.exists() }?.listDirectoryEntries("*.json").orEmpty()
@@ -203,7 +211,7 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
                             release.manifest.files.forEach { referenced += it.hash }
                         }
                     } finally {
-                        if (sweeping) lock.unlock()
+                        if (locked) lock.unlock()
                     }
                 }
             }
@@ -212,7 +220,12 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
             var removed = 0
             for (bucket in blobRoot.listDirectoryEntries().filter { it.isDirectory() }) {
                 for (blob in bucket.listDirectoryEntries()) {
-                    if (blob.name !in referenced && !blob.name.startsWith("incoming-")) {
+                    val unused = if (blob.name.startsWith(INCOMING)) {
+                        blob.getLastModifiedTime().toInstant().toKotlinInstant() < cutoff
+                    } else {
+                        blob.name !in referenced
+                    }
+                    if (unused) {
                         blob.deleteIfExists()
                         removed++
                     }
@@ -262,6 +275,7 @@ class ReleaseStore(private val root: Path, private val limits: PagesConfig.Limit
         val log = KotlinLogging.logger {}
         val HASH = Regex("[0-9a-f]{64}")
         val STALE_RELEASE = 6.hours
+        const val INCOMING = "incoming-"
         const val CHUNK = 64 * 1024
         const val MIB = 1024L * 1024L
     }

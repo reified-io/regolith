@@ -3,9 +3,13 @@ package io.reified.regolith.pages
 import io.reified.regolith.protocol.pages.ReleaseFile
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.security.MessageDigest
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.setLastModifiedTime
+import kotlin.io.path.writeText
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -117,6 +121,43 @@ class ReleaseStoreTest {
         assertTrue(!root.resolve("sites/abandoned/releases/${started.release}.json").exists(), "the abandoned release stayed")
         assertTrue(!store.blobPath(sha256("half")).exists(), "the blob only the abandoned release named stayed")
         assertTrue(store.blobPath(sha256("live")).exists())
+    }
+
+    // one publisher, one site: the lock its own publish holds must not keep its leftovers from the sweep
+    @Test
+    fun `a site's own abandoned release is swept up with its next publish`() = runBlocking {
+        val clock = MutableClock()
+        val store = ReleaseStore(root, LIMITS, clock)
+        val started = store.startRelease(site, listOf(ReleaseFile("index.html", sha256("half"), 4)))
+        store.putBlob(sha256("half"), "half".byteInputStream())
+
+        clock.advance(7.hours)
+        val live = store.startRelease(site, listOf(ReleaseFile("index.html", sha256("live"), 4)))
+        store.putBlob(sha256("live"), "live".byteInputStream())
+        store.activate(site, ReleaseId.parse(live.release))
+
+        assertTrue(!root.resolve("sites/demo/releases/${started.release}.json").exists(), "the abandoned release stayed")
+        assertTrue(!store.blobPath(sha256("half")).exists(), "the blob only the abandoned release named stayed")
+        assertTrue(store.blobPath(sha256("live")).exists())
+    }
+
+    // a process killed in the middle of an upload never gets to remove what it was writing
+    @Test
+    fun `an upload left half written is swept once it is stale, and one still arriving is not`() = runBlocking {
+        val clock = MutableClock()
+        val store = ReleaseStore(root, LIMITS, clock)
+        val bucket = root.resolve("blobs/ab").createDirectories()
+        val left = bucket.resolve("incoming-left.part").apply { writeText("half") }
+        val arriving = bucket.resolve("incoming-arriving.part").apply { writeText("half") }
+        left.setLastModifiedTime(FileTime.fromMillis((clock.now() - 7.hours).toEpochMilliseconds()))
+        arriving.setLastModifiedTime(FileTime.fromMillis((clock.now() - 1.hours).toEpochMilliseconds()))
+
+        val live = store.startRelease(site, listOf(ReleaseFile("index.html", sha256("live"), 4)))
+        store.putBlob(sha256("live"), "live".byteInputStream())
+        store.activate(site, ReleaseId.parse(live.release))
+
+        assertTrue(!left.exists(), "a stale partial upload stayed")
+        assertTrue(arriving.exists(), "an upload still arriving was removed")
     }
 
     @Test

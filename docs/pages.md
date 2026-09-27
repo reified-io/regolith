@@ -215,7 +215,8 @@ sites/<site>/current
   one, never a mixture.
 - Rolling back is activating an earlier release that is still kept.
 - A release started and never activated is dropped six hours later, whichever site it belongs to,
-  and blobs no release names any more are swept up after every publish and every takedown.
+  and blobs no release names any more are swept up after every publish and every takedown. So is
+  an upload a killed process left half written, once it is six hours old.
 
 ## The intake API
 
