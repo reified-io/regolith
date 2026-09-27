@@ -22,8 +22,8 @@ import kotlin.io.path.isRegularFile
  * entry cannot leave the destination. Symlinks, devices and anything else that is not a plain file
  * are skipped; a hard link is copied from the file it names, since the listing counted both.
  *
- * It reads the three shapes a `tar -c` produces: POSIX ustar, GNU (long names as `L` entries) and
- * pax (long names as `path` records), which covers GNU tar and busybox.
+ * It reads the three shapes a `tar -c` produces: POSIX ustar, GNU (long names as `L` entries, long
+ * link targets as `K`) and pax (`path` and `linkpath` records), which covers GNU tar and busybox.
  */
 internal object TarSnapshot {
     private const val BLOCK = 512
@@ -37,28 +37,51 @@ internal object TarSnapshot {
     private const val HARD_LINK = '1'.code.toByte()
     private const val CONTIGUOUS = '7'.code.toByte()
     private const val GNU_LONG_NAME = 'L'.code.toByte()
+    private const val GNU_LONG_LINK = 'K'.code.toByte()
     private const val PAX_HEADER = 'x'.code.toByte()
+    private const val PAX_GLOBAL = 'g'.code.toByte()
 
     /** Unpacks [input] into [destination]; the stream ended early is an [EOFException] for the caller to explain. */
     fun unpack(input: InputStream, destination: Path, bounds: SnapshotBounds) {
         val header = ByteArray(BLOCK)
         val tally = Tally(bounds)
-        // a name announced by the entry before this one: a gnu `L` entry or a pax `path` record.
-        var announced: String? = null
+        // a name and a link target announced by the entries before this one, for this one alone: gnu
+        // `L` and `K` entries, or the `path` and `linkpath` records of a pax header.
+        var announcedName: String? = null
+        var announcedLink: String? = null
 
         while (true) {
             if (!readBlock(input, header)) throw EOFException("The archive ended without its end-of-archive blocks")
             if (header.all { it == 0.toByte() }) return
             val size = octal(header, 124, 12)
-            val name = announced ?: headerName(header)
-            announced = when (header[156]) {
-                GNU_LONG_NAME -> text(input, size).trimEnd('\u0000')
-                PAX_HEADER -> paxPath(text(input, size))
-                REGULAR, REGULAR_OLD, CONTIGUOUS -> null.also { extract(input, destination, name, size, tally) }
-                HARD_LINK -> null.also { link(input, destination, name, field(header, 157, NAME_BYTES), size, tally) }
-                else -> null.also { skip(input, size) }
+
+            when (header[156]) {
+                GNU_LONG_NAME -> announcedName = cString(bytes(input, size))
+                GNU_LONG_LINK -> announcedLink = cString(bytes(input, size))
+                PAX_HEADER -> {
+                    val records = paxRecords(bytes(input, size))
+                    announcedName = records["path"] ?: announcedName
+                    announcedLink = records["linkpath"] ?: announcedLink
+                }
+                PAX_GLOBAL -> skip(input, size)
+                else -> {
+                    val name = announcedName ?: headerName(header)
+                    val linked = announcedLink ?: field(header, 157, NAME_BYTES)
+                    announcedName = null
+                    announcedLink = null
+                    entry(input, destination, header[156], name, linked, size, tally)
+                }
             }
             skip(input, padding(size))
+        }
+    }
+
+    /** One entry that names something in the tree: a file is stored, a hard link copied, the rest skipped. */
+    private fun entry(input: InputStream, destination: Path, type: Byte, name: String, linked: String, size: Long, tally: Tally) {
+        when (type) {
+            REGULAR, REGULAR_OLD, CONTIGUOUS -> extract(input, destination, name, size, tally)
+            HARD_LINK -> link(input, destination, name, linked, size, tally)
+            else -> skip(input, size)
         }
     }
 
@@ -128,20 +151,26 @@ internal object TarSnapshot {
     private fun field(header: ByteArray, offset: Int, length: Int): String =
         String(header, offset, length, StandardCharsets.UTF_8).substringBefore('\u0000')
 
-    /** The `path` record of a pax extended header: `<length> path=<value>\n`, among records of other keys. */
-    private fun paxPath(records: String): String? {
-        var rest = records
+    /**
+     * The records of a pax extended header, each `<length> <key>=<value>\n`. The length counts bytes,
+     * the whole record's, so records are cut from the bytes before any of them becomes text. A header
+     * that does not parse gives what it held up to there.
+     */
+    private fun paxRecords(bytes: ByteArray): Map<String, String> {
+        val records = mutableMapOf<String, String>()
+        var position = 0
 
-        while (rest.isNotEmpty()) {
-            val length = rest.substringBefore(' ').toIntOrNull() ?: return null
-            if (length <= 0 || length > rest.length) return null
-            val record = rest.substring(0, length)
-            rest = rest.substring(length)
-            val key = record.substringAfter(' ').substringBefore('=')
-            if (key == "path") return record.substringAfter('=').removeSuffix("\n")
+        while (position < bytes.size) {
+            val space = (position until bytes.size).firstOrNull { bytes[it] == ' '.code.toByte() } ?: break
+            val length = String(bytes, position, space - position, StandardCharsets.US_ASCII).toIntOrNull() ?: break
+            if (length <= space - position || position + length > bytes.size) break
+            val record = String(bytes, space + 1, position + length - space - 1, StandardCharsets.UTF_8)
+            position += length
+            val key = record.substringBefore('=')
+            if ('=' in record) records[key] = record.substringAfter('=').removeSuffix("\n")
         }
 
-        return null
+        return records
     }
 
     private fun octal(header: ByteArray, offset: Int, length: Int): Long {
@@ -154,13 +183,16 @@ internal object TarSnapshot {
 
     private fun padding(size: Long): Long = (BLOCK - size % BLOCK) % BLOCK
 
-    private fun text(input: InputStream, size: Long): String {
+    /** The body of a name-carrying entry, which is never longer than a name this reader accepts. */
+    private fun bytes(input: InputStream, size: Long): ByteArray {
         requireValid(size <= MAX_NAME_BYTES) { "A file name in the archive is longer than $MAX_NAME_BYTES bytes" }
         val bytes = ByteArray(size.toInt())
         readFully(input, bytes, bytes.size)
 
-        return String(bytes, StandardCharsets.UTF_8)
+        return bytes
     }
+
+    private fun cString(bytes: ByteArray): String = String(bytes, StandardCharsets.UTF_8).substringBefore('\u0000')
 
     private fun copy(input: InputStream, out: java.io.OutputStream, size: Long) {
         val buffer = ByteArray(COPY_CHUNK)

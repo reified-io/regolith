@@ -73,6 +73,29 @@ class TarSnapshotTest {
         }
     }
 
+    // a hard link names the file it copies by path, and past 100 bytes that path travels ahead of it too
+    @Test
+    fun `a hard link to a long name is copied from the file it names`() {
+        source.resolve(longName).also { it.parent.createDirectories() }.writeText("long")
+        // sorted, the long name is archived first and the link names it, not the other way round.
+        Files.createLink(source.resolve("zz-link.txt"), source.resolve(longName))
+        val expected = mapOf(longName to "long", "zz-link.txt" to "long")
+
+        for (format in listOf("gnu", "posix")) {
+            assertEquals(expected, unpacked(format, archive("--format=$format", "--sort=name")), "format $format")
+        }
+    }
+
+    // a pax record counts its length in bytes, and a name outside ascii has more bytes than characters
+    @Test
+    fun `a long name outside ascii keeps its name in a pax archive`() {
+        val name = "звіти/" + "місячний-звіт-".repeat(5) + "вересень.txt"
+        source.resolve(name).also { it.parent.createDirectories() }.writeText("report")
+        source.resolve("index.html").writeText("<h1>hi</h1>")
+
+        assertEquals(mapOf(name to "report", "index.html" to "<h1>hi</h1>"), unpacked("posix", archive("--format=posix")))
+    }
+
     @Test
     fun `the copy stops the moment a bound is passed`() {
         populate()
