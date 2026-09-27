@@ -109,6 +109,30 @@ class ContainerSpecTest {
         assertTrue(args.any { "REGOLITH_EXEC_ID=\$1" in it })
     }
 
+    // the sandbox images put a directory of the home first on the path, and a command can write there
+    @Test
+    fun `a helper runs the image's own tools, never ones a command left on the path`() {
+        val helpers = listOf(
+            spec.stat(name, "/home/sandbox/a"),
+            spec.list(name, "/home/sandbox"),
+            spec.read(name, "/home/sandbox/a"),
+            spec.write(name, "/home/sandbox/a", ".tmp"),
+            spec.move(name, "/home/sandbox/a", ".tmp"),
+            spec.delete(name, "/home/sandbox/a", recursive = false, directory = false),
+            spec.tree(name, "/home/sandbox/dist"),
+            spec.copyOut(name, "/home/sandbox/dist"),
+            spec.cpuStat(name),
+            spec.limitEvents(name),
+            spec.signal(name, ExecId.random(), Signal.TERM),
+        )
+
+        for (args in helpers) {
+            assertEquals(listOf("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"), args.valueAfter("--env"), args.toString())
+        }
+        val command = spec.exec(name, ExecSpec(ExecId.random(), ExecCommand.Shell("ls"), "/home/sandbox", emptyMap(), stdin = false))
+        assertTrue(command.valueAfter("--env").none { it.startsWith("PATH=") }, "a caller's command keeps the sandbox's own path")
+    }
+
     @Test
     fun `a path is always an argument, never part of a script`() {
         val path = "/home/sandbox/\$(reboot); ls"

@@ -62,7 +62,9 @@ class DockerRuntimeIntegrationTest {
                 docker.run(listOf("volume", "create", volume)).requireOk("volume create")
                 val now = Clock.System.now()
                 val image = "debian:trixie-slim"
-                val sandbox = Sandbox(name, alias = null, site = null, ImagePolicy.Pin(image), Resources(0.5, 256, 512), NetworkPolicy.Public, Lifecycle(5.minutes, 1.days, 1.days), emptyMap(), emptyMap(), now, now)
+                // like the sandbox images, a directory the sandbox can write comes first on its path.
+                val env = mapOf("PATH" to "/tmp/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+                val sandbox = Sandbox(name, alias = null, site = null, ImagePolicy.Pin(image), Resources(0.5, 256, 512), NetworkPolicy.Public, Lifecycle(5.minutes, 1.days, 1.days), env, emptyMap(), now, now)
                 runtime.startSession(sandbox, HomeMount(volume), image)
 
                 val idle = runtime.cpuMicros(name)
@@ -155,6 +157,28 @@ class DockerRuntimeIntegrationTest {
                 assertFalse(runtime.isRunning(name), "a removed session is not running")
                 runtime.startSession(sandbox, HomeMount(volume), image)
                 assertTrue(runtime.isRunning(name))
+
+                // a command can put a `cat` and a `grep` of its own first on the path; the counter the cpu
+                // guard reads and the signal that ends a command must still come from the image's tools.
+                val plant = runtime.exec(
+                    name,
+                    ExecSpec(
+                        ExecId.random(),
+                        ExecCommand.Shell("mkdir -p /tmp/bin && printf '#!/bin/sh\\necho usage_usec 0\\n' > /tmp/bin/cat && printf '#!/bin/sh\\nexit 1\\n' > /tmp/bin/grep && chmod +x /tmp/bin/cat /tmp/bin/grep"),
+                        "/tmp",
+                        emptyMap(),
+                        stdin = false,
+                    ),
+                )
+                assertEquals(0, withTimeout(30.seconds) { plant.awaitExit() })
+                plant.detach()
+                assertTrue(runtime.cpuMicros(name) > 0, "a planted cat stood in for the cpu counter")
+                val marked = ExecId.random()
+                val planted = runtime.exec(name, ExecSpec(marked, ExecCommand.Shell("sleep 300"), "/tmp", emptyMap(), stdin = false))
+                Thread.sleep(500)
+                runtime.signal(name, marked, Signal.TERM)
+                assertNotNull(withTimeoutOrNull(30.seconds) { planted.awaitExit() }, "a planted grep hid the command from its signal")
+                planted.detach()
                 // a command can end the idle entrypoint it shares a uid with, and the container goes with it.
                 val killer = runtime.exec(name, ExecSpec(ExecId.random(), ExecCommand.Shell("for p in /proc/[0-9]*; do [ \"\$(tr '\\0' ' ' < \$p/cmdline 2>/dev/null)\" = 'sleep infinity ' ] && kill \${p#/proc/}; done; sleep 5"), "/tmp", emptyMap(), stdin = false))
                 withTimeout(30.seconds) { killer.awaitExit() }

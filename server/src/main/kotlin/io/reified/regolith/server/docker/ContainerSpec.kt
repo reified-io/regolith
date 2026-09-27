@@ -171,7 +171,7 @@ class ContainerSpec(
      * server, which knows the whole body arrived, puts it in place with [move].
      */
     fun write(sandbox: SandboxId, path: String, temporaryName: String): List<String> = listOf(
-        "exec", "--interactive", "--user", "${SandboxLayout.UID}:${SandboxLayout.UID}", container(sandbox),
+        "exec", "--interactive", "--user", "${SandboxLayout.UID}:${SandboxLayout.UID}", "--env", HELPER_PATH, container(sandbox),
         "/bin/sh", "-c",
         """set -e; dir=${'$'}(dirname -- "${'$'}1"); mkdir -p -- "${'$'}dir"; if ! cat > "${'$'}dir/${'$'}2"; then rm -f -- "${'$'}dir/${'$'}2"; exit 1; fi""",
         "regolith-write", path, temporaryName,
@@ -195,7 +195,7 @@ class ContainerSpec(
         helperArgs(sandbox, listOf("/bin/sh", "-c", script, "regolith-helper") + positional)
 
     private fun helperArgs(sandbox: SandboxId, command: List<String>): List<String> =
-        listOf("exec", "--user", "${SandboxLayout.UID}:${SandboxLayout.UID}", container(sandbox)) + command
+        listOf("exec", "--user", "${SandboxLayout.UID}:${SandboxLayout.UID}", "--env", HELPER_PATH, container(sandbox)) + command
 
     companion object {
         const val LABEL_PREFIX = "io.reified.regolith"
@@ -203,5 +203,9 @@ class ContainerSpec(
         const val PIDS_LIMIT = 512
         const val NOFILE = 4096
         const val MAX_TMP_MB = 512
+
+        // the sandbox images put a directory of the home first on the path, where a command can leave a
+        // `cat` or a `grep` of its own; a helper finds its tools on the read-only root alone.
+        private const val HELPER_PATH = "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     }
 }

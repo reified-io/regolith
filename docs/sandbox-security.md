@@ -58,7 +58,9 @@ the hardening flags.
 - **Files as the sandbox user.** File operations run inside the sandbox as the sandbox user and
   reach exactly what a command could, so a symlink pointing elsewhere gives nothing a command would
   not already have. A snapshot for publishing is the same: `tar` run as the sandbox user, never the
-  daemon's `docker cp`, which reads as root.
+  daemon's `docker cp`, which reads as root. These helpers, and the ones that read the CPU counter
+  and signal a command, run with a `PATH` of the read-only root alone, so a program a sandbox leaves
+  in its home cannot stand in for one of them.
 - **Bounded reads.** Every read of untrusted bytes is bounded while it happens: request bodies,
   uploads, downloads, command output, helper output and the snapshot a publish copies out. A reader
   past its cap kills the writer or keeps draining. It never simply stops reading, which can deadlock

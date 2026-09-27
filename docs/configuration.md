@@ -111,7 +111,8 @@ decision, made once. What that image must hold follows from how a session runs i
 - **`sleep`, a shell and GNU tools.** A session starts as `sleep infinity`, commands run as
   `/bin/bash -c <script>` (`REGOLITH_SHELL`), the file and signal helpers call `sh`, `stat`,
   `find`, `grep`, `cat`, `mkdir`, `mv`, `rm` and `kill` with GNU options, and publishing runs
-  `tar -cf -` (GNU tar or busybox).
+  `tar -cf -` (GNU tar or busybox). Helpers look for these in `/usr/local/bin`, `/usr/bin` and
+  `/bin` and their `sbin` siblings only, whatever the image's own `PATH` says.
 - **A uid 1000 whose home is `/home/sandbox`.** Every process runs as uid and gid 1000, the
   sandbox's home is mounted there, and it is the working directory.
 - **Nothing written outside that home and `/tmp`.** The root filesystem is read-only.
