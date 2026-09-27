@@ -85,6 +85,19 @@ class PublicSitesTest {
         assertEquals("<h1>lost</h1>", response.bodyAsText())
     }
 
+    // a browser escapes a space and a letter outside ascii in the path it sends; the manifest holds neither escaped
+    @Test
+    fun `a file whose name a browser escapes is served under that name`() = siteTest(
+        mapOf("index.html" to "<h1>home</h1>", "notes/meeting notes.html" to "<p>notes</p>", "café/menu.html" to "<p>menu</p>", "a+b.txt" to "sum"),
+    ) {
+        assertEquals("<p>notes</p>", client.get("/notes/meeting%20notes.html") { host() }.bodyAsText())
+        assertEquals("<p>menu</p>", client.get("/caf%C3%A9/menu.html") { host() }.bodyAsText())
+        // a plus is a plus in a path, not a space as in a form
+        assertEquals("sum", client.get("/a+b.txt") { host() }.bodyAsText())
+        assertEquals(HttpStatusCode.NotFound, client.get("/notes/%zz") { host() }.status)
+        assertEquals(HttpStatusCode.NotFound, client.get("/%2e%2e/index.html") { host() }.status)
+    }
+
     @Test
     fun `a host that names no published site gets nothing`() = siteTest(mapOf("index.html" to "<h1>home</h1>")) {
         for (host in listOf("nobody.example.test", "example.test", "demo.example.test.evil.test", "api.example.test")) {

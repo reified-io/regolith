@@ -3,6 +3,8 @@ package io.reified.regolith.pages
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.URLDecodeException
+import io.ktor.http.decodeURLPart
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.install
@@ -56,7 +58,7 @@ private fun ApplicationCall.site(config: PagesConfig): SiteName? {
 }
 
 private suspend fun ApplicationCall.serve(config: PagesConfig, store: ReleaseStore, release: Release) {
-    val wanted = SitePaths.requested(request.path())
+    val wanted = SitePaths.requested(decodedPath() ?: return notFound(config, store, release))
     val entry = release.manifest.find(wanted)
         ?: release.manifest.find(SitePaths.directoryIndex(wanted))
         ?: return notFound(config, store, release)
@@ -71,6 +73,17 @@ private suspend fun ApplicationCall.serve(config: PagesConfig, store: ReleaseSto
     }
 
     respond(LocalFileContent(store.blobPath(entry.hash).toFile(), ContentType.parse(entry.contentType)))
+}
+
+/**
+ * The request path as a manifest spells it: a browser escapes a space or a letter outside ASCII, a
+ * manifest never does. A path that is not valid escaping names nothing. Decoding can only change which
+ * key is looked up, never reach past the manifest.
+ */
+private fun ApplicationCall.decodedPath(): String? = try {
+    request.path().decodeURLPart()
+} catch (_: URLDecodeException) {
+    null
 }
 
 /** A site's own `404.html` when it has one, so a published app can answer for its unknown paths. */
