@@ -53,12 +53,23 @@ class Sweeper(
 
         for (sandbox in sandboxes.all()) {
             if (sessions.get(sandbox.id) != null || now < sandbox.deleteAfter) continue
+            if (sandbox.site == null || sandbox.homeReleasedAt == null) retain(sandbox)
+        }
+    }
+
+    // a home that cannot be taken apart stays for the next tick; the sandboxes after it are still swept.
+    private suspend fun retain(sandbox: Sandbox) {
+        try {
             if (sandbox.site == null) {
                 log.info { "Sandbox past retention: sandbox=[${sandbox.id}]" }
                 sandboxes.delete(sandbox.id)
-            } else if (sandbox.homeReleasedAt == null) {
+            } else {
                 sandboxes.releaseHome(sandbox.id)
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn(e) { "Sandbox past retention could not be swept: sandbox=[${sandbox.id}]" }
         }
     }
 

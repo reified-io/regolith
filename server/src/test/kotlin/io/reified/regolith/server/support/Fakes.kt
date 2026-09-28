@@ -445,7 +445,11 @@ class FakeHomes(var freeBytes: Long = Long.MAX_VALUE) : HomeStore {
         open -= sandbox
     }
 
+    /** Homes whose disk cannot be taken apart, as a volume the daemon still holds a mount of. */
+    val stuck: MutableSet<SandboxId> = ConcurrentHashMap.newKeySet()
+
     override suspend fun destroy(sandbox: SandboxId) {
+        check(sandbox !in stuck) { "The home disk volume of $sandbox is still in use" }
         destroyed += sandbox
         disks.remove(sandbox)
     }

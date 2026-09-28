@@ -208,6 +208,33 @@ class LifecycleTest {
     }
 
     @Test
+    fun `a home retention cannot take apart is left for the next tick, and the rest are still swept`() = runBlocking {
+        TestServer().use { server ->
+            val stuck = server.sandbox("a-stuck", SandboxRequest(lifecycle = LifecycleRequest(retain = 3.days))).id
+            server.runtime.place(stuck, "/home/sandbox/dist/index.html", "<h1>stays</h1>")
+            server.sites.publish(stuck, "dist", until = server.clock.now() + 60.days)
+            server.sandboxes.stop(stuck)
+            val kept = server.sandbox("b-kept", SandboxRequest(lifecycle = LifecycleRequest(retain = 3.days))).id
+            server.runtime.place(kept, "/home/sandbox/dist/index.html", "<h1>goes</h1>")
+            server.sites.publish(kept, "dist", until = server.clock.now() + 60.days)
+            server.sandboxes.stop(kept)
+            val unused = server.sandbox("c-unused", SandboxRequest(lifecycle = LifecycleRequest(retain = 3.days))).id
+            server.homes.stuck += stuck
+
+            server.clock.advance(4.days)
+            server.sweeper.tick()
+
+            assertNull(server.sandboxes.require(stuck).homeReleasedAt, "a home that could not go still reads as kept")
+            assertEquals(server.clock.now(), server.sandboxes.require(kept).homeReleasedAt)
+            assertNull(server.sandboxes.find(unused))
+
+            server.homes.stuck -= stuck
+            server.sweeper.tick()
+            assertEquals(server.clock.now(), server.sandboxes.require(stuck).homeReleasedAt)
+        }
+    }
+
+    @Test
     fun `a site past its term is taken down, and retention then takes the sandbox`() = runBlocking {
         TestServer().use { server ->
             val id = server.sandbox("author", SandboxRequest(lifecycle = LifecycleRequest(retain = 3.days))).id
