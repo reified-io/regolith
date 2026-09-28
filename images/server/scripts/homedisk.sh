@@ -78,8 +78,11 @@ case "${1:-}" in
       (( checked <= 1 )) || exit 1
       resize2fs "$image" >&2
     fi
-    # --nooverlap reuses the attachment an interrupted run left behind instead of adding a second one.
-    losetup --find --show --nooverlap "$image"
+    # --nooverlap reuses the attachment an interrupted run left behind instead of adding a second one;
+    # that device still has the size it was attached with, so it is told the image may have grown.
+    device=$(losetup --find --show --nooverlap "$image")
+    losetup --set-capacity "$device"
+    echo "$device"
     ;;
 
   size)

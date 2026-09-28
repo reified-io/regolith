@@ -181,7 +181,9 @@ class HostIntegrationTest {
                 }
 
                 // a home grows between sessions with every file in it, and a size below it never opens it again.
+                // it grows under an attachment a run that stopped short left behind, which must follow the image.
                 sessions.stop(name, StopReason.STOPPED)
+                docker.run(helpers.homeDisk("$namespace-$name-disk", "prepare", "256", "256")).requireOk("a stale attachment")
                 val grown = sandbox.copy(resources = sandbox.resources.copy(homeMb = 512))
                 sessions.withLease(grown) {
                     val size = sh("df --block-size=1M --output=size /home/sandbox | tail -1").trim().toInt()
