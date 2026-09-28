@@ -16,15 +16,15 @@ object SandboxLayout {
 /**
  * A sandbox: the durable part — its id, the caller's [alias] for it, its configuration and its home.
  * Its running container is a session, tracked separately, and a sandbox outlives as many sessions as
- * it is used for. [site] is the label its published files are served at, while any are, and
- * [siteUntil] when that site is taken down; the two are set together. [homeReleasedAt] is when
- * retention took the home of a sandbox kept for its site; the next use starts an empty one.
+ * it is used for. [site] is where its published files are served and until when, while any are.
+ * [homeReleasedAt] is when retention took the home of a sandbox kept for its site; the next use
+ * starts an empty one and clears it.
  */
 @Serializable
 data class Sandbox(
     val id: SandboxId,
     val alias: Alias?,
-    val site: SiteLabel? = null,
+    val site: Site? = null,
     val imagePolicy: ImagePolicy,
     val resources: Resources,
     val network: NetworkPolicy,
@@ -33,7 +33,6 @@ data class Sandbox(
     val labels: Map<String, String>,
     val createdAt: Instant,
     val lastUsedAt: Instant,
-    val siteUntil: Instant? = null,
     val homeReleasedAt: Instant? = null,
 ) {
 
@@ -45,7 +44,20 @@ data class Sandbox(
      */
     val deleteAfter: Instant
         get() = lastUsedAt + if (lifecycle.retain == Duration.ZERO) lifecycle.idleStop else lifecycle.retain
+
+    /**
+     * The site that is up at [now]. One past its term is down wherever it is read, whether or not the
+     * sweep has reached it: the term is the truth and the sweep only carries it out.
+     */
+    fun liveSite(now: Instant): Site? = site?.takeIf { now < it.until }
 }
+
+/** A published site: the [label] it is served at, and [until] when the server takes it down. */
+@Serializable
+data class Site(
+    val label: SiteLabel,
+    val until: Instant,
+)
 
 @Serializable
 data class Resources(

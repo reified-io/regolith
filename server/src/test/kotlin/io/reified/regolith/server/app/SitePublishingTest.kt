@@ -145,7 +145,7 @@ class SitePublishingTest {
             assertEquals(start + 200.days, server.sites.term(id, start + 200.days).until)
             assertEquals(start + 6.days, server.sites.term(id, start + 6.days).until)
             assertEquals(start + 6.days, server.sites.published(id).until)
-            assertEquals(start + 6.days, server.sandboxes.require(id).siteUntil)
+            assertEquals(start + 6.days, server.sandboxes.require(id).site?.until)
         }
     }
 
@@ -164,20 +164,42 @@ class SitePublishingTest {
         }
     }
 
-    // a site published before terms existed would otherwise sit with none, and no sweep would ever end it
+    // the term is the truth and the sweep only carries it out: what a caller sees must not depend on
+    // whether a tick has happened since the term ran out
     @Test
-    fun `a site from before terms gets the default one when the server starts`() = runBlocking {
+    fun `a site past its term is gone before the sweep reaches it`() = runBlocking {
         TestServer().use { server ->
-            val id = server.sandbox("older").id
-            server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>old</h1>")
-            server.sites.publish(id, "dist", until = null)
-            server.store.save(server.sandboxes.require(id).copy(siteUntil = null))
+            val id = server.sandbox("lapsed").id
+            server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>hi</h1>")
+            val first = server.sites.publish(id, "dist", until = server.clock.now() + 2.days)
+            val site = server.siteOf(id)
             server.clock.advance(3.days)
 
-            val restarted = Sandboxes(server.store, server.sessions, server.execs, server.homes, server.publisher, server.config, server.clock)
-            restarted.load()
+            assertFailsWith<RegolithError.NotFound> { server.sites.published(id) }
+            assertFailsWith<RegolithError.NotFound> { server.sites.term(id, server.clock.now() + 1.days) }
+            assertTrue(server.publisher.sites[site] != null, "reading a lapsed site took it down")
 
-            assertEquals(server.clock.now() + 30.days, restarted.require(id).siteUntil)
+            val again = server.sites.publish(id, "dist", until = null)
+
+            assertNotEquals(first.published.url, again.published.url, "publishing renewed the lapsed site at its old address")
+            assertNull(server.publisher.sites[site], "the lapsed site stayed up beside the new one")
+            assertEquals(server.clock.now() + 30.days, again.until)
+        }
+    }
+
+    @Test
+    fun `taking down a lapsed site does what the sweep would`() = runBlocking {
+        TestServer().use { server ->
+            val id = server.sandbox("lapsed").id
+            server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>hi</h1>")
+            server.sites.publish(id, "dist", until = server.clock.now() + 2.days)
+            val site = server.siteOf(id)
+            server.clock.advance(3.days)
+
+            server.sites.unpublish(id)
+
+            assertNull(server.publisher.sites[site])
+            assertNull(server.sandboxes.require(id).site)
         }
     }
 

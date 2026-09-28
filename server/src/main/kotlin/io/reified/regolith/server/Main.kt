@@ -191,7 +191,7 @@ private fun listOrphans(config: ServerConfig): Int = try {
         val found = homes.list().filterNot { it.value in ids }.sortedBy { it.value }
         val unrecognized = homes.unrecognized().sorted()
         val sites = config.pagesUrl?.let { url ->
-            PagesPublisher(url, checkNotNull(config.pagesToken)).use { OrphanSites(it).find(recorded.mapNotNull { it.site?.value }.toSet()) }
+            PagesPublisher(url, checkNotNull(config.pagesToken)).use { OrphanSites(it).find(recorded.mapNotNull { it.site?.label?.value }.toSet()) }
         }.orEmpty()
 
         if (found.isEmpty() && unrecognized.isEmpty() && sites.isEmpty()) println("no orphaned homes or sites")
@@ -217,7 +217,7 @@ private fun resolveOrphans(config: ServerConfig, action: String): Int {
                 "adopt" -> app.orphans.adopt().forEach { println("adopted  ${it.id}  ${it.resources.homeMb} MB") }
                 else -> {
                     app.orphans.delete().forEach { println("deleted  $it") }
-                    app.orphanSites.delete(app.sandboxes.all().mapNotNull { it.site?.value }.toSet()).forEach { println("taken down  $it") }
+                    app.orphanSites.delete(app.sandboxes.all().mapNotNull { it.site?.label?.value }.toSet()).forEach { println("taken down  $it") }
                 }
             }
         }

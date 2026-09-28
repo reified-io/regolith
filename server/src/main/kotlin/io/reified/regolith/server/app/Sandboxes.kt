@@ -12,6 +12,7 @@ import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Alias
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.Site
 import io.reified.regolith.server.domain.SiteLabel
 import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.ports.HomeStore
@@ -23,7 +24,6 @@ import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.Instant
 
 /** What a caller asks for when creating a sandbox; `null` takes the server default. */
 data class SandboxRequest(
@@ -70,19 +70,14 @@ class Sandboxes(
     private val aliasLocks = KeyedLocks<Alias>()
 
     suspend fun load() {
-        for (sandbox in store.sandboxes()) remember(withSiteTerm(sandbox))
+        for (sandbox in store.sandboxes()) remember(sandbox)
         log.info { "Sandboxes loaded: count=[${records.size}]" }
-    }
-
-    // a site published before sites had terms gets the default one, counted from the first start
-    // that knows about terms, rather than one that would take it down at the first sweep.
-    private suspend fun withSiteTerm(sandbox: Sandbox): Sandbox {
-        if (sandbox.site == null || sandbox.siteUntil != null) return sandbox
-        val updated = sandbox.copy(siteUntil = clock.now() + config.defaults.siteTerm)
-        store.save(updated)
-        log.info { "Site given the default term: sandbox=[${sandbox.id}] site=[${sandbox.site}] until=[${updated.siteUntil}]" }
-
-        return updated
+        // the records keep naming their sites, so a pages role configured later can still take them
+        // down; until then nothing ends them, and an operator should know that rather than find out.
+        if (sites == null) {
+            val held = records.values.count { it.site != null }
+            if (held > 0) log.warn { "Sites are recorded but no pages role is configured, so none is taken down at its term: count=[$held]" }
+        }
     }
 
     fun find(id: SandboxId): Sandbox? = records[id]
@@ -231,13 +226,13 @@ class Sandboxes(
         sessions.stop(id, StopReason.SANDBOX_DELETED)
         execs.awaitNone(id)
         // a site outlives the home unless it is taken down here: nothing else knows where it was served.
-        sandbox.site?.let { label ->
+        sandbox.site?.let { site ->
             try {
-                sites?.unpublish(label.value)
+                sites?.unpublish(site.label.value)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                log.warn(e) { "Site left behind by a deleted sandbox: sandbox=[$id] site=[$label]" }
+                log.warn(e) { "Site left behind by a deleted sandbox: sandbox=[$id] site=[${site.label}]" }
             }
         }
         homes.destroy(id)
@@ -262,13 +257,12 @@ class Sandboxes(
         val updated = sandbox.copy(homeReleasedAt = now)
         store.save(updated)
         remember(updated)
-        log.info { "Home past retention released, site kept: sandbox=[$id] site=[${sandbox.site}]" }
+        log.info { "Home past retention released, site kept: sandbox=[$id] site=[${sandbox.site?.label}]" }
     }
 
-    /** Records where this sandbox's files are served and until when, or that they no longer are. */
-    suspend fun site(id: SandboxId, label: SiteLabel?, until: Instant?): Sandbox = locks.withLock(id) {
-        check((label == null) == (until == null)) { "A site and its term are set together" }
-        val updated = require(id).copy(site = label, siteUntil = until)
+    /** Records where this sandbox's files are served and until when, or `null` once they no longer are. */
+    suspend fun site(id: SandboxId, site: Site?): Sandbox = locks.withLock(id) {
+        val updated = require(id).copy(site = site)
         store.save(updated)
         remember(updated)
         updated
@@ -278,14 +272,16 @@ class Sandboxes(
     fun unusedSiteLabel(): SiteLabel {
         repeat(LABEL_TRIES) {
             val label = SiteLabel.random()
-            if (records.values.none { it.site == label }) return label
+            if (records.values.none { it.site?.label == label }) return label
         }
         error("No unused site label after $LABEL_TRIES tries")
     }
 
     /**
      * Records use of the sandbox; retention counts from the last one. Persisted at most once a minute,
-     * except the first use after a released home, which the session about to start creates anew.
+     * except the first use after a released home, which the session about to start creates anew. A use
+     * counts here whether or not that session then starts, as it does for [Sandbox.lastUsedAt]: the home
+     * is made anew by whichever session starts next.
      */
     suspend fun markUsed(id: SandboxId): Sandbox = locks.withLock(id) {
         val current = require(id)

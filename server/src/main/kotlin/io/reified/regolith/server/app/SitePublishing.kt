@@ -3,8 +3,9 @@ package io.reified.regolith.server.app
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.reified.regolith.server.config.ServerConfig
 import io.reified.regolith.server.domain.RegolithError
+import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxId
-import io.reified.regolith.server.domain.SiteLabel
+import io.reified.regolith.server.domain.Site
 import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.ports.PublishedSite
 import io.reified.regolith.server.ports.SandboxRuntime
@@ -32,6 +33,9 @@ data class ServedSite(val published: PublishedSite, val until: Instant)
  * The sandbox never learns that any of this happened: it holds no token, opens no connection, and is
  * read from the outside like any other file operation. What reaches the internet is a snapshot taken
  * at one moment — not the home itself, which keeps changing and disappears when the session stops.
+ *
+ * A site has a term, and the term is the truth: past it the site is gone wherever it is read, whether
+ * or not the sweep has taken it down yet. The sweep, and a publish that finds one, only carry that out.
  */
 class SitePublishing(
     private val sandboxes: Sandboxes,
@@ -52,6 +56,8 @@ class SitePublishing(
     /**
      * Publishes [path] as this sandbox's site until [until]; without one, a first publish gets the
      * default term and a later one keeps the term the site has, so updating a site never shortens it.
+     * A site past its term is not updated but replaced: it is taken down first, and what is published
+     * is a new site at a new address.
      */
     suspend fun publish(id: SandboxId, path: String, until: Instant?): ServedSite = locks.withLock(id) {
         val pages = configured()
@@ -60,10 +66,10 @@ class SitePublishing(
         val now = clock.now()
         until?.let { requireTerm(it, now) }
 
-        val sandbox = sandboxes.markUsed(id)
-        val label = sandbox.site ?: sandboxes.unusedSiteLabel()
-        // a term already past belongs to a site the next sweep takes down, not to the one published now
-        val term = until ?: sandbox.siteUntil?.takeIf { it > now } ?: (now + config.defaults.siteTerm)
+        val sandbox = takenDownIfOver(sandboxes.markUsed(id), now)
+        val current = sandbox.site
+        val label = current?.label ?: sandboxes.unusedSiteLabel()
+        val site = Site(label, until ?: current?.until ?: (now + config.defaults.siteTerm))
         val snapshot = snapshotDir()
 
         try {
@@ -75,9 +81,9 @@ class SitePublishing(
             }
             val published = pages.publish(label.value, snapshot)
             // recorded only once the release is live, so a failed first publish leaves no label behind.
-            if (sandbox.site != label || sandbox.siteUntil != term) sandboxes.site(id, label, term)
-            log.info { "Site published: sandbox=[$id] site=[$label] release=[${published.release}] files=[${published.files}] until=[$term]" }
-            ServedSite(published, term)
+            if (current != site) sandboxes.site(id, site)
+            log.info { "Site published: sandbox=[$id] site=[$label] release=[${published.release}] files=[${published.files}] until=[${site.until}]" }
+            ServedSite(published, site.until)
         } finally {
             withContext(Dispatchers.IO) { snapshot.toFile().deleteRecursively() }
         }
@@ -85,50 +91,50 @@ class SitePublishing(
 
     suspend fun published(id: SandboxId): ServedSite {
         val pages = configured()
-        val (label, until) = site(id)
+        val site = liveSite(id, clock.now())
 
-        return ServedSite(pages.published(label.value) ?: notPublished(id), until)
+        return ServedSite(pages.published(site.label.value) ?: notPublished(id), site.until)
     }
 
     /** Moves the site's term to [until], earlier or later than it was. */
     suspend fun term(id: SandboxId, until: Instant): ServedSite = locks.withLock(id) {
         val pages = configured()
-        requireTerm(until, clock.now())
-        val (label, current) = site(id)
-        val published = pages.published(label.value) ?: notPublished(id)
-        sandboxes.site(id, label, until)
-        log.info { "Site term moved: sandbox=[$id] site=[$label] from=[$current] to=[$until]" }
+        val now = clock.now()
+        requireTerm(until, now)
+        val site = liveSite(id, now)
+        val published = pages.published(site.label.value) ?: notPublished(id)
+        sandboxes.site(id, site.copy(until = until))
+        log.info { "Site term moved: sandbox=[$id] site=[${site.label}] from=[${site.until}] to=[$until]" }
         ServedSite(published, until)
     }
 
+    /** Takes the site down: a live one, or one past its term that the sweep has not reached yet. */
     suspend fun unpublish(id: SandboxId) = locks.withLock(id) {
         val pages = configured()
-        val (label, _) = site(id)
-        pages.unpublish(label.value)
-        sandboxes.site(id, null, null)
-        log.info { "Site taken down: sandbox=[$id] site=[$label]" }
+        val site = sandboxes.require(id).site ?: notPublished(id)
+        pages.unpublish(site.label.value)
+        sandboxes.site(id, null)
+        log.info { "Site taken down: sandbox=[$id] site=[${site.label}]" }
     }
 
     /**
      * Takes the site down once its term is over; the sweep calls it, and it looks again under the lock,
      * since the term may have been moved since the sweep read it.
      */
-    suspend fun expire(id: SandboxId) = locks.withLock(id) {
-        val sandbox = sandboxes.find(id) ?: return@withLock
-        val label = sandbox.site ?: return@withLock
-        val until = sandbox.siteUntil ?: return@withLock
-        if (clock.now() < until) return@withLock
-        configured().unpublish(label.value)
-        sandboxes.site(id, null, null)
-        log.info { "Site past its term taken down: sandbox=[$id] site=[$label] until=[$until]" }
+    suspend fun expire(id: SandboxId) {
+        locks.withLock(id) { sandboxes.find(id)?.let { takenDownIfOver(it, clock.now()) } }
     }
 
-    private fun site(id: SandboxId): Pair<SiteLabel, Instant> {
-        val sandbox = sandboxes.require(id)
-        val label = sandbox.site ?: notPublished(id)
+    private suspend fun takenDownIfOver(sandbox: Sandbox, now: Instant): Sandbox {
+        val site = sandbox.site ?: return sandbox
+        if (now < site.until) return sandbox
+        configured().unpublish(site.label.value)
+        log.info { "Site past its term taken down: sandbox=[${sandbox.id}] site=[${site.label}] until=[${site.until}]" }
 
-        return label to checkNotNull(sandbox.siteUntil) { "Site `$label` has no term" }
+        return sandboxes.site(sandbox.id, null)
     }
+
+    private fun liveSite(id: SandboxId, now: Instant): Site = sandboxes.require(id).liveSite(now) ?: notPublished(id)
 
     private fun notPublished(id: SandboxId): Nothing = throw RegolithError.NotFound("Nothing is published for sandbox `$id`")
 

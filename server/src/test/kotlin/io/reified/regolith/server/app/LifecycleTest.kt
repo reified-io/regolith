@@ -198,7 +198,7 @@ class LifecycleTest {
             assertEquals(server.clock.now(), kept.homeReleasedAt)
             assertEquals(listOf(id), server.homes.destroyed, "the home is released once")
             assertTrue(server.publisher.sites[site] != null, "the site went with the home")
-            assertEquals(site, kept.site?.value)
+            assertEquals(site, kept.site?.label?.value)
 
             server.sandboxes.start(id)
 

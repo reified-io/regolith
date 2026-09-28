@@ -58,7 +58,7 @@ class TestServer(
         sandboxes.create(Alias.parse(alias), request).first
 
     /** The label the pages role serves this sandbox's site at, once it has published one. */
-    fun siteOf(id: SandboxId): String = checkNotNull(sandboxes.require(id).site) { "Sandbox `$id` has published nothing" }.value
+    fun siteOf(id: SandboxId): String = checkNotNull(sandboxes.require(id).site) { "Sandbox `$id` has published nothing" }.label.value
 
     override fun close() {
         scope.cancel()

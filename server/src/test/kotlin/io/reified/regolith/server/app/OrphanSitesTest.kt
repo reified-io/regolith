@@ -8,7 +8,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class OrphanSitesTest {
-    private fun TestServer.claimed(): Set<String> = sandboxes.all().mapNotNull { it.site?.value }.toSet()
+    private fun TestServer.claimed(): Set<String> = sandboxes.all().mapNotNull { it.site?.label?.value }.toSet()
 
     @Test
     fun `a site no record claims is found and taken down, and a claimed one is left alone`() = runBlocking {

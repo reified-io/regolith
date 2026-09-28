@@ -100,7 +100,7 @@ class FileStateStore private constructor(private val root: Path, private val loc
 
     companion object {
         /** Version of the persisted records; see the class comment. */
-        const val SCHEMA = 3
+        const val SCHEMA = 4
 
         private const val SANDBOX_FILE = "sandbox.json"
         private val json = Json { encodeDefaults = true }

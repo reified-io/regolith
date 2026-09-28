@@ -268,7 +268,7 @@ The response is a `SandboxInfo`:
   has a [term](#publishing) of its own.
 - `homeReleasedAt` is when retention took the home of a sandbox kept for its site, and absent
   otherwise. The site is still served, but the files it was built from are gone; the next use starts
-  an empty home and clears the field.
+  an empty home and clears the field, as it moves `lastUsedAt`.
 - `lastSessionEnd` says how the previous session ended — see below.
 
 ### Which image a sandbox runs

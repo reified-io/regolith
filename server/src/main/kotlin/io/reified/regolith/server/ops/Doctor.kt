@@ -76,7 +76,7 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
     }
 
     private suspend fun claimedSites(): Set<String> =
-        withContext(Dispatchers.IO) { FileStateStore.recorded(config.stateDir) }.mapNotNull { it.site?.value }.toSet()
+        withContext(Dispatchers.IO) { FileStateStore.recorded(config.stateDir) }.mapNotNull { it.site?.label?.value }.toSet()
 
     private suspend fun dockerHost(): Check {
         val refusals = DockerHost.refusals(docker)

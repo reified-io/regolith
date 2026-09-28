@@ -46,8 +46,8 @@ class Sweeper(
         // without a pages role nothing can be taken down, and saying so every tick would say nothing new
         if (sites.available) {
             for (sandbox in sandboxes.all()) {
-                val until = sandbox.siteUntil ?: continue
-                if (now >= until) expire(sandbox)
+                val site = sandbox.site ?: continue
+                if (now >= site.until) expire(sandbox)
             }
         }
 
@@ -70,7 +70,7 @@ class Sweeper(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            log.warn(e) { "Site past its term could not be taken down: sandbox=[${sandbox.id}] site=[${sandbox.site}]" }
+            log.warn(e) { "Site past its term could not be taken down: sandbox=[${sandbox.id}] site=[${sandbox.site?.label}]" }
         }
     }
 
