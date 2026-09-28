@@ -170,7 +170,7 @@ class ReleaseStoreTest {
     }
 
     @Test
-    fun `caps are the server's, not the caller's`() = runBlocking {
+    fun `caps are the server's, not the caller's`() = runBlocking<Unit> {
         val many = (1..LIMITS.maxFiles + 1).map { ReleaseFile("file$it.txt", sha256("$it"), 1) }
         assertFailsWith<PagesError.Invalid> { store.startRelease(site, many) }
         assertFailsWith<PagesError.TooLarge> { store.startRelease(site, listOf(ReleaseFile("big.bin", sha256("big"), 2048))) }

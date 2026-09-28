@@ -103,7 +103,7 @@ class SitePublishingTest {
     }
 
     @Test
-    fun `a server with no pages role says so instead of failing oddly`() = runBlocking {
+    fun `a server with no pages role says so instead of failing oddly`() = runBlocking<Unit> {
         TestServer().use { server ->
             val sites = SitePublishing(server.sandboxes, server.sessions, server.runtime, server.config, publisher = null)
             val id = server.sandbox("lonely").id

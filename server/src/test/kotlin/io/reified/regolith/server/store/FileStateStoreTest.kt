@@ -75,7 +75,7 @@ class FileStateStoreTest {
     }
 
     @Test
-    fun `a record edited by hand is read through the same parsers as a request`() = runBlocking {
+    fun `a record edited by hand is read through the same parsers as a request`() = runBlocking<Unit> {
         FileStateStore.open(root, "regolith").use { store ->
             store.save(sandbox)
             val record = root.resolve("sandboxes").resolve(sandbox.id.value).resolve("sandbox.json")
