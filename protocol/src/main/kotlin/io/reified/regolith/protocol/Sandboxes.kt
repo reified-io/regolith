@@ -177,7 +177,8 @@ public data class SessionEndInfo(
  * no longer offers the image [imagePolicy] tracks, which no session can start on. [deleteAfter] is
  * when retention takes the sandbox unless it is used first — only its home while it has a site up,
  * since the site keeps its own term. [homeReleasedAt] says retention took the home that way: the site
- * is still served, but the files it was built from are gone, and the next use starts an empty home.
+ * is still served, but the files it was built from are gone; the next use starts an empty home and
+ * clears it.
  */
 @Serializable
 public data class SandboxInfo(
@@ -195,7 +196,7 @@ public data class SandboxInfo(
     val lastSessionEnd: SessionEndInfo? = null,
     val createdAt: Instant,
     val lastUsedAt: Instant,
-    val deleteAfter: Instant? = null,
+    val deleteAfter: Instant,
     val homeReleasedAt: Instant? = null,
 )
 
@@ -209,7 +210,8 @@ public data class SandboxPage(
 /**
  * Body of `POST /v1/sandboxes/{id}/site`. [path] is the directory inside the sandbox to publish,
  * relative to the home unless it is absolute. [until] is when the server takes the site down; without
- * it a first publish gets the server's default term and a later one keeps the term the site has.
+ * it a first publish gets the server's default term and a later one keeps the term the site has. A
+ * site past its term is gone: publishing then is a new site at a new address.
  */
 @Serializable
 public data class PublishRequest(
@@ -217,16 +219,20 @@ public data class PublishRequest(
     val until: Instant? = null,
 )
 
-/** Body of `PATCH /v1/sandboxes/{id}/site`: the site's new term, shorter or longer than the one it has. */
+/**
+ * Body of `PATCH /v1/sandboxes/{id}/site`. Only the fields that are present change. [until] moves the
+ * site's term, earlier or later than it was.
+ */
 @Serializable
-public data class SiteTermRequest(
-    val until: Instant,
+public data class UpdateSiteRequest(
+    val until: Instant? = null,
 )
 
 /**
  * A published site. [release] identifies the exact snapshot behind [url]; publishing again replaces it
  * atomically, and nothing of the sandbox except the files of that snapshot is reachable at it. [until]
- * is when the server takes it down, unless the term is moved first.
+ * is when the server takes it down, unless the term is moved first; past it the site is gone, whether
+ * or not the sweep has reached it.
  *
  * [url] is the server's to choose and the only address the site has: it is built from a label made
  * for this site alone, so it says nothing about the sandbox or the caller behind it.

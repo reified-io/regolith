@@ -132,7 +132,7 @@ hard-coding them.
 ```json
 {
   "version": "0.5.0",
-  "protocol": 3,
+  "protocol": 4,
   "defaults": {
     "image": "ghcr.io/reified-io/regolith-sandbox:0.5.0",
     "resources": {"cpus": 1.0, "memoryMb": 1024, "homeMb": 4096},
@@ -632,18 +632,23 @@ stops, and the site stays exactly as it was published.
   nothing can replace a site it did not publish.
 - A site lives until its term, a takedown or deleting the sandbox, whichever comes first. Its term
   is the caller's to keep: a client that sells hosting moves it on as each period is paid for.
+- The term is the truth. Past it the site is gone wherever it is read, whether or not the sweep has
+  taken it down yet: `GET` answers `not_found`, `PATCH` has nothing to move, and publishing again is
+  a new site at a new address, the old one taken down first. `DELETE` takes a lapsed site down too.
 - While the site is up, retention takes only the sandbox's home, never the record: the site keeps
   its address, and the next use of the sandbox starts an empty home (see `homeReleasedAt`).
 
 ### `PATCH /v1/sandboxes/{id}/site`
 
-Moves the site's term, later or earlier, and answers the `PublishedSite` with its new `until`:
+Moves the site's term, later or earlier, and answers the `PublishedSite` with its new `until`; a
+field left out stays as it is:
 
 ```json
 {"until": "2027-01-13T12:00:00Z"}
 ```
 
-The same bounds as on publishing apply. It answers `404 not_found` when nothing is published.
+The same bounds as on publishing apply. It answers `404 not_found` when nothing is published, or
+when the site is past its term.
 
 ### `GET /v1/sandboxes/{id}/site`, `DELETE /v1/sandboxes/{id}/site`
 

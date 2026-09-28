@@ -23,8 +23,8 @@ import io.reified.regolith.protocol.OutputKind
 import io.reified.regolith.protocol.PublishRequest
 import io.reified.regolith.protocol.PublishedSite
 import io.reified.regolith.protocol.SandboxInfo
-import io.reified.regolith.protocol.SiteTermRequest
 import io.reified.regolith.protocol.UpdateSandboxRequest
+import io.reified.regolith.protocol.UpdateSiteRequest
 import java.io.ByteArrayOutputStream
 import kotlin.time.Instant
 
@@ -109,7 +109,8 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
      *
      * The server takes the site down at [until]. Without it a first publish gets the server's default
      * term (`defaults.siteDays` in [RegolithClient.info]) and a later one keeps the term the site has;
-     * a term beyond `limits.maxSiteDays` from now is refused.
+     * a term beyond `limits.maxSiteDays` from now is refused. A site past its term is gone, so publishing
+     * then is a new site at a new address.
      */
     public suspend fun publish(directory: String, until: Instant? = null): PublishedSite =
         client.call(HttpMethod.Post, "$path/site", PublishedSite.serializer()) {
@@ -119,7 +120,7 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
     /** Moves the site's term to [until], earlier or later than it was; fails when nothing is published. */
     public suspend fun setSiteTerm(until: Instant): PublishedSite =
         client.call(HttpMethod.Patch, "$path/site", PublishedSite.serializer()) {
-            with(client) { jsonBody(SiteTermRequest.serializer(), SiteTermRequest(until)) }
+            with(client) { jsonBody(UpdateSiteRequest.serializer(), UpdateSiteRequest(until)) }
         }
 
     /** What this sandbox has published, or null when it has published nothing. */
