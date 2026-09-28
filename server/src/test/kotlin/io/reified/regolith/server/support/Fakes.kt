@@ -6,6 +6,7 @@ import io.reified.regolith.server.domain.ExecId
 import io.reified.regolith.server.domain.FileEntry
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.RegolithError
+import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.ports.ExecSpec
@@ -56,6 +57,9 @@ class FakeRuntime : SandboxRuntime {
 
     /** The image each session started on, and every image the server asked to have on the host. */
     val startedOn = ConcurrentHashMap<SandboxId, String>()
+
+    /** The resources each sandbox's latest session started with. */
+    val startedWith = ConcurrentHashMap<SandboxId, Resources>()
     val pulled = CopyOnWriteArrayList<String>()
 
     /** CPU microseconds each session reports; a test moves it by hand. */
@@ -90,6 +94,7 @@ class FakeRuntime : SandboxRuntime {
         sessions += sandbox.id
         started += sandbox.id
         startedOn[sandbox.id] = image
+        startedWith[sandbox.id] = sandbox.resources
         if (sandbox.network == NetworkPolicy.None) return SessionHandle("test-${sandbox.id}", null)
         attached += sandbox.id
 
@@ -429,8 +434,9 @@ class FakeHomes(var freeBytes: Long = Long.MAX_VALUE) : HomeStore {
     val destroyed = CopyOnWriteArrayList<SandboxId>()
 
     override suspend fun open(sandbox: SandboxId, sizeMb: Int): HomeMount {
+        check((disks[sandbox] ?: 0) <= sizeMb) { "A home never shrinks" }
         open += sandbox
-        disks.putIfAbsent(sandbox, sizeMb)
+        disks[sandbox] = sizeMb
 
         return HomeMount("home-$sandbox")
     }

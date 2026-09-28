@@ -69,7 +69,7 @@ are advertised by `GET /v1/info`.
 | `REGOLITH_NETWORK` | `public` | Default network mode: `public` or `none` |
 | `REGOLITH_CPUS` / `REGOLITH_MAX_CPUS` | `1` / `2` | CPUs per session |
 | `REGOLITH_MEMORY_MB` / `REGOLITH_MAX_MEMORY_MB` | `1024` / `4096` | Memory per session, with no swap |
-| `REGOLITH_HOME_MB` / `REGOLITH_MAX_HOME_MB` | `4096` / `16384` | Home size, fixed when a sandbox is created |
+| `REGOLITH_HOME_MB` / `REGOLITH_MAX_HOME_MB` | `4096` / `16384` | Home size; an update may grow it, never shrink it |
 
 Every image must name a tag other than `latest`, or a digest: an image that changes under a running
 server changes every sandbox with it. Two allowed images may not name the same repository, because a

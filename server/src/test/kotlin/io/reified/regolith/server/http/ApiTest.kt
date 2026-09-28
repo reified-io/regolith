@@ -24,6 +24,8 @@ import io.reified.regolith.protocol.NetworkMode
 import io.reified.regolith.protocol.NetworkPolicy
 import io.reified.regolith.protocol.OutcomeType
 import io.reified.regolith.protocol.PROTOCOL_VERSION
+import io.reified.regolith.protocol.Resources
+import io.reified.regolith.protocol.ResourcesSpec
 import io.reified.regolith.protocol.OutputKind
 import io.reified.regolith.protocol.SandboxState
 import io.reified.regolith.protocol.UpdateSandboxRequest
@@ -128,6 +130,36 @@ class ApiTest {
 
         assertEquals(other.id, client.byAlias("shared-alias")?.id)
         assertEquals(held.id, client.byAlias("moved")?.id)
+    }
+
+    @Test
+    fun `new resources apply from the next session, and a home only grows`() = apiTest { server, client ->
+        val sandbox = client.getOrCreate("growing")
+        val id = SandboxId.parse(sandbox.id)
+        sandbox.start()
+
+        val raised = sandbox.update(UpdateSandboxRequest(resources = ResourcesSpec(cpus = 2.0, memoryMb = 2048, homeMb = 8192)))
+
+        assertEquals(Resources(2.0, 2048, 8192), raised.resources)
+        // the running session keeps what it started with
+        assertEquals(Resources(1.0, 1024, 4096), server.runtime.startedWith.getValue(id).toWire())
+        sandbox.stop()
+        sandbox.start()
+        assertEquals(Resources(2.0, 2048, 8192), server.runtime.startedWith.getValue(id).toWire())
+        assertEquals(8192, server.homes.disks.getValue(id))
+
+        // memory may go down again; the home may not, and a limit still holds
+        assertEquals(1024, sandbox.update(UpdateSandboxRequest(resources = ResourcesSpec(memoryMb = 1024))).resources.memoryMb)
+        val shrink = assertFailsWith<RegolithException> { sandbox.update(UpdateSandboxRequest(resources = ResourcesSpec(homeMb = 4096))) }
+        assertEquals(ErrorCodes.INVALID_REQUEST, shrink.code)
+        val tooBig = assertFailsWith<RegolithException> { sandbox.update(UpdateSandboxRequest(resources = ResourcesSpec(homeMb = 32768))) }
+        assertEquals(ErrorCodes.INVALID_REQUEST, tooBig.code)
+
+        // growth the host has no room for is turned away before anything changes
+        server.homes.freeBytes = 1024L * 1024 * 1024
+        val full = assertFailsWith<RegolithException> { sandbox.update(UpdateSandboxRequest(resources = ResourcesSpec(homeMb = 12288))) }
+        assertEquals(ErrorCodes.UNAVAILABLE, full.code)
+        assertEquals(8192, sandbox.get().resources.homeMb)
     }
 
     @Test

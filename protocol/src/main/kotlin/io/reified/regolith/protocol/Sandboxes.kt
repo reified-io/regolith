@@ -53,7 +53,8 @@ public data class CreateSandboxRequest(
 /**
  * Body of `PATCH /v1/sandboxes/{id}`. Only the fields that are present change. A network policy
  * applies to a running session immediately; everything else applies from the next session. An
- * [alias] no other sandbox holds moves it to this one.
+ * [alias] no other sandbox holds moves it to this one. [resources] may raise the home size, never
+ * lower it.
  */
 @Serializable
 public data class UpdateSandboxRequest(
@@ -63,9 +64,10 @@ public data class UpdateSandboxRequest(
     val lifecycle: LifecycleSpec? = null,
     val env: Map<String, String>? = null,
     val labels: Map<String, String>? = null,
+    val resources: ResourcesSpec? = null,
 )
 
-/** Requested resources; the home size is fixed when the sandbox is created. */
+/** Requested resources. A home only ever grows: an update may raise [homeMb], never lower it. */
 @Serializable
 public data class ResourcesSpec(
     val cpus: Double? = null,

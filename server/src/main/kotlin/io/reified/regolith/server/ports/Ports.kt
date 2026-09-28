@@ -181,7 +181,10 @@ interface HomeStore {
     /** Releases attachments a previous run left behind; called after the runtime removed its sessions. */
     suspend fun recover()
 
-    /** Creates the home on first use; the size of an existing home never changes. */
+    /**
+     * Creates the home on first use and grows an existing one to [sizeMb] before it is attached. A home
+     * never shrinks: one already larger than [sizeMb] refuses to open.
+     */
     suspend fun open(sandbox: SandboxId, sizeMb: Int): HomeMount
 
     /** Detaches a home after its session ended, keeping every file. */

@@ -179,6 +179,20 @@ class HostIntegrationTest {
                 sessions.withLease(sandbox) {
                     assertTrue(!reach(checkNotNull(network).gateway, 22), "the host, after all of that")
                 }
+
+                // a home grows between sessions with every file in it, and a size below it never opens it again.
+                sessions.stop(name, StopReason.STOPPED)
+                val grown = sandbox.copy(resources = sandbox.resources.copy(homeMb = 512))
+                sessions.withLease(grown) {
+                    val size = sh("df --block-size=1M --output=size /home/sandbox | tail -1").trim().toInt()
+                    assertTrue(size in 450..512, "the grown home is $size MB")
+                    assertEquals("kept", sh("cat /home/sandbox/kept.txt"), "the files survive the growth")
+                    val fill = sh("dd if=/dev/zero of=/home/sandbox/fill bs=1M count=600; echo exit=\$?")
+                    assertTrue("No space left on device" in fill && fill.endsWith("exit=1"), "still bounded: $fill")
+                }
+                sessions.stop(name, StopReason.STOPPED)
+                assertEquals(512, homes.sizeMb(name))
+                assertTrue(runCatching { sessions.withLease(sandbox) {} }.isFailure, "a home is never shrunk to open it")
             } finally {
                 withContext(NonCancellable) {
                     // the one rule the test writes outside its own chains; gone already unless it failed midway.

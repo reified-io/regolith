@@ -17,6 +17,7 @@ import io.reified.regolith.protocol.SessionEndInfo
 import io.reified.regolith.protocol.SessionInfo
 import io.reified.regolith.server.app.ExecRequest
 import io.reified.regolith.server.app.LifecycleRequest
+import io.reified.regolith.server.app.ResourcesRequest
 import io.reified.regolith.server.app.SandboxPatch
 import io.reified.regolith.server.app.SandboxRequest
 import io.reified.regolith.server.app.Sessions
@@ -146,6 +147,7 @@ internal fun WireUpdateSandbox.toDomain() = SandboxPatch(
     lifecycle = lifecycle?.toDomain(),
     env = env,
     labels = labels,
+    resources = resources?.let { ResourcesRequest(it.cpus, it.memoryMb, it.homeMb) },
 )
 
 internal fun WireExecRequest.toDomain(): ExecRequest {

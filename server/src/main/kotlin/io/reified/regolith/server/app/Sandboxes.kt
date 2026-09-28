@@ -38,6 +38,9 @@ data class SandboxRequest(
 
 data class LifecycleRequest(val idleStop: Duration? = null, val maxSession: Duration? = null, val retain: Duration? = null)
 
+/** New resources for an existing sandbox; `null` keeps what it has. */
+data class ResourcesRequest(val cpus: Double? = null, val memoryMb: Int? = null, val homeMb: Int? = null)
+
 /** A change to an existing sandbox; only non-null fields apply. */
 data class SandboxPatch(
     val alias: Alias? = null,
@@ -46,6 +49,7 @@ data class SandboxPatch(
     val lifecycle: LifecycleRequest? = null,
     val env: Map<String, String>? = null,
     val labels: Map<String, String>? = null,
+    val resources: ResourcesRequest? = null,
 )
 
 /** The registry of sandboxes and every operation on one as a whole. */
@@ -108,14 +112,7 @@ class Sandboxes(
         val limits = config.limits
         val imagePolicy = request.imagePolicy ?: ImagePolicy.Default
         config.images.requireAllowed(imagePolicy)
-        val resources = Resources(
-            cpus = request.cpus ?: defaults.resources.cpus,
-            memoryMb = request.memoryMb ?: defaults.resources.memoryMb,
-            homeMb = request.homeMb ?: defaults.resources.homeMb,
-        )
-        requireValid(resources.cpus > 0 && resources.cpus <= limits.maxCpus) { "cpus is above 0 and at most ${limits.maxCpus}" }
-        requireValid(resources.memoryMb in MIN_MEMORY_MB..limits.maxMemoryMb) { "memoryMb is between $MIN_MEMORY_MB and ${limits.maxMemoryMb}" }
-        requireValid(resources.homeMb in MIN_HOME_MB..limits.maxHomeMb) { "homeMb is between $MIN_HOME_MB and ${limits.maxHomeMb}" }
+        val resources = resources(defaults.resources, ResourcesRequest(request.cpus, request.memoryMb, request.homeMb))
         Metadata.requireEnv(request.env)
         Metadata.requireLabels(request.labels, limits.maxLabels)
         val now = clock.now()
@@ -177,6 +174,11 @@ class Sandboxes(
             val holder = aliases[alias]
             requireValid(holder == null || holder == id) { "Another sandbox is filed under that alias" }
         }
+        val resources = patch.resources?.let { resources(current.resources, it) } ?: current.resources
+        requireValid(resources.homeMb >= current.resources.homeMb) {
+            "A home only grows: homeMb is at least ${current.resources.homeMb}"
+        }
+        if (resources.homeMb > current.resources.homeMb) requireRoomToGrow(resources.homeMb - current.resources.homeMb)
         val updated = current.copy(
             alias = patch.alias ?: current.alias,
             imagePolicy = patch.imagePolicy ?: current.imagePolicy,
@@ -184,8 +186,12 @@ class Sandboxes(
             lifecycle = patch.lifecycle?.let { lifecycle(current.lifecycle, it) } ?: current.lifecycle,
             env = patch.env ?: current.env,
             labels = patch.labels ?: current.labels,
+            resources = resources,
         )
         store.save(updated)
+        if (resources != current.resources) {
+            log.info { "Sandbox resources changed from its next session: sandbox=[$id] from=[${current.resources}] to=[$resources]" }
+        }
         current.alias?.takeIf { it != updated.alias }?.let { aliases.remove(it) }
         remember(updated)
         if (updated.network != current.network) sessions.applyNetwork(updated)
@@ -261,6 +267,28 @@ class Sandboxes(
         sandbox.alias?.let { aliases[it] = sandbox.id }
     }
 
+    private fun resources(base: Resources, request: ResourcesRequest): Resources {
+        val limits = config.limits
+        val result = Resources(
+            cpus = request.cpus ?: base.cpus,
+            memoryMb = request.memoryMb ?: base.memoryMb,
+            homeMb = request.homeMb ?: base.homeMb,
+        )
+        requireValid(result.cpus > 0 && result.cpus <= limits.maxCpus) { "cpus is above 0 and at most ${limits.maxCpus}" }
+        requireValid(result.memoryMb in MIN_MEMORY_MB..limits.maxMemoryMb) { "memoryMb is between $MIN_MEMORY_MB and ${limits.maxMemoryMb}" }
+        requireValid(result.homeMb in MIN_HOME_MB..limits.maxHomeMb) { "homeMb is between $MIN_HOME_MB and ${limits.maxHomeMb}" }
+
+        return result
+    }
+
+    // the home disk helper checks again when it grows the image, which is what actually holds; this
+    // turns away a request the host plainly has no room for while the caller is still there to hear it.
+    private suspend fun requireRoomToGrow(growthMb: Int) {
+        val needed = (growthMb + config.minFreeMb) * MB
+
+        if (homes.hostFreeBytes() < needed) throw RegolithError.Unavailable("The host has no room to grow this home")
+    }
+
     private fun lifecycle(base: Lifecycle, request: LifecycleRequest): Lifecycle {
         val limits = config.limits
         val result = Lifecycle(
@@ -286,6 +314,7 @@ class Sandboxes(
         private const val MAX_PAGE = 500
         private const val LABEL_TRIES = 10
         const val ADOPTED_LABEL = "regolith.adopted"
+        private const val MB = 1024L * 1024
         private const val MIN_MEMORY_MB = 128
         private const val MIN_HOME_MB = 256
         private val MIN_SESSION = 60.seconds

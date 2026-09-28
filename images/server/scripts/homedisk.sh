@@ -3,7 +3,8 @@
 # home's backing volume at /storage and the loop devices; it never sees a mounted home, and nothing in a
 # sandbox ever sees the backing image, so a command cannot resize or corrupt it directly.
 #
-#   homedisk.sh prepare SIZE_MB RESERVE_MB   create the image on first use, attach it, print the device
+#   homedisk.sh prepare SIZE_MB RESERVE_MB   create the image on first use or grow it to SIZE_MB, attach it,
+#                                            print the device
 #   homedisk.sh release                      detach every loop device attached to the image
 #   homedisk.sh size                         print the image size in bytes, or nothing without an image
 #   homedisk.sh probe                        print the next free loop device; needs no volume
@@ -47,11 +48,36 @@ case "${1:-}" in
       trap - EXIT
     fi
     [[ -f "$image" && ! -L "$image" ]] || exit 1
-    # an existing home is never resized or reformatted here.
-    [[ "$(stat -c %s "$image")" == "$(( size * 1024 * 1024 ))" ]] || {
-      echo "the existing home image is not ${size} MB; it is never resized automatically" >&2
+    target=$(( size * 1024 * 1024 ))
+    current=$(stat -c %s "$image")
+    # a home only ever grows, and only to the size its sandbox was given; it is never shrunk or reformatted.
+    (( current <= target )) || {
+      echo "the existing home image is larger than ${size} MB; a home is never shrunk" >&2
       exit 1
     }
+    if (( current < target )); then
+      read -r available block_size < <(stat -f -c '%a %S' /storage)
+      (( available * block_size >= target - current + reserve * 1024 * 1024 )) || {
+        echo "not enough host space to grow the home to ${size} MB and keep the ${reserve} MB reserve" >&2
+        exit 1
+      }
+      # the added range is allocated like the rest, so the home stays a real size rather than a promise.
+      fallocate -l "${size}M" "$image"
+    fi
+    # the filesystem follows the image. this also finishes a grow that stopped between the two steps,
+    # which left an image of the right size around a filesystem of the old one.
+    read -r blocks fs_block_size < <(dumpe2fs -h "$image" 2>/dev/null | awk -F: '
+      /^Block count:/ { gsub(/ /, "", $2); count = $2 }
+      /^Block size:/ { gsub(/ /, "", $2); bsize = $2 }
+      END { print count, bsize }')
+    [[ "$blocks" =~ ^[0-9]+$ && "$fs_block_size" =~ ^[0-9]+$ ]] || exit 1
+    if (( blocks * fs_block_size < target )); then
+      # resize2fs refuses an image that was not checked since it was last mounted; 1 means it fixed something.
+      checked=0
+      e2fsck -f -p "$image" >&2 || checked=$?
+      (( checked <= 1 )) || exit 1
+      resize2fs "$image" >&2
+    fi
     # --nooverlap reuses the attachment an interrupted run left behind instead of adding a second one.
     losetup --find --show --nooverlap "$image"
     ;;

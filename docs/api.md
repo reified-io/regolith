@@ -212,7 +212,8 @@ The body may be empty; whatever it leaves out takes the default from `GET /v1/in
 - The body is applied only when the sandbox is created. For an existing one, change settings with
   [`PATCH`](#patch-v1sandboxesid).
 - `imagePolicy` picks which image the sandbox runs — see [below](#which-image-a-sandbox-runs).
-  `network` is a [network policy](#network-policy). `resources` are fixed for the sandbox's life.
+  `network` is a [network policy](#network-policy). `resources` can be raised later with
+  [`PATCH`](#patch-v1sandboxesid), the home only upwards.
 - `lifecycle.retainDays: 0` makes the sandbox ephemeral: the lifecycle sweep deletes it once no
   session runs and `idleStopSeconds` have passed since it was last used — right after an idle stop,
   and up to that window after an explicit `stop`, so one created just before its first command is
@@ -316,19 +317,25 @@ last page.
 
 ### `PATCH /v1/sandboxes/{id}`
 
-Changes `alias`, `imagePolicy`, `network`, `lifecycle`, `env` or `labels`; fields left out stay as
-they are. An alias another sandbox holds is refused, and moving one here leaves that sandbox with no
-alias to be found by.
+Changes `alias`, `imagePolicy`, `network`, `lifecycle`, `env`, `labels` or `resources`; fields left
+out stay as they are, and so does any field of `resources` left out. An alias another sandbox holds is
+refused, and moving one here leaves that sandbox with no alias to be found by.
 
 ```json
 {"network": {"mode": "none"}}
 {"imagePolicy": {"mode": "pin", "image": "ghcr.io/reified-io/regolith-sandbox:0.5.0"}}
 {"imagePolicy": {"mode": "default"}}
+{"resources": {"memoryMb": 2048, "homeMb": 8192}}
 ```
 
 A network policy applies to the running session immediately — install dependencies with `public`,
 then switch to `none` before running untrusted code. Everything else applies from the next session,
 so pinning a sandbox that is running takes hold once its session ends; `stop` makes that now.
+
+`resources` take the same bounds as on creation. CPUs and memory may go up or down. The home only
+grows: a smaller `homeMb` than the sandbox has is `invalid_request`, and a larger one is refused with
+`unavailable` when the host could not hold it and keep its reserve. The home is grown when the next
+session attaches it, with every file in it.
 
 ### `POST /v1/sandboxes/{id}/start`, `POST /v1/sandboxes/{id}/stop`
 

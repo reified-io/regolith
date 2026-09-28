@@ -106,7 +106,7 @@ class HomeDisks(
         val result = docker.run(helpers.homeDisk(disk, *args))
 
         if (!result.ok && "not enough host space" in result.stderr) {
-            throw RegolithError.Unavailable("The host has no room for another home")
+            throw RegolithError.Unavailable("The host has no room for this home")
         }
 
         return result.requireOk("Home disk helper ${args.first()} on $disk").text.trim()

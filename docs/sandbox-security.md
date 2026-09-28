@@ -190,8 +190,11 @@ Each sandbox's home is a preallocated ext4 image of its own size (`HomeDisks`).
 - **Formatted for the sandbox user.** The root inode is owned by uid 1000 and `lost+found` is
   removed. The image is preallocated with `nodiscard`, which would otherwise make it sparse again,
   and copy-on-write is disabled on Btrfs.
-- **Never resized or reformatted automatically**, and never replaced by an unbounded volume. A home
-  whose image size does not match its sandbox refuses to open.
+- **Never shrunk or reformatted**, and never replaced by an unbounded volume. A home grows only when
+  its sandbox is given a bigger one, and only between sessions: the helper extends the image before
+  attaching it — the added range preallocated like the rest, under the same reserve — and then the
+  filesystem, offline. A grow cut short between the two is finished at the next attach. A home larger
+  than its sandbox refuses to open.
 - **A reserve.** A new home is created only if the host keeps `REGOLITH_MIN_FREE_MB` free
   afterwards.
 - **Detached when the session ends.** Attachments left by a crash are released at startup.

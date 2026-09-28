@@ -19,8 +19,8 @@ it when you need a detail this file leaves out.
   that addresses it everywhere else, and `GET /v1/sandboxes?alias=user-23` finds it again.
 - **Always create first.** `POST /v1/sandboxes` with `{"alias":"user-23"}` creates the sandbox or
   returns the existing one unchanged, so it is safe at the start of every conversation. The rest of the
-  body only counts on creation: change `imagePolicy`, `network`, `lifecycle`, `env` or `labels` later
-  with `PATCH`; CPUs, memory and home size stay.
+  body only counts on creation: change `imagePolicy`, `network`, `lifecycle`, `env`, `labels` or
+  `resources` later with `PATCH`. They apply from the next session, and a home only ever grows.
 - **Keep what matters in `/home/sandbox`.** It is the only thing that survives a session. `/tmp` and
   running processes are gone when the session stops (idle for 15 minutes by default).
 - **There is no root.** Commands run as uid 1000. Install tools into the home: a virtual environment
