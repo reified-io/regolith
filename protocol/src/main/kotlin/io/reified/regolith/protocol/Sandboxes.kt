@@ -175,8 +175,9 @@ public data class SessionEndInfo(
  *
  * [image] is the exact reference the sandbox's next session runs, and is null only when the server
  * no longer offers the image [imagePolicy] tracks, which no session can start on. [deleteAfter] is
- * when retention deletes the sandbox unless it is used first, and is absent while it has a site up:
- * retention never takes a sandbox whose address people hold.
+ * when retention takes the sandbox unless it is used first — only its home while it has a site up,
+ * since the site keeps its own term. [homeReleasedAt] says retention took the home that way: the site
+ * is still served, but the files it was built from are gone, and the next use starts an empty home.
  */
 @Serializable
 public data class SandboxInfo(
@@ -195,6 +196,7 @@ public data class SandboxInfo(
     val createdAt: Instant,
     val lastUsedAt: Instant,
     val deleteAfter: Instant? = null,
+    val homeReleasedAt: Instant? = null,
 )
 
 /** One page of `GET /v1/sandboxes`. */
@@ -206,16 +208,25 @@ public data class SandboxPage(
 
 /**
  * Body of `POST /v1/sandboxes/{id}/site`. [path] is the directory inside the sandbox to publish,
- * relative to the home unless it is absolute.
+ * relative to the home unless it is absolute. [until] is when the server takes the site down; without
+ * it a first publish gets the server's default term and a later one keeps the term the site has.
  */
 @Serializable
 public data class PublishRequest(
     val path: String,
+    val until: Instant? = null,
+)
+
+/** Body of `PATCH /v1/sandboxes/{id}/site`: the site's new term, shorter or longer than the one it has. */
+@Serializable
+public data class SiteTermRequest(
+    val until: Instant,
 )
 
 /**
  * A published site. [release] identifies the exact snapshot behind [url]; publishing again replaces it
- * atomically, and nothing of the sandbox except the files of that snapshot is reachable at it.
+ * atomically, and nothing of the sandbox except the files of that snapshot is reachable at it. [until]
+ * is when the server takes it down, unless the term is moved first.
  *
  * [url] is the server's to choose and the only address the site has: it is built from a label made
  * for this site alone, so it says nothing about the sandbox or the caller behind it.
@@ -231,5 +242,6 @@ public data class PublishedSite(
     val files: Int,
     val bytes: Long,
     val publishedAt: Instant,
+    val until: Instant,
     val hasIndex: Boolean = true,
 )

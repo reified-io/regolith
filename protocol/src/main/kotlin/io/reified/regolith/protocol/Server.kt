@@ -24,6 +24,8 @@ public data class ServerDefaults(
     val network: NetworkPolicy,
     val lifecycle: Lifecycle,
     val execTimeoutSeconds: Int,
+    /** The term a site gets when its first publish names none. */
+    val siteDays: Int,
 )
 
 @Serializable
@@ -34,6 +36,8 @@ public data class ServerLimits(
     val maxHomeMb: Int,
     val maxSessionSeconds: Int,
     val maxRetainDays: Int,
+    /** How far ahead a site's term may reach, counted from now. */
+    val maxSiteDays: Int,
     val maxExecTimeoutSeconds: Int,
     val maxFileBytes: Long,
     val maxOutputBytes: Long,

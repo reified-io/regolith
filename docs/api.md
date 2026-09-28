@@ -36,6 +36,7 @@ wraps it.
 | **[Publishing](#publishing)** | | |
 | `POST` | `/v1/sandboxes/{id}/site` | Publish a directory to the web |
 | `GET` | `/v1/sandboxes/{id}/site` | What is published |
+| `PATCH` | `/v1/sandboxes/{id}/site` | Move its term |
 | `DELETE` | `/v1/sandboxes/{id}/site` | Take it down |
 
 ## A first command
@@ -137,7 +138,8 @@ hard-coding them.
     "resources": {"cpus": 1.0, "memoryMb": 1024, "homeMb": 4096},
     "network": {"mode": "public", "allow": []},
     "lifecycle": {"idleStopSeconds": 900, "maxSessionSeconds": 86400, "retainDays": 30},
-    "execTimeoutSeconds": 120
+    "execTimeoutSeconds": 120,
+    "siteDays": 30
   },
   "limits": {
     "images": ["ghcr.io/reified-io/regolith-sandbox:0.5.0"],
@@ -146,6 +148,7 @@ hard-coding them.
     "maxHomeMb": 16384,
     "maxSessionSeconds": 86400,
     "maxRetainDays": 90,
+    "maxSiteDays": 365,
     "maxExecTimeoutSeconds": 3600,
     "maxFileBytes": 67108864,
     "maxOutputBytes": 8388608,
@@ -162,6 +165,8 @@ run nothing else.
 
 `publishing` says whether this server has a [pages role](pages.md). With `false`, `publish` answers
 `not_implemented`, and a client can leave publishing out of what it offers instead of trying.
+`defaults.siteDays` is the term a site gets when its first publish names none, and
+`limits.maxSiteDays` how far from now a term may reach — see [Publishing](#publishing).
 
 ### `GET /llms.txt`
 
@@ -217,7 +222,8 @@ The body may be empty; whatever it leaves out takes the default from `GET /v1/in
 - `lifecycle.retainDays: 0` makes the sandbox ephemeral: the lifecycle sweep deletes it once no
   session runs and `idleStopSeconds` have passed since it was last used — right after an idle stop,
   and up to that window after an explicit `stop`, so one created just before its first command is
-  not swept in between. A sandbox with a published site is never swept, whatever its retention.
+  not swept in between. A sandbox with a published site keeps its record while the site is up;
+  retention then takes only its home.
 - `env` applies to every command. Everything in the sandbox can read it, so it is no place for
   secrets. The server adds `REGOLITH_MEMORY_MB`, `REGOLITH_CPUS` and `REGOLITH_HOME_MB`, since `free`
   and `nproc` inside a container report the whole machine rather than the sandbox's own share; an
@@ -247,7 +253,8 @@ The response is a `SandboxInfo`:
   "lastSessionEnd": {"reason": "idle", "at": "2026-09-13T11:40:00Z"},
   "createdAt": "2026-09-01T09:30:00Z",
   "lastUsedAt": "2026-09-13T12:04:10Z",
-  "deleteAfter": "2026-10-13T12:04:10Z"
+  "deleteAfter": "2026-10-13T12:04:10Z",
+  "homeReleasedAt": null
 }
 ```
 
@@ -255,9 +262,13 @@ The response is a `SandboxInfo`:
 - `image` is the exact reference the sandbox's next session runs, `session.image` the one the
   running session started on, and `imagePolicy` the rule that picked them. The first two differ, as
   above, when the server has been offered a newer image since that session started.
-- `deleteAfter` is when retention deletes the sandbox, unless it is used before then. It is absent
-  while the sandbox has a [site](#publishing) up: the address was handed to people who never touch
-  the sandbox, so retention leaves both alone until the site is taken down.
+- `deleteAfter` is when retention deletes the sandbox, unless it is used before then. While the
+  sandbox has a [site](#publishing) up, retention takes only its home at that time: the address was
+  handed to people who never touch the sandbox, so the record stays for as long as the site, which
+  has a [term](#publishing) of its own.
+- `homeReleasedAt` is when retention took the home of a sandbox kept for its site, and absent
+  otherwise. The site is still served, but the files it was built from are gone; the next use starts
+  an empty home and clears the field.
 - `lastSessionEnd` says how the previous session ended — see below.
 
 ### Which image a sandbox runs
@@ -574,11 +585,14 @@ these endpoints answer `501 not_implemented`, and `GET /v1/info` says `"publishi
 Publishes a directory of the sandbox and returns its public address.
 
 ```json
-{"path": "dist"}
+{"path": "dist", "until": "2026-12-13T12:00:00Z"}
 ```
 
-`path` is a directory inside the sandbox, relative to the home unless it is absolute. The response is
-a `PublishedSite`:
+`path` is a directory inside the sandbox, relative to the home unless it is absolute. `until` is when
+the server takes the site down, and is optional: a first publish without it gets
+`defaults.siteDays` from now, and a later one keeps the term the site already has, so updating the
+files never shortens it. A term in the past, or further than `limits.maxSiteDays` from now, is
+refused with `invalid_request`. The response is a `PublishedSite`:
 
 ```json
 {
@@ -587,6 +601,7 @@ a `PublishedSite`:
   "files": 12,
   "bytes": 48213,
   "publishedAt": "2026-09-13T12:00:00Z",
+  "until": "2026-12-13T12:00:00Z",
   "hasIndex": true
 }
 ```
@@ -614,8 +629,20 @@ stops, and the site stays exactly as it was published.
   Symlinks are left behind, not followed.
 - A sandbox has one site, and a site belongs to one sandbox: there is no name to collide over, and
   nothing can replace a site it did not publish.
-- While the site is up, retention leaves the sandbox alone, home included: only a takedown or
-  deleting the sandbox ends a site.
+- A site lives until its term, a takedown or deleting the sandbox, whichever comes first. Its term
+  is the caller's to keep: a client that sells hosting moves it on as each period is paid for.
+- While the site is up, retention takes only the sandbox's home, never the record: the site keeps
+  its address, and the next use of the sandbox starts an empty home (see `homeReleasedAt`).
+
+### `PATCH /v1/sandboxes/{id}/site`
+
+Moves the site's term, later or earlier, and answers the `PublishedSite` with its new `until`:
+
+```json
+{"until": "2027-01-13T12:00:00Z"}
+```
+
+The same bounds as on publishing apply. It answers `404 not_found` when nothing is published.
 
 ### `GET /v1/sandboxes/{id}/site`, `DELETE /v1/sandboxes/{id}/site`
 

@@ -42,6 +42,7 @@ data class ServerConfig(
         val network: NetworkPolicy,
         val lifecycle: Lifecycle,
         val execTimeout: Duration,
+        val siteTerm: Duration,
     )
 
     /** Ceilings no request can exceed. */
@@ -51,6 +52,7 @@ data class ServerConfig(
         val maxHomeMb: Int,
         val maxSession: Duration,
         val maxRetain: Duration,
+        val maxSiteTerm: Duration,
         val maxExecTimeout: Duration,
         val maxFileBytes: Long,
         val maxOutputBytes: Long,
@@ -78,6 +80,7 @@ data class ServerConfig(
             val maxHomeMb = read.int("REGOLITH_MAX_HOME_MB", 16_384)
             val maxSession = read.int("REGOLITH_MAX_SESSION_SECONDS", 86_400).seconds
             val maxRetain = read.int("REGOLITH_MAX_RETAIN_DAYS", 90).days
+            val maxSiteTerm = read.int("REGOLITH_MAX_SITE_DAYS", 365).days
             val maxExecTimeout = read.int("REGOLITH_MAX_EXEC_TIMEOUT_SECONDS", 3600).seconds
 
             val limits = Limits(
@@ -86,6 +89,7 @@ data class ServerConfig(
                 maxHomeMb = maxHomeMb,
                 maxSession = maxSession,
                 maxRetain = maxRetain,
+                maxSiteTerm = maxSiteTerm,
                 maxExecTimeout = maxExecTimeout,
                 maxFileBytes = read.int("REGOLITH_MAX_FILE_MB", 64) * MIB,
                 maxOutputBytes = read.int("REGOLITH_MAX_OUTPUT_MB", 8) * MIB,
@@ -112,6 +116,7 @@ data class ServerConfig(
                 ),
                 execTimeout = read.int("REGOLITH_EXEC_TIMEOUT_SECONDS", 120).seconds
                     .also { check(it <= maxExecTimeout) { "REGOLITH_EXEC_TIMEOUT_SECONDS exceeds REGOLITH_MAX_EXEC_TIMEOUT_SECONDS" } },
+                siteTerm = read.int("REGOLITH_SITE_DAYS", 30).days.also { check(it <= maxSiteTerm) { "REGOLITH_SITE_DAYS exceeds REGOLITH_MAX_SITE_DAYS" } },
             )
 
             val pagesUrl = env["REGOLITH_PAGES_URL"]?.trim()?.ifEmpty { null }

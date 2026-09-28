@@ -16,7 +16,9 @@ object SandboxLayout {
 /**
  * A sandbox: the durable part — its id, the caller's [alias] for it, its configuration and its home.
  * Its running container is a session, tracked separately, and a sandbox outlives as many sessions as
- * it is used for. [site] is the label its published files are served at, while any are.
+ * it is used for. [site] is the label its published files are served at, while any are, and
+ * [siteUntil] when that site is taken down; the two are set together. [homeReleasedAt] is when
+ * retention took the home of a sandbox kept for its site; the next use starts an empty one.
  */
 @Serializable
 data class Sandbox(
@@ -31,16 +33,18 @@ data class Sandbox(
     val labels: Map<String, String>,
     val createdAt: Instant,
     val lastUsedAt: Instant,
+    val siteUntil: Instant? = null,
+    val homeReleasedAt: Instant? = null,
 ) {
 
     /**
-     * When the retention sweep may delete this sandbox, or null while its site is up: a site is used by
-     * whoever holds its link, not by the sandbox, so retention leaves both alone until a takedown. An
+     * When the retention sweep may take this sandbox: all of it, or only its home while its site is up —
+     * a site is used by whoever holds its link, not by the sandbox, and it has a term of its own. An
      * ephemeral sandbox still gets its idle window, so one created a moment before its first command
      * is not swept in between.
      */
-    val deleteAfter: Instant?
-        get() = if (site != null) null else lastUsedAt + if (lifecycle.retain == Duration.ZERO) lifecycle.idleStop else lifecycle.retain
+    val deleteAfter: Instant
+        get() = lastUsedAt + if (lifecycle.retain == Duration.ZERO) lifecycle.idleStop else lifecycle.retain
 }
 
 @Serializable

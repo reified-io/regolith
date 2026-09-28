@@ -15,7 +15,7 @@ class OrphanSitesTest {
         TestServer().use { server ->
             val id = server.sandbox("author").id
             server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>mine</h1>")
-            server.sites.publish(id, "dist")
+            server.sites.publish(id, "dist", until = null)
             val mine = server.siteOf(id)
             server.publisher.stray("b4d2f8g3h5")
             val orphans = OrphanSites(server.publisher)

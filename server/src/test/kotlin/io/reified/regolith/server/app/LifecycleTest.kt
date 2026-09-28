@@ -182,24 +182,49 @@ class LifecycleTest {
 
     // the link was handed to people who never touch the sandbox: its being unused says nothing about the site
     @Test
-    fun `retention leaves a sandbox alone while its site is up, and takes it once the site is down`() = runBlocking {
+    fun `retention takes only the home of a sandbox whose site is up, and the next use starts an empty one`() = runBlocking {
         TestServer().use { server ->
-            val sandbox = server.sandbox("author", SandboxRequest(lifecycle = LifecycleRequest(retain = 3.days)))
-            val id = sandbox.id
+            val id = server.sandbox("author", SandboxRequest(lifecycle = LifecycleRequest(retain = 3.days))).id
             server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>kept</h1>")
-            server.sites.publish(id, "dist")
+            server.sites.publish(id, "dist", until = server.clock.now() + 60.days)
             val site = server.siteOf(id)
             server.sandboxes.stop(id)
-            assertNull(server.sandboxes.require(id).deleteAfter, "a sandbox with a site up has no deletion date")
 
-            server.clock.advance(30.days)
+            server.clock.advance(4.days)
             server.sweeper.tick()
-            assertTrue(server.sandboxes.find(id) != null, "retention took a sandbox whose site was up")
-            assertTrue(server.publisher.sites[site] != null)
+            server.sweeper.tick()
 
-            server.sites.unpublish(id)
+            val kept = server.sandboxes.require(id)
+            assertEquals(server.clock.now(), kept.homeReleasedAt)
+            assertEquals(listOf(id), server.homes.destroyed, "the home is released once")
+            assertTrue(server.publisher.sites[site] != null, "the site went with the home")
+            assertEquals(site, kept.site?.value)
+
+            server.sandboxes.start(id)
+
+            assertNull(server.sandboxes.require(id).homeReleasedAt, "a use after the release still reads as released")
+            assertTrue(id in server.homes.open)
+        }
+    }
+
+    @Test
+    fun `a site past its term is taken down, and retention then takes the sandbox`() = runBlocking {
+        TestServer().use { server ->
+            val id = server.sandbox("author", SandboxRequest(lifecycle = LifecycleRequest(retain = 3.days))).id
+            server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>for a while</h1>")
+            server.sites.publish(id, "dist", until = server.clock.now() + 10.days)
+            val site = server.siteOf(id)
+            server.sandboxes.stop(id)
+
+            server.clock.advance(9.days)
             server.sweeper.tick()
-            assertNull(server.sandboxes.find(id), "retention counts from the last use once the site is down")
+            assertTrue(server.publisher.sites[site] != null, "the site was taken down before its term")
+
+            server.clock.advance(2.days)
+            server.sweeper.tick()
+
+            assertNull(server.publisher.sites[site])
+            assertNull(server.sandboxes.find(id), "retention left a sandbox whose site and use were both over")
         }
     }
 

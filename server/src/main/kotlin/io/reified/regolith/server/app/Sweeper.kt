@@ -1,28 +1,31 @@
 package io.reified.regolith.server.app
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.StopReason
 import io.reified.regolith.server.ports.HomeStore
 import io.reified.regolith.server.ports.NetworkEnforcer
 import io.reified.regolith.server.ports.SandboxNetwork
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 
 /**
  * Applies lifecycles: ends sessions whose container has exited, stops sessions past their maximum
- * lifetime or idle window, and deletes sandboxes past retention.
+ * lifetime or idle window, takes down sites past their term, and deletes sandboxes past retention.
  *
  * Idle means no lease — no running exec and no file transfer. A background server started by a
  * finished command holds no lease, so it ends with the idle session; that is the price of not
  * letting one command keep a slot forever.
  *
- * Retention never takes a sandbox whose site is up: the address was handed to people who never use
- * the sandbox, so its being unused says nothing about the site. Only a takedown or an explicit
- * delete ends a site, and the home stays with it, since it is what the site would be built from again.
+ * Retention takes only the home of a sandbox whose site is up: the address was handed to people who
+ * never use the sandbox, so its being unused says nothing about the site, which has a term of its own.
+ * The record stays as long as the site, so a site never outlives what knows its label.
  */
 class Sweeper(
     private val sandboxes: Sandboxes,
     private val sessions: Sessions,
     private val execs: Execs,
+    private val sites: SitePublishing,
     private val clock: Clock,
 ) {
 
@@ -40,12 +43,34 @@ class Sweeper(
             }
         }
 
+        // without a pages role nothing can be taken down, and saying so every tick would say nothing new
+        if (sites.available) {
+            for (sandbox in sandboxes.all()) {
+                val until = sandbox.siteUntil ?: continue
+                if (now >= until) expire(sandbox)
+            }
+        }
+
         for (sandbox in sandboxes.all()) {
-            val deleteAfter = sandbox.deleteAfter ?: continue
-            if (sessions.get(sandbox.id) == null && now >= deleteAfter) {
+            if (sessions.get(sandbox.id) != null || now < sandbox.deleteAfter) continue
+            if (sandbox.site == null) {
                 log.info { "Sandbox past retention: sandbox=[${sandbox.id}]" }
                 sandboxes.delete(sandbox.id)
+            } else if (sandbox.homeReleasedAt == null) {
+                sandboxes.releaseHome(sandbox.id)
             }
+        }
+    }
+
+    // a pages role that cannot be reached leaves the site up and the record with it; the next tick
+    // tries again, and the rest of the sweep goes on meanwhile.
+    private suspend fun expire(sandbox: Sandbox) {
+        try {
+            sites.expire(sandbox.id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn(e) { "Site past its term could not be taken down: sandbox=[${sandbox.id}] site=[${sandbox.site}]" }
         }
     }
 

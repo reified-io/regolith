@@ -20,6 +20,7 @@ import io.reified.regolith.server.app.LifecycleRequest
 import io.reified.regolith.server.app.ResourcesRequest
 import io.reified.regolith.server.app.SandboxPatch
 import io.reified.regolith.server.app.SandboxRequest
+import io.reified.regolith.server.app.ServedSite
 import io.reified.regolith.server.app.Sessions
 import io.reified.regolith.server.config.ServerConfig
 import io.reified.regolith.server.domain.Alias
@@ -44,7 +45,6 @@ import io.reified.regolith.server.output.Frame
 import io.reified.regolith.server.output.FrameKind
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.seconds
-import io.reified.regolith.server.ports.PublishedSite
 import io.reified.regolith.protocol.PublishedSite as WirePublishedSite
 import io.reified.regolith.protocol.CreateSandboxRequest as WireCreateSandbox
 import io.reified.regolith.protocol.EntryType as WireEntryType
@@ -79,6 +79,7 @@ internal fun Sandbox.toInfo(session: Sessions.Session?, lastEnd: SessionEnd?, im
     createdAt = createdAt,
     lastUsedAt = lastUsedAt,
     deleteAfter = deleteAfter,
+    homeReleasedAt = homeReleasedAt,
 )
 
 internal fun Resources.toWire() = WireResources(cpus, memoryMb, homeMb)
@@ -232,6 +233,7 @@ internal fun ServerConfig.Defaults.toWire(image: String) = ServerDefaults(
     network = network.toWire(),
     lifecycle = lifecycle.toWire(),
     execTimeoutSeconds = execTimeout.inWholeSeconds.toInt(),
+    siteDays = siteTerm.inWholeDays.toInt(),
 )
 
 internal fun ServerConfig.Limits.toWire(images: List<String>) = ServerLimits(
@@ -241,6 +243,7 @@ internal fun ServerConfig.Limits.toWire(images: List<String>) = ServerLimits(
     maxHomeMb = maxHomeMb,
     maxSessionSeconds = maxSession.inWholeSeconds.toInt(),
     maxRetainDays = maxRetain.inWholeDays.toInt(),
+    maxSiteDays = maxSiteTerm.inWholeDays.toInt(),
     maxExecTimeoutSeconds = maxExecTimeout.inWholeSeconds.toInt(),
     maxFileBytes = maxFileBytes,
     maxOutputBytes = maxOutputBytes,
@@ -248,12 +251,13 @@ internal fun ServerConfig.Limits.toWire(images: List<String>) = ServerLimits(
     unattendedCpuSeconds = unattendedCpu.inWholeSeconds.toInt(),
 )
 
-/** A published site as the API reports it. */
-internal fun PublishedSite.toWire(): WirePublishedSite = WirePublishedSite(
-    url = url,
-    release = release,
-    files = files,
-    bytes = bytes,
-    publishedAt = publishedAt,
-    hasIndex = hasIndex,
+/** A published site as the API reports it, with the term the control plane keeps for it. */
+internal fun ServedSite.toWire(): WirePublishedSite = WirePublishedSite(
+    url = published.url,
+    release = published.release,
+    files = published.files,
+    bytes = published.bytes,
+    publishedAt = published.publishedAt,
+    until = until,
+    hasIndex = published.hasIndex,
 )

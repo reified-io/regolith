@@ -13,6 +13,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import kotlin.time.Duration.Companion.days
 
 class SitePublishingTest {
     @Test
@@ -23,10 +24,10 @@ class SitePublishingTest {
             server.runtime.place(id, "/home/sandbox/dist/assets/app.js", "run()")
             server.runtime.place(id, "/home/sandbox/secret.env", "TOKEN=1")
 
-            val published = server.sites.publish(id, "dist")
+            val published = server.sites.publish(id, "dist", until = null)
             val site = server.siteOf(id)
 
-            assertEquals("https://$site.example.test", published.url)
+            assertEquals("https://$site.example.test", published.published.url)
             assertEquals(setOf("index.html", "assets/app.js"), server.publisher.published.getValue(site).keys)
             assertEquals("<h1>hi</h1>", server.publisher.published.getValue(site)["index.html"])
         }
@@ -41,11 +42,11 @@ class SitePublishingTest {
             server.runtime.place(first, "/home/sandbox/dist/index.html", "<h1>hi</h1>")
             server.runtime.place(second, "/home/sandbox/dist/index.html", "<h1>hi</h1>")
 
-            val address = server.sites.publish(first, "dist").url
-            val other = server.sites.publish(second, "dist").url
+            val address = server.sites.publish(first, "dist", until = null).published.url
+            val other = server.sites.publish(second, "dist", until = null).published.url
 
             assertNotEquals(other, address)
-            assertEquals(address, server.sites.publish(first, "dist").url, "republishing moved the site")
+            assertEquals(address, server.sites.publish(first, "dist", until = null).published.url, "republishing moved the site")
             for (secret in listOf(first.value, "telegram", "123456789")) {
                 assertFalse(secret in address, "the address gives away $secret")
             }
@@ -57,11 +58,11 @@ class SitePublishingTest {
     fun `a snapshot too large for the pages role never leaves the sandbox`() = runBlocking {
         TestServer().use { server ->
             val publisher = FakePublisher(SiteLimits(maxFiles = 1, maxFileBytes = 4, maxSiteBytes = 8))
-            val sites = SitePublishing(server.sandboxes, server.sessions, server.runtime, server.config, publisher)
+            val sites = SitePublishing(server.sandboxes, server.sessions, server.runtime, server.config, publisher, server.clock)
             val id = server.sandbox("small").id
             server.runtime.place(id, "/home/sandbox/dist/index.html", "far too long")
 
-            val error = assertFailsWith<RegolithError.TooLarge> { sites.publish(id, "dist") }
+            val error = assertFailsWith<RegolithError.TooLarge> { sites.publish(id, "dist", until = null) }
 
             assertContains(error.message.orEmpty(), "larger than")
             assertEquals(emptyMap(), publisher.published)
@@ -82,9 +83,9 @@ class SitePublishingTest {
                         server.runtime.place(sandbox, "/home/sandbox/dist/late.bin", "x".repeat(100))
                     }
             }
-            val sites = SitePublishing(server.sandboxes, server.sessions, runtime, server.config, publisher)
+            val sites = SitePublishing(server.sandboxes, server.sessions, runtime, server.config, publisher, server.clock)
 
-            assertFailsWith<RegolithError.TooLarge> { sites.publish(id, "dist") }
+            assertFailsWith<RegolithError.TooLarge> { sites.publish(id, "dist", until = null) }
 
             assertEquals(emptyMap(), publisher.published)
         }
@@ -96,20 +97,20 @@ class SitePublishingTest {
             val id = server.sandbox("pageless").id
             server.runtime.place(id, "/home/sandbox/dist/docs/index.html", "<h1>nested</h1>")
 
-            assertFalse(server.sites.publish(id, "dist").hasIndex)
+            assertFalse(server.sites.publish(id, "dist", until = null).published.hasIndex)
             server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>top</h1>")
-            assertTrue(server.sites.publish(id, "dist").hasIndex)
+            assertTrue(server.sites.publish(id, "dist", until = null).published.hasIndex)
         }
     }
 
     @Test
     fun `a server with no pages role says so instead of failing oddly`() = runBlocking<Unit> {
         TestServer().use { server ->
-            val sites = SitePublishing(server.sandboxes, server.sessions, server.runtime, server.config, publisher = null)
+            val sites = SitePublishing(server.sandboxes, server.sessions, server.runtime, server.config, publisher = null, server.clock)
             val id = server.sandbox("lonely").id
             server.runtime.place(id, "/home/sandbox/dist/index.html", "hi")
 
-            assertFailsWith<RegolithError.NotImplemented> { sites.publish(id, "dist") }
+            assertFailsWith<RegolithError.NotImplemented> { sites.publish(id, "dist", until = null) }
         }
     }
 
@@ -118,7 +119,7 @@ class SitePublishingTest {
         TestServer().use { server ->
             val id = server.sandbox("bye").id
             server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>bye</h1>")
-            server.sites.publish(id, "dist")
+            server.sites.publish(id, "dist", until = null)
             val site = server.siteOf(id)
 
             server.sites.unpublish(id)
@@ -130,13 +131,63 @@ class SitePublishingTest {
         }
     }
 
+    @Test
+    fun `a first publish gets the default term, a later one keeps it, and the term moves either way`() = runBlocking {
+        TestServer().use { server ->
+            val id = server.sandbox("termed").id
+            server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>hi</h1>")
+            val start = server.clock.now()
+
+            assertEquals(start + 30.days, server.sites.publish(id, "dist", until = null).until)
+            server.clock.advance(5.days)
+            assertEquals(start + 30.days, server.sites.publish(id, "dist", until = null).until, "updating the files moved the term")
+
+            assertEquals(start + 200.days, server.sites.term(id, start + 200.days).until)
+            assertEquals(start + 6.days, server.sites.term(id, start + 6.days).until)
+            assertEquals(start + 6.days, server.sites.published(id).until)
+            assertEquals(start + 6.days, server.sandboxes.require(id).siteUntil)
+        }
+    }
+
+    @Test
+    fun `a term already over, or beyond the server's ceiling, is refused`() = runBlocking<Unit> {
+        TestServer(mapOf("REGOLITH_MAX_SITE_DAYS" to "90")).use { server ->
+            val id = server.sandbox("bounded").id
+            server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>hi</h1>")
+            val now = server.clock.now()
+
+            assertFailsWith<RegolithError.NotFound> { server.sites.term(id, now + 1.days) }
+            assertFailsWith<RegolithError.Invalid> { server.sites.publish(id, "dist", until = now - 1.days) }
+            assertNull(server.sandboxes.require(id).site, "a refused term took a label anyway")
+            server.sites.publish(id, "dist", until = now + 90.days)
+            assertFailsWith<RegolithError.Invalid> { server.sites.term(id, now + 91.days) }
+        }
+    }
+
+    // a site published before terms existed would otherwise sit with none, and no sweep would ever end it
+    @Test
+    fun `a site from before terms gets the default one when the server starts`() = runBlocking {
+        TestServer().use { server ->
+            val id = server.sandbox("older").id
+            server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>old</h1>")
+            server.sites.publish(id, "dist", until = null)
+            server.store.save(server.sandboxes.require(id).copy(siteUntil = null))
+            server.clock.advance(3.days)
+
+            val restarted = Sandboxes(server.store, server.sessions, server.execs, server.homes, server.publisher, server.config, server.clock)
+            restarted.load()
+
+            assertEquals(server.clock.now() + 30.days, restarted.require(id).siteUntil)
+        }
+    }
+
     // a site nobody can reach again would be served forever: the sandbox is the only thing that knows it
     @Test
     fun `deleting the sandbox takes its site down with it`() = runBlocking {
         TestServer().use { server ->
             val id = server.sandbox("going").id
             server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>here</h1>")
-            server.sites.publish(id, "dist")
+            server.sites.publish(id, "dist", until = null)
             val site = server.siteOf(id)
 
             server.sandboxes.delete(id)

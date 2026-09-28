@@ -23,8 +23,10 @@ import io.reified.regolith.protocol.OutputKind
 import io.reified.regolith.protocol.PublishRequest
 import io.reified.regolith.protocol.PublishedSite
 import io.reified.regolith.protocol.SandboxInfo
+import io.reified.regolith.protocol.SiteTermRequest
 import io.reified.regolith.protocol.UpdateSandboxRequest
 import java.io.ByteArrayOutputStream
+import kotlin.time.Instant
 
 /** One sandbox on the server, addressed by the id the server gave it. */
 public class Sandbox internal constructor(private val client: RegolithClient, public val id: String) {
@@ -104,10 +106,20 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
      *
      * What goes out is a snapshot taken now, not the home itself: the files keep changing afterwards and
      * the site does not. Publishing again replaces it atomically, at the same address.
+     *
+     * The server takes the site down at [until]. Without it a first publish gets the server's default
+     * term (`defaults.siteDays` in [RegolithClient.info]) and a later one keeps the term the site has;
+     * a term beyond `limits.maxSiteDays` from now is refused.
      */
-    public suspend fun publish(directory: String): PublishedSite =
+    public suspend fun publish(directory: String, until: Instant? = null): PublishedSite =
         client.call(HttpMethod.Post, "$path/site", PublishedSite.serializer()) {
-            with(client) { jsonBody(PublishRequest.serializer(), PublishRequest(directory)) }
+            with(client) { jsonBody(PublishRequest.serializer(), PublishRequest(directory, until)) }
+        }
+
+    /** Moves the site's term to [until], earlier or later than it was; fails when nothing is published. */
+    public suspend fun setSiteTerm(until: Instant): PublishedSite =
+        client.call(HttpMethod.Patch, "$path/site", PublishedSite.serializer()) {
+            with(client) { jsonBody(SiteTermRequest.serializer(), SiteTermRequest(until)) }
         }
 
     /** What this sandbox has published, or null when it has published nothing. */

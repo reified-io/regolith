@@ -45,6 +45,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import io.reified.regolith.server.domain.NetworkPolicy as DomainPolicy
+import kotlin.time.Duration.Companion.days
 
 private const val FULL_REPOSITORY = "ghcr.io/example/sandbox-full"
 private const val FULL_IMAGE = "$FULL_REPOSITORY:3.1"
@@ -75,7 +76,11 @@ class ApiTest {
         assertEquals("<h1>hi</h1>", server.publisher.published.getValue(site)["index.html"])
 
         assertEquals(true, client.info().publishing)
+        assertEquals(server.clock.now() + client.info().defaults.siteDays.days, published.until)
+        val until = server.clock.now() + 90.days
+        assertEquals(until, sandbox.setSiteTerm(until).until)
         assertEquals(published.release, sandbox.siteOrNull()?.release)
+        assertEquals(until, sandbox.siteOrNull()?.until)
         assertTrue(sandbox.unpublish())
         assertNull(sandbox.siteOrNull())
         assertFalse(sandbox.unpublish(), "taking down a site that is not there is not a failure")

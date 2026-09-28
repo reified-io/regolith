@@ -49,8 +49,8 @@ class TestServer(
     val publisher = FakePublisher()
     val sandboxes = Sandboxes(store, sessions, execs, homes, publisher, config, clock)
     val files = SandboxFiles(sandboxes, sessions, runtime, config)
-    val sweeper = Sweeper(sandboxes, sessions, execs, clock)
-    val sites = SitePublishing(sandboxes, sessions, runtime, config, publisher)
+    val sites = SitePublishing(sandboxes, sessions, runtime, config, publisher, clock)
+    val sweeper = Sweeper(sandboxes, sessions, execs, sites, clock)
     val services = Services(config, "test", health, sandboxes, sessions, execs, files, sites)
 
     /** A sandbox filed under [alias], as a caller would make one. */

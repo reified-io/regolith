@@ -129,7 +129,7 @@ the server holds no registry credentials of its own.
 |---|---|---|
 | `REGOLITH_IDLE_STOP_SECONDS` | `900` | A session with no running command or transfer stops after this long |
 | `REGOLITH_MAX_SESSION_SECONDS` | `86400` | Default and ceiling for a session's lifetime, busy or not |
-| `REGOLITH_RETAIN_DAYS` / `REGOLITH_MAX_RETAIN_DAYS` | `30` / `90` | A sandbox unused this long is deleted with its home, never while its site is up; `0` makes it ephemeral |
+| `REGOLITH_RETAIN_DAYS` / `REGOLITH_MAX_RETAIN_DAYS` | `30` / `90` | A sandbox unused this long is deleted with its home; while its site is up only the home goes. `0` makes it ephemeral |
 | `REGOLITH_UNATTENDED_CPU_SECONDS` | `600` | CPU seconds a session may burn while none of its commands runs — a process left behind in the background — before it is stopped. Commands' own CPU never counts |
 
 ## Commands and transfers
@@ -148,5 +148,6 @@ the server holds no registry credentials of its own.
 | `REGOLITH_PAGES_URL` | — | Address of the pages role's intake listener: `http://pages:8082` on the same machine, `https://pages.example.com:8443` over the internet, or a private address; unset, `publish` answers `not_implemented` |
 | `REGOLITH_PAGES_TOKEN` | — | The intake token: the value that role was started with |
 | `REGOLITH_PAGES_TOKEN_FILE` | — | A file holding it, instead of `REGOLITH_PAGES_TOKEN` |
+| `REGOLITH_SITE_DAYS` / `REGOLITH_MAX_SITE_DAYS` | `30` / `365` | The term a site gets when its first publish names none, and how far from now a caller may set one; the site is taken down at the end of its term |
 
 Setting up the other end is in [pages](pages.md#setting-it-up).

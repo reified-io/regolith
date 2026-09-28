@@ -23,9 +23,9 @@ private const val SANDBOX = "5f2b9c7d1e3a4f6b8c0d2e4f6a8b0c1d"
 private const val INFO =
     """{"version":"test","protocol":2,"defaults":{"image":"ghcr.io/example/sandbox:1.0",""" +
         """"resources":{"cpus":1.0,"memoryMb":1024,"homeMb":4096},"network":{"mode":"public","allow":[]},""" +
-        """"lifecycle":{"idleStopSeconds":900,"maxSessionSeconds":86400,"retainDays":30},"execTimeoutSeconds":120},""" +
+        """"lifecycle":{"idleStopSeconds":900,"maxSessionSeconds":86400,"retainDays":30},"execTimeoutSeconds":120,"siteDays":30},""" +
         """"limits":{"images":[],"maxCpus":2.0,"maxMemoryMb":4096,"maxHomeMb":16384,"maxSessionSeconds":86400,""" +
-        """"maxRetainDays":90,"maxExecTimeoutSeconds":3600,"maxFileBytes":1,"maxOutputBytes":1,"maxLabels":32,""" +
+        """"maxRetainDays":90,"maxSiteDays":365,"maxExecTimeoutSeconds":3600,"maxFileBytes":1,"maxOutputBytes":1,"maxLabels":32,""" +
         """"unattendedCpuSeconds":600}}"""
 
 class RegolithClientTest {

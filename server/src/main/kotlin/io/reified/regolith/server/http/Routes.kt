@@ -32,6 +32,7 @@ import io.reified.regolith.protocol.IDEMPOTENCY_KEY_HEADER
 import io.reified.regolith.protocol.OutputFrame
 import io.reified.regolith.protocol.OutputPage
 import io.reified.regolith.protocol.PublishRequest
+import io.reified.regolith.protocol.SiteTermRequest
 import io.reified.regolith.protocol.RegolithJson
 import io.reified.regolith.protocol.SandboxPage
 import io.reified.regolith.protocol.UpdateSandboxRequest
@@ -91,10 +92,14 @@ internal fun Route.sandboxRoutes(services: Services) = route("/sandboxes") {
         }
         post("/site") {
             val request = call.jsonBody(PublishRequest.serializer())
-            call.respond(services.sites.publish(call.sandboxId(), request.path).toWire())
+            call.respond(services.sites.publish(call.sandboxId(), request.path, request.until).toWire())
         }
         get("/site") {
             call.respond(services.sites.published(call.sandboxId()).toWire())
+        }
+        patch("/site") {
+            val request = call.jsonBody(SiteTermRequest.serializer())
+            call.respond(services.sites.term(call.sandboxId(), request.until).toWire())
         }
         delete("/site") {
             services.sites.unpublish(call.sandboxId())

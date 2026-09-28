@@ -23,6 +23,7 @@ import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /** What a caller asks for when creating a sandbox; `null` takes the server default. */
 data class SandboxRequest(
@@ -69,8 +70,19 @@ class Sandboxes(
     private val aliasLocks = KeyedLocks<Alias>()
 
     suspend fun load() {
-        for (sandbox in store.sandboxes()) remember(sandbox)
+        for (sandbox in store.sandboxes()) remember(withSiteTerm(sandbox))
         log.info { "Sandboxes loaded: count=[${records.size}]" }
+    }
+
+    // a site published before sites had terms gets the default one, counted from the first start
+    // that knows about terms, rather than one that would take it down at the first sweep.
+    private suspend fun withSiteTerm(sandbox: Sandbox): Sandbox {
+        if (sandbox.site == null || sandbox.siteUntil != null) return sandbox
+        val updated = sandbox.copy(siteUntil = clock.now() + config.defaults.siteTerm)
+        store.save(updated)
+        log.info { "Site given the default term: sandbox=[${sandbox.id}] site=[${sandbox.site}] until=[${updated.siteUntil}]" }
+
+        return updated
     }
 
     fun find(id: SandboxId): Sandbox? = records[id]
@@ -234,9 +246,27 @@ class Sandboxes(
         log.info { "Sandbox deleted: sandbox=[$id]" }
     }
 
-    /** Records where this sandbox's files are served, or that they no longer are. */
-    suspend fun site(id: SandboxId, label: SiteLabel?): Sandbox = locks.withLock(id) {
-        val updated = require(id).copy(site = label)
+    /**
+     * Retention for a sandbox kept for its site: the home goes, the record and the site stay, and the
+     * next use starts an empty home. Checked again under the lock, which every use takes in [markUsed]
+     * before its session starts, so a use that came in since the sweep looked keeps the home.
+     */
+    suspend fun releaseHome(id: SandboxId) = locks.withLock(id) {
+        val sandbox = records[id] ?: return@withLock
+        val now = clock.now()
+        val due = sandbox.site != null && sandbox.homeReleasedAt == null && now >= sandbox.deleteAfter
+        if (!due || sessions.get(id) != null) return@withLock
+        homes.destroy(id)
+        val updated = sandbox.copy(homeReleasedAt = now)
+        store.save(updated)
+        remember(updated)
+        log.info { "Home past retention released, site kept: sandbox=[$id] site=[${sandbox.site}]" }
+    }
+
+    /** Records where this sandbox's files are served and until when, or that they no longer are. */
+    suspend fun site(id: SandboxId, label: SiteLabel?, until: Instant?): Sandbox = locks.withLock(id) {
+        check((label == null) == (until == null)) { "A site and its term are set together" }
+        val updated = require(id).copy(site = label, siteUntil = until)
         store.save(updated)
         remember(updated)
         updated
@@ -251,12 +281,15 @@ class Sandboxes(
         error("No unused site label after $LABEL_TRIES tries")
     }
 
-    /** Records use of the sandbox; retention counts from the last one. Persisted at most once a minute. */
+    /**
+     * Records use of the sandbox; retention counts from the last one. Persisted at most once a minute,
+     * except the first use after a released home, which the session about to start creates anew.
+     */
     suspend fun markUsed(id: SandboxId): Sandbox = locks.withLock(id) {
         val current = require(id)
         val now = clock.now()
-        if (now - current.lastUsedAt < USE_PERSIST_INTERVAL) return@withLock current
-        val updated = current.copy(lastUsedAt = now)
+        if (now - current.lastUsedAt < USE_PERSIST_INTERVAL && current.homeReleasedAt == null) return@withLock current
+        val updated = current.copy(lastUsedAt = now, homeReleasedAt = null)
         store.save(updated)
         remember(updated)
         updated
