@@ -187,10 +187,12 @@ class Sandboxes(
             requireValid(holder == null || holder == id) { "Another sandbox is filed under that alias" }
         }
         val resources = patch.resources?.let { resources(current.resources, it) } ?: current.resources
-        requireValid(resources.homeMb >= current.resources.homeMb) {
-            "A home only grows: homeMb is at least ${current.resources.homeMb}"
+        // the floor is the home the sandbox has, not the size its record promises: the record runs ahead of
+        // the disk until the next session grows it, and a size the host turned out not to hold can be taken back.
+        if (resources.homeMb < current.resources.homeMb) {
+            val floor = homes.sizeMb(id)
+            requireValid(floor == null || resources.homeMb >= floor) { "A home only grows: homeMb is at least $floor" }
         }
-        if (resources.homeMb > current.resources.homeMb) requireRoomToGrow(resources.homeMb - current.resources.homeMb)
         val updated = current.copy(
             alias = patch.alias ?: current.alias,
             imagePolicy = patch.imagePolicy ?: current.imagePolicy,
@@ -314,14 +316,6 @@ class Sandboxes(
         return result
     }
 
-    // the home disk helper checks again when it grows the image, which is what actually holds; this
-    // turns away a request the host plainly has no room for while the caller is still there to hear it.
-    private suspend fun requireRoomToGrow(growthMb: Int) {
-        val needed = (growthMb + config.minFreeMb) * MB
-
-        if (homes.hostFreeBytes() < needed) throw RegolithError.Unavailable("The host has no room to grow this home")
-    }
-
     private fun lifecycle(base: Lifecycle, request: LifecycleRequest): Lifecycle {
         val limits = config.limits
         val result = Lifecycle(
@@ -347,7 +341,6 @@ class Sandboxes(
         private const val MAX_PAGE = 500
         private const val LABEL_TRIES = 10
         const val ADOPTED_LABEL = "regolith.adopted"
-        private const val MB = 1024L * 1024
         private const val MIN_MEMORY_MB = 128
         private const val MIN_HOME_MB = 256
         private val MIN_SESSION = 60.seconds

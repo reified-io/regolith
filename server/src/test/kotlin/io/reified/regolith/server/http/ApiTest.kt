@@ -160,11 +160,12 @@ class ApiTest {
         val tooBig = assertFailsWith<RegolithException> { sandbox.update(UpdateSandboxRequest(resources = ResourcesSpec(homeMb = 32768))) }
         assertEquals(ErrorCodes.INVALID_REQUEST, tooBig.code)
 
-        // growth the host has no room for is turned away before anything changes
-        server.homes.freeBytes = 1024L * 1024 * 1024
-        val full = assertFailsWith<RegolithException> { sandbox.update(UpdateSandboxRequest(resources = ResourcesSpec(homeMb = 12288))) }
-        assertEquals(ErrorCodes.UNAVAILABLE, full.code)
-        assertEquals(8192, sandbox.get().resources.homeMb)
+        // the floor is the home on disk, not the record: a size the next session has not grown it to yet may be taken back
+        sandbox.stop()
+        assertEquals(12288, sandbox.update(UpdateSandboxRequest(resources = ResourcesSpec(homeMb = 12288))).resources.homeMb)
+        assertEquals(8192, sandbox.update(UpdateSandboxRequest(resources = ResourcesSpec(homeMb = 8192))).resources.homeMb)
+        val below = assertFailsWith<RegolithException> { sandbox.update(UpdateSandboxRequest(resources = ResourcesSpec(homeMb = 4096))) }
+        assertEquals(ErrorCodes.INVALID_REQUEST, below.code)
     }
 
     @Test

@@ -344,9 +344,10 @@ then switch to `none` before running untrusted code. Everything else applies fro
 so pinning a sandbox that is running takes hold once its session ends; `stop` makes that now.
 
 `resources` take the same bounds as on creation. CPUs and memory may go up or down. The home only
-grows: a smaller `homeMb` than the sandbox has is `invalid_request`, and a larger one is refused with
-`unavailable` when the host could not hold it and keep its reserve. The home is grown when the next
-session attaches it, with every file in it.
+grows, and the floor is the home itself: a `homeMb` below the size it has is `invalid_request`. The
+home is grown when the next session attaches it, with every file in it, so until then the record runs
+ahead of the disk; if the host cannot hold the larger home and keep its reserve, that session does not
+start, and `homeMb` may be brought back down to the size the home has.
 
 ### `POST /v1/sandboxes/{id}/start`, `POST /v1/sandboxes/{id}/stop`
 

@@ -37,7 +37,7 @@ file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 
 - `POST /v1/sandboxes` - body optional: `{"alias":"user-23","imagePolicy":{"mode":"default"},"resources":{"cpus":1,"memoryMb":1024,"homeMb":4096},"network":{"mode":"public"},"lifecycle":{"idleStopSeconds":900,"maxSessionSeconds":86400,"retainDays":30},"env":{},"labels":{}}`. 201 created, 200 when the alias already has one.
 - `GET /v1/sandboxes?alias=user-23` - that one sandbox, or an empty page. `GET /v1/sandboxes?label=key=value&limit=100&cursor=` lists them.
 - `GET /v1/sandboxes/{id}`
-- `PATCH /v1/sandboxes/{id}` - `alias`, `imagePolicy`, `network`, `lifecycle`, `env`, `labels`, `resources` (`homeMb` only upwards); a network change applies to the running session at once, the rest from the next session. `imagePolicy` is `{"mode":"default"}`, `{"mode":"track","image":"<image without its tag>"}` or `{"mode":"pin","image":"<exact image>"}`, from `limits.images`.
+- `PATCH /v1/sandboxes/{id}` - `alias`, `imagePolicy`, `network`, `lifecycle`, `env`, `labels`, `resources` (`homeMb` never below the size the home has); a network change applies to the running session at once, the rest from the next session. `imagePolicy` is `{"mode":"default"}`, `{"mode":"track","image":"<image without its tag>"}` or `{"mode":"pin","image":"<exact image>"}`, from `limits.images`.
 - `POST /v1/sandboxes/{id}/start`, `POST /v1/sandboxes/{id}/stop`
 - `DELETE /v1/sandboxes/{id}` - deletes the home and any published site too; there is no undo.
 
