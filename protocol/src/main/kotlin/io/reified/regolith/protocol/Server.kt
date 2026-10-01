@@ -24,7 +24,7 @@ public data class ServerDefaults(
     val network: NetworkPolicy,
     val lifecycle: Lifecycle,
     val execTimeoutSeconds: Int,
-    /** The term a site gets when its first publish names none. */
+    /** The term a site gets, counted from a publish that names none. */
     val siteDays: Int,
 )
 

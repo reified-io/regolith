@@ -107,10 +107,10 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
      * What goes out is a snapshot taken now, not the home itself: the files keep changing afterwards and
      * the site does not. Publishing again replaces it atomically, at the same address.
      *
-     * The server takes the site down at [until]. Without it a first publish gets the server's default
-     * term (`defaults.siteDays` in [RegolithClient.info]) and a later one keeps the term the site has;
-     * a term beyond `limits.maxSiteDays` from now is refused. A site past its term is gone, so publishing
-     * then is a new site at a new address.
+     * The server takes the site down at [until]. Without it the site gets the server's default term
+     * (`defaults.siteDays` in [RegolithClient.info]) counted from now, or keeps a longer term it already
+     * has; a term beyond `limits.maxSiteDays` from now is refused. A site past its term is gone, so
+     * publishing then is a new site at a new address.
      */
     public suspend fun publish(directory: String, until: Instant? = null): PublishedSite =
         client.call(HttpMethod.Post, "$path/site", PublishedSite.serializer()) {

@@ -165,7 +165,7 @@ run nothing else.
 
 `publishing` says whether this server has a [pages role](pages.md). With `false`, `publish` answers
 `not_implemented`, and a client can leave publishing out of what it offers instead of trying.
-`defaults.siteDays` is the term a site gets when its first publish names none, and
+`defaults.siteDays` is the term a site gets, counted from a publish that names none, and
 `limits.maxSiteDays` how far from now a term may reach — see [Publishing](#publishing).
 
 ### `GET /llms.txt`
@@ -590,10 +590,11 @@ Publishes a directory of the sandbox and returns its public address.
 ```
 
 `path` is a directory inside the sandbox, relative to the home unless it is absolute. `until` is when
-the server takes the site down, and is optional: a first publish without it gets
-`defaults.siteDays` from now, and a later one keeps the term the site already has, so updating the
-files never shortens it. A term in the past, or further than `limits.maxSiteDays` from now, is
-refused with `invalid_request`. The response is a `PublishedSite`:
+the server takes the site down, and is optional: without it the site gets `defaults.siteDays` from
+now, or keeps a longer term it already has. A publish is a use of the site, so the default runs from
+the last one the way retention runs from a sandbox's last use, and updating the files never shortens
+a term set on purpose. A term in the past, or further than `limits.maxSiteDays` from now, is refused
+with `invalid_request`. The response is a `PublishedSite`:
 
 ```json
 {
@@ -630,8 +631,9 @@ stops, and the site stays exactly as it was published.
   Symlinks are left behind, not followed.
 - A sandbox has one site, and a site belongs to one sandbox: there is no name to collide over, and
   nothing can replace a site it did not publish.
-- A site lives until its term, a takedown or deleting the sandbox, whichever comes first. Its term
-  is the caller's to keep: a client that sells hosting moves it on as each period is paid for.
+- A site lives until its term, a takedown or deleting the sandbox, whichever comes first. A site
+  that is published again lives on from there; a client that wants a term of its own — one that
+  sells hosting by the period, say — names it, and moves it on as each period is paid for.
 - The term is the truth. Past it the site is gone wherever it is read, whether or not the sweep has
   taken it down yet: `GET` answers `not_found`, `PATCH` has nothing to move, and publishing again is
   a new site at a new address, the old one taken down first. `DELETE` takes a lapsed site down too.

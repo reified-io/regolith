@@ -54,8 +54,9 @@ class SitePublishing(
     val available: Boolean get() = publisher != null
 
     /**
-     * Publishes [path] as this sandbox's site until [until]; without one, a first publish gets the
-     * default term and a later one keeps the term the site has, so updating a site never shortens it.
+     * Publishes [path] as this sandbox's site until [until]. Without one the site gets the default term
+     * counted from now, or keeps a longer term it already has: a publish is a use of the site, so the
+     * default runs from the last one as retention runs from the last use, and it never shortens a term.
      * A site past its term is not updated but replaced: it is taken down first, and what is published
      * is a new site at a new address.
      */
@@ -69,7 +70,8 @@ class SitePublishing(
         val sandbox = takenDownIfOver(sandboxes.markUsed(id), now)
         val current = sandbox.site
         val label = current?.label ?: sandboxes.unusedSiteLabel()
-        val site = Site(label, until ?: current?.until ?: (now + config.defaults.siteTerm))
+        val renewed = now + config.defaults.siteTerm
+        val site = Site(label, until ?: current?.until?.coerceAtLeast(renewed) ?: renewed)
         val snapshot = snapshotDir()
 
         try {

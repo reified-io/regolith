@@ -60,7 +60,7 @@ answer `not_implemented`.
 
 - `POST /v1/sandboxes/{id}/site` - `{"path":"dist","until":"2026-12-13T12:00:00Z"}`, `until` optional. Publishes a snapshot of that directory and returns `{"url","release","files","bytes","publishedAt","until","hasIndex"}`. The address is the server's: it is random, so it says nothing about the sandbox, and it stays the same every time you publish again. The URL is public: anyone with the link sees those files. `hasIndex: false` means no `index.html` at the top of that directory, so the link opens nothing: publish the directory that holds the page.
 - `GET /v1/sandboxes/{id}/site` - what this sandbox has published, or `not_found`.
-- `PATCH /v1/sandboxes/{id}/site` - `{"until":"..."}` moves the site's term, earlier or later; the server takes the site down at `until`. Without `until`, a first publish gets `defaults.siteDays` from `GET /v1/info` and a later one keeps its term; at most `limits.maxSiteDays` from now. Past its term a site is gone: `GET` and `PATCH` answer `not_found`, and publishing again is a new site at a new address.
+- `PATCH /v1/sandboxes/{id}/site` - `{"until":"..."}` moves the site's term, earlier or later; the server takes the site down at `until`. Without `until`, a publish gives the site `defaults.siteDays` (`GET /v1/info`) from now, or keeps a longer term it already has; at most `limits.maxSiteDays` from now. Past its term a site is gone: `GET` and `PATCH` answer `not_found`, and publishing again is a new site at a new address.
 - `DELETE /v1/sandboxes/{id}/site` - takes it down; the sandbox keeps its files. Publishing after that is a new site at a new address.
 
 A site is a snapshot, not the live home: build first, then publish. Static files only - no server side

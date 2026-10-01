@@ -112,8 +112,9 @@ curl -s -X POST -H "Authorization: Bearer $REGOLITH_TOKEN" -H 'Content-Type: app
 - The URL is **public to anyone with the link**. Say so before publishing anything personal.
 - `DELETE /v1/sandboxes/{id}/site` takes it down, and the next publish gets a new address;
   `501 not_implemented` means this server publishes nothing.
-- A site has a **term**: `until` in the answer. Publishing with `"until"` sets it, and
-  `PATCH /v1/sandboxes/{id}/site` with `{"until":"..."}` moves it; the server takes the site down
+- A site has a **term**: `until` in the answer. Publishing without one gives the site the server's
+  default term from now, never shorter than it already had; publishing with `"until"` sets it, and
+  `PATCH /v1/sandboxes/{id}/site` with `{"until":"..."}` moves it. The server takes the site down
   then, and past its term the site is gone: publishing again is a new address. While a site is up,
   retention may take the sandbox's home but keeps the site — `homeReleasedAt` on the sandbox says
   the files it was built from are gone.

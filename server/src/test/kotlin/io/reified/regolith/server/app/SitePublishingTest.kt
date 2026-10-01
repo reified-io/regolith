@@ -132,7 +132,7 @@ class SitePublishingTest {
     }
 
     @Test
-    fun `a first publish gets the default term, a later one keeps it, and the term moves either way`() = runBlocking {
+    fun `a publish without a term gets the default from now, never shortening a longer one, and the term moves either way`() = runBlocking {
         TestServer().use { server ->
             val id = server.sandbox("termed").id
             server.runtime.place(id, "/home/sandbox/dist/index.html", "<h1>hi</h1>")
@@ -140,9 +140,10 @@ class SitePublishingTest {
 
             assertEquals(start + 30.days, server.sites.publish(id, "dist", until = null).until)
             server.clock.advance(5.days)
-            assertEquals(start + 30.days, server.sites.publish(id, "dist", until = null).until, "updating the files moved the term")
+            assertEquals(start + 35.days, server.sites.publish(id, "dist", until = null).until, "updating the files did not renew the term")
 
             assertEquals(start + 200.days, server.sites.term(id, start + 200.days).until)
+            assertEquals(start + 200.days, server.sites.publish(id, "dist", until = null).until, "updating the files shortened a term set on purpose")
             assertEquals(start + 6.days, server.sites.term(id, start + 6.days).until)
             assertEquals(start + 6.days, server.sites.published(id).until)
             assertEquals(start + 6.days, server.sandboxes.require(id).site?.until)

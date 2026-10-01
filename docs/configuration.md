@@ -148,6 +148,6 @@ the server holds no registry credentials of its own.
 | `REGOLITH_PAGES_URL` | — | Address of the pages role's intake listener: `http://pages:8082` on the same machine, `https://pages.example.com:8443` over the internet, or a private address; unset, `publish` answers `not_implemented` |
 | `REGOLITH_PAGES_TOKEN` | — | The intake token: the value that role was started with |
 | `REGOLITH_PAGES_TOKEN_FILE` | — | A file holding it, instead of `REGOLITH_PAGES_TOKEN` |
-| `REGOLITH_SITE_DAYS` / `REGOLITH_MAX_SITE_DAYS` | `30` / `365` | The term a site gets when its first publish names none, and how far from now a caller may set one; the site is taken down at the end of its term |
+| `REGOLITH_SITE_DAYS` / `REGOLITH_MAX_SITE_DAYS` | `30` / `365` | The term a site gets, counted from a publish that names none, and how far from now a caller may set one; the site is taken down at the end of its term |
 
 Setting up the other end is in [pages](pages.md#setting-it-up).

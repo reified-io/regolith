@@ -210,8 +210,8 @@ public data class SandboxPage(
 /**
  * Body of `POST /v1/sandboxes/{id}/site`. [path] is the directory inside the sandbox to publish,
  * relative to the home unless it is absolute. [until] is when the server takes the site down; without
- * it a first publish gets the server's default term and a later one keeps the term the site has. A
- * site past its term is gone: publishing then is a new site at a new address.
+ * it the site gets the server's default term from now, or keeps a longer term it already has. A site
+ * past its term is gone: publishing then is a new site at a new address.
  */
 @Serializable
 public data class PublishRequest(
