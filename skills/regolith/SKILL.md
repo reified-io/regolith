@@ -5,8 +5,9 @@ description: Run commands and keep files in Regolith sandboxes — persistent, n
 
 # Regolith
 
-A Regolith server gives each name a Linux sandbox with a persistent home. You create it once, run
-commands in it, move files in and out, and find it unchanged next time. The server runs on the user's own
+A Regolith server gives whatever you name — a user, a project, a task — its own Linux sandbox with a
+persistent home. You create it once, run commands in it, move files in and out, and find it unchanged
+next time. The server runs on the user's own
 machine; ask the user for its URL and token, conventionally `REGOLITH_URL` and `REGOLITH_TOKEN`.
 
 `GET $REGOLITH_URL/llms.txt` returns the complete endpoint reference in plain text, without a token. Read
@@ -35,7 +36,7 @@ it when you need a detail this file leaves out.
 - **Nothing runs unattended for long.** A process left in the background after its command ends stops
   with the session once it is idle, or sooner if it keeps using CPU. Keep long work inside a command.
 - **Commands get no stdin** unless you start them with `"stdin": true`. An interactive prompt ends instead
-  of hanging — pass flags like `-y` instead.
+  of hanging, so pass flags like `-y`.
 - **Read limits from `GET /v1/info`** (timeouts, file size, memory) instead of guessing. Inside a
   sandbox, `free` and `nproc` report the host: its own share is in `REGOLITH_MEMORY_MB`,
   `REGOLITH_CPUS` and `REGOLITH_HOME_MB`.
@@ -67,7 +68,7 @@ Reading an outcome:
 | `outcome` | What to do |
 |---|---|
 | `exited`, `exitCode` 0 | Done |
-| `exited` with `reason: oom_killed` | Out of memory, which is fixed per sandbox: process less at once, or create another sandbox with more `memoryMb` |
+| `exited` with `reason: oom_killed` | Out of memory: process less at once, or `PATCH {"resources":{"memoryMb":2048}}` (up to `limits.maxMemoryMb` in `GET /v1/info`) and `stop`, so the next session has it |
 | `exited` with `reason: pids_limited` | Too many processes: lower parallelism (`make -j2`, fewer workers) |
 | `exited`, other codes | Read the output; it is the command's own failure |
 | `timed_out` | Raise `timeoutSeconds`, up to `maxExecTimeoutSeconds` in `GET /v1/info`, or split the work |
