@@ -11,11 +11,15 @@
 
 <h1></h1>
 
-Self-hosted sandboxes for AI agents.
+A persistent Linux sandbox for every user of your AI agent, self-hosted.
 
-Each sandbox is a persistent Linux home behind an HTTP API, where an agent runs commands and keeps
-its files. Regolith runs on a Linux Docker host — no KVM, no cloud account — and refuses to serve a
-sandbox it cannot confine.
+Your agent stays in your own service, with its model and its keys. What it runs for a user —
+commands, builds, files — happens in a sandbox behind an HTTP API: one per user, project or task,
+found again by the name you gave it. It is where an agent's tools run, not a box to put a coding
+agent's CLI in.
+
+Regolith runs on a Linux Docker host — no KVM, no cloud account — and refuses to serve a sandbox it
+cannot confine.
 
 ## What it does
 
