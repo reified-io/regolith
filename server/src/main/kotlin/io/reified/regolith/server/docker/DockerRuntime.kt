@@ -50,6 +50,10 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
             log.info { "Leftover sessions removed: count=[${leftovers.size}]" }
         }
 
+        return network()
+    }
+
+    override suspend fun network(): SandboxNetwork {
         if (!docker.run(listOf("network", "inspect", spec.network)).ok) {
             docker.run(spec.networkCreate()).requireOk("Creating the sandbox network")
         }

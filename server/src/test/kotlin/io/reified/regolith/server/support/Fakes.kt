@@ -82,7 +82,13 @@ class FakeRuntime : SandboxRuntime {
     private val files = ConcurrentHashMap<String, ByteArray>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    override suspend fun initialize() = SandboxNetwork("test-sandboxes", "br-test", "172.30.0.0/16", "172.30.0.1")
+    /** What the host's sandbox network is; a test replaces it the way a pruned network comes back on a new bridge. */
+    @Volatile
+    var network = SandboxNetwork("test-sandboxes", "br-test", "172.30.0.0/16", "172.30.0.1")
+
+    override suspend fun initialize() = network()
+
+    override suspend fun network() = network
 
     override suspend fun pull(image: String) {
         pulled += image
@@ -460,10 +466,22 @@ class FakeHomes(var freeBytes: Long = Long.MAX_VALUE) : HomeStore {
 class FakeEnforcer : NetworkEnforcer {
     val applied = ConcurrentHashMap<SandboxId, NetworkPolicy>()
 
+    /** Every network the floor was installed on, in order. */
+    val installed = CopyOnWriteArrayList<SandboxNetwork>()
+
     @Volatile
     var holds = true
 
-    override suspend fun install(network: SandboxNetwork) = Unit
+    /** When set, installing the floor fails the way a host whose rules cannot be applied makes it. */
+    @Volatile
+    var installFails = false
+
+    // a floor just installed holds, until a test takes it away again.
+    override suspend fun install(network: SandboxNetwork) {
+        check(!installFails) { "The network floor could not be installed" }
+        installed += network
+        holds = true
+    }
 
     override suspend fun verifyAndRepair(): Boolean = holds
 

@@ -67,6 +67,9 @@ interface SandboxRuntime {
     /** Removes sessions left by a previous run of this namespace and makes sure the network exists. */
     suspend fun initialize(): SandboxNetwork
 
+    /** Makes sure the sandbox network exists, creating it anew if it was removed, and describes it as it now is. */
+    suspend fun network(): SandboxNetwork
+
     /** Makes sure [image] is on the host, pulling it if it is not; a session start would do it anyway. */
     suspend fun pull(image: String)
 

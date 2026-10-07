@@ -307,7 +307,7 @@ keeps such a thing in its home should be ready to build it again.
 | `session_expired` | The session reached `maxSessionSeconds` |
 | `capacity` | Reclaimed while idle, to start another sandbox's session |
 | `cpu_limit` | Processes left behind by earlier commands burned more than `unattendedCpuSeconds` of CPU while no command ran |
-| `policy_failed` | The network floor could not be restored |
+| `policy_failed` | The network floor was lost under the session and had to be installed again |
 | `container_exited` | Its container exited on its own: a command ended the idle process that keeps a session alive, such as with `pkill sleep` or `kill -9 -1` |
 | `unresponsive` | Nothing more could be started in it, typically because processes left behind filled its process limit |
 

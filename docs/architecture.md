@@ -204,14 +204,18 @@ Then four loops run in the background:
 | Lifecycle sweep | 15 s | Ends sessions whose container has exited, stops idle and expired sessions, takes down sites past their term, deletes sandboxes past retention — only the home of one whose site is up |
 | Storage guard | 10 s | Fails the `storage` health check, and with it new sessions, while free space is below the reserve; an upload lands in a home, which takes no host space |
 | CPU guard | 30 s | Stops sessions that burn CPU with nothing of their own running, and idle sessions it could not read on two ticks running |
-| Network guard | 5 min | Re-reads the firewall and repairs drift in place |
+| Network guard | 5 min | Re-reads the firewall and repairs drift in place; a floor it cannot repair is installed again from the start |
 
 Once, alongside them, the server pulls every image in its catalogue. A session start would pull what
 it needs anyway, but it holds the session capacity while it does, so after an upgrade that changed
 the images each sandbox in turn would wait for a download.
 
-A floor the network guard cannot restore latches the `network` health check to failing and stops
-every session. The latch does not clear on its own.
+A floor the network guard cannot repair in place stops every session, which would otherwise run
+unconfined, and is then installed and proven again the way it was at startup: the sandbox network
+itself may be gone — `docker network prune` takes it as unused between sessions, and the bridge the
+floor hangs off with it — and the runtime makes it again. New sessions are refused meanwhile, and one
+already under way waits until the floor is back. Only a floor that cannot be re-established either
+latches the `network` health check to failing; the latch does not clear on its own.
 
 On shutdown the API stops accepting requests, running execs are marked `server_restarted`, and every
 session is stopped.

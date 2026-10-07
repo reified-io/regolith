@@ -5,13 +5,18 @@ import io.reified.regolith.server.domain.ExecOutcome
 import io.reified.regolith.server.domain.StopReason
 import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.support.TestServer
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -334,14 +339,57 @@ class LifecycleTest {
     }
 
     @Test
-    fun `a network floor that cannot be restored latches and stops every session`() = runBlocking {
+    fun `a lost network floor stops every session and is installed again on the network as it now is`() = runBlocking {
         TestServer().use { server ->
             val name = server.sandbox("floor").id
             server.sandboxes.start(name)
-            val guard = NetworkGuard(server.enforcer, server.sandboxes, server.sessions, server.health)
+            val guard = NetworkGuard(server.runtime, server.enforcer, server.sandboxes, server.sessions, server.health)
+            val madeAgain = server.runtime.network.copy(bridge = "br-made-again")
 
+            server.runtime.network = madeAgain
             server.enforcer.holds = false
             guard.tick()
+
+            assertNull(server.sessions.get(name))
+            assertEquals(StopReason.POLICY_FAILED, server.sessions.lastEnd(name)?.reason)
+            assertEquals(listOf(madeAgain), server.enforcer.installed)
+            assertTrue(server.health.healthy)
+            server.sandboxes.start(name)
+            assertTrue(server.sessions.get(name) != null, "sessions start again once the floor is back")
+        }
+    }
+
+    @Test
+    fun `no session starts while the floor is being put back`() = runBlocking {
+        TestServer().use { server ->
+            val name = server.sandbox("held").id
+            val holding = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val holder = launch { server.sessions.withoutStarts { holding.complete(Unit); release.await() } }
+            holding.await()
+
+            val start = async { server.sandboxes.start(name) }
+            assertNull(withTimeoutOrNull(200.milliseconds) { start.await() }, "the start waits for the floor")
+            assertNull(server.sessions.get(name))
+            release.complete(Unit)
+            holder.join()
+            start.await()
+
+            assertTrue(server.sessions.get(name) != null, "and goes on once the floor is back")
+        }
+    }
+
+    @Test
+    fun `a network floor that cannot be installed again latches and stops every session`() = runBlocking {
+        TestServer().use { server ->
+            val name = server.sandbox("floor").id
+            server.sandboxes.start(name)
+            val guard = NetworkGuard(server.runtime, server.enforcer, server.sandboxes, server.sessions, server.health)
+
+            server.enforcer.holds = false
+            server.enforcer.installFails = true
+            guard.tick()
+            server.enforcer.installFails = false
             server.enforcer.holds = true
             guard.tick()
 

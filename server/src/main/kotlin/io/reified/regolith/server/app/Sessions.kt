@@ -155,6 +155,9 @@ class Sessions(
         for (sandbox in live.keys.toList()) stop(sandbox, reason)
     }
 
+    /** Runs [block] while no session can start, for putting the network floor back under the pool. */
+    suspend fun <T> withoutStarts(block: suspend () -> T): T = capacity.withLock { block() }
+
     private suspend fun start(sandbox: Sandbox): Session = capacity.withLock {
         health.require(Health.NETWORK)
         health.require(Health.STORAGE)

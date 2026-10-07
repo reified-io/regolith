@@ -118,8 +118,9 @@ with `--network host`, only `NET_ADMIN` and `NET_RAW`, a read-only root and no n
   spend the pool's budget.
 - **Re-read on a schedule.** The network guard compares a fresh fingerprint — every rule of every
   namespace chain, and the position of every hook — with the one the last apply printed. Drift is
-  repaired by applying again; a ruleset that cannot be restored latches the `network` health check
-  to failing and stops every session.
+  repaired by applying again. A ruleset that cannot be restored stops every session and is installed
+  and proven again from the start, on the sandbox network made again if it was removed; one that
+  cannot be re-established either latches the `network` health check to failing.
 
 ### Proof at startup
 

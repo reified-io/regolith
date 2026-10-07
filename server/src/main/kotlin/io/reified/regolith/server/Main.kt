@@ -111,7 +111,7 @@ private class Application(val config: ServerConfig, val store: FileStateStore) {
 private fun serve(config: ServerConfig) {
     log.info { "Regolith starting: namespace=[${config.namespace}]" }
     val app = open(config)
-    val networkGuard = NetworkGuard(app.enforcer, app.sandboxes, app.sessions, app.health)
+    val networkGuard = NetworkGuard(app.runtime, app.enforcer, app.sandboxes, app.sessions, app.health)
     val storageGuard = StorageGuard(app.homes, app.health, config.minFreeMb * 1024 * 1024)
     val sweeper = Sweeper(app.sandboxes, app.sessions, app.execs, app.sites, app.clock)
     val cpuGuard = CpuGuard(app.sessions, app.runtime, app.clock, config.limits.unattendedCpu)
