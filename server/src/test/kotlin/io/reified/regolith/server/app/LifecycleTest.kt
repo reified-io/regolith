@@ -100,7 +100,7 @@ class LifecycleTest {
     }
 
     @Test
-    fun `a cancel that cannot reach its processes ends the session, and only that command says cancelled`() = runBlocking {
+    fun `a cancel that cannot reach its processes ends the session, and only that command says canceled`() = runBlocking {
         TestServer().use { server ->
             val sandbox = server.sandbox("flooded")
             val name = sandbox.id
@@ -110,7 +110,7 @@ class LifecycleTest {
 
             server.execs.cancel(name, flood.id)
 
-            assertEquals(ExecOutcome.Cancelled, server.execs.await(name, flood.id, 10.seconds).outcome)
+            assertEquals(ExecOutcome.Canceled, server.execs.await(name, flood.id, 10.seconds).outcome)
             assertEquals(ExecOutcome.Interrupted(StopReason.UNRESPONSIVE), server.execs.await(name, other.id, 10.seconds).outcome)
             assertEquals(StopReason.UNRESPONSIVE, server.sessions.lastEnd(name)?.reason)
         }

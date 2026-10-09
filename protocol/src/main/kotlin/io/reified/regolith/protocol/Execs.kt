@@ -38,8 +38,8 @@ public enum class OutcomeType {
     @SerialName("timed_out")
     TIMED_OUT,
 
-    @SerialName("cancelled")
-    CANCELLED,
+    @SerialName("canceled")
+    CANCELED,
 
     /** The session ended under the command; see [ExecOutcome.reason]. */
     @SerialName("interrupted")

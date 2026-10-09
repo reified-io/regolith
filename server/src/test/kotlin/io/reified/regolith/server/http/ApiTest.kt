@@ -319,9 +319,9 @@ class ApiTest {
 
         assertEquals(OutcomeType.TIMED_OUT, sandbox.run(ExecRequest(shell = "sleep", timeoutSeconds = 1)).info.outcome?.type)
 
-        val cancelled = sandbox.startExec(ExecRequest(shell = "sleep"))
-        cancelled.cancel()
-        assertEquals(OutcomeType.CANCELLED, cancelled.await().outcome?.type)
+        val canceled = sandbox.startExec(ExecRequest(shell = "sleep"))
+        canceled.cancel()
+        assertEquals(OutcomeType.CANCELED, canceled.await().outcome?.type)
 
         val stopped = sandbox.startExec(ExecRequest(shell = "sleep"))
         sandbox.stop()

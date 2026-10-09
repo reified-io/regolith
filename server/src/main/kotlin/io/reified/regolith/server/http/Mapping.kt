@@ -180,7 +180,7 @@ internal fun Exec.toInfo(stdinOpen: Boolean) = ExecInfo(
 internal fun ExecOutcome.toWire(): WireOutcome = when (this) {
     is ExecOutcome.Exited -> WireOutcome(OutcomeType.EXITED, exitCode = code, reason = cause?.toWire())
     ExecOutcome.TimedOut -> WireOutcome(OutcomeType.TIMED_OUT)
-    ExecOutcome.Cancelled -> WireOutcome(OutcomeType.CANCELLED)
+    ExecOutcome.Canceled -> WireOutcome(OutcomeType.CANCELED)
     is ExecOutcome.Interrupted -> WireOutcome(OutcomeType.INTERRUPTED, reason = reason.toWire())
 }
 

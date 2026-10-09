@@ -431,7 +431,7 @@ An exec ends in exactly one `outcome`:
 |---|---|
 | `exited` | The command exited on its own; `exitCode` holds the code |
 | `timed_out` | It ran past `timeoutSeconds` and was stopped |
-| `cancelled` | `cancel` stopped it |
+| `canceled` | `cancel` stopped it |
 | `interrupted` | Its session ended under it; `reason` is `stopped`, `session_expired`, `sandbox_deleted`, `server_restarted`, `policy_failed`, `container_exited` or `unresponsive` |
 
 A non-zero exit can carry a `reason` too, when a session limit explains it:
@@ -528,7 +528,7 @@ A process that cleared its own environment escapes the signal. `stop` ends every
 
 The signal is delivered by a process started inside the session, so when not even that can start —
 the session's process limit is full — cancel stops the session instead, as a timeout does. The exec
-still ends `cancelled` or `timed_out`; any other command in that session ends `interrupted` with
+still ends `canceled` or `timed_out`; any other command in that session ends `interrupted` with
 `unresponsive`.
 
 A session the server can no longer reach is not kept. When its container has exited, the first command

@@ -78,8 +78,8 @@ sealed interface ExecOutcome {
     data object TimedOut : ExecOutcome
 
     @Serializable
-    @SerialName("cancelled")
-    data object Cancelled : ExecOutcome
+    @SerialName("canceled")
+    data object Canceled : ExecOutcome
 
     @Serializable
     @SerialName("interrupted")

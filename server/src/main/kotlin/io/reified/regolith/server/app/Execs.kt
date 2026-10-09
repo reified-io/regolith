@@ -95,7 +95,7 @@ class Execs(
         var exec: Exec = initial
 
         @Volatile
-        var cancelled = false
+        var canceled = false
 
         @Volatile
         var interruptedBy: StopReason? = null
@@ -266,7 +266,7 @@ class Execs(
     /** Asks the exec to stop; returns at once, and canceling a finished exec changes nothing. */
     suspend fun cancel(sandbox: SandboxId, id: ExecId): Exec {
         val run = running[id]?.takeIf { it.exec.sandbox == sandbox } ?: return get(sandbox, id)
-        run.cancelled = true
+        run.canceled = true
         scope.launch { terminate(run) }
 
         return view(run)
@@ -331,13 +331,13 @@ class Execs(
         pumps.joinAll()
 
         // one that was canceled or timed out already says why, even when ending it took the container down.
-        val failed = code != null && code != 0 && run.interruptedBy == null && !run.cancelled && !timedOut
+        val failed = code != null && code != 0 && run.interruptedBy == null && !run.canceled && !timedOut
         val limitsAtEnd = if (failed) limitEventsOrNull(exec.sandbox) else null
         if (failed) endIfSessionFailed(run, limitsAtEnd)
 
         val outcome = when {
             run.interruptedBy != null -> ExecOutcome.Interrupted(checkNotNull(run.interruptedBy))
-            run.cancelled -> ExecOutcome.Cancelled
+            run.canceled -> ExecOutcome.Canceled
             timedOut || code == null -> ExecOutcome.TimedOut
             code == 0 -> ExecOutcome.Exited(0)
             else -> ExecOutcome.Exited(code, exitCause(run, limitsAtEnd))
