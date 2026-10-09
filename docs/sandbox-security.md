@@ -35,7 +35,7 @@ yet.
 | CPU | A CPU quota and a low scheduling weight, so the host keeps a contested core |
 | Processes | A pids limit and an open-files limit |
 | Unattended CPU | A process left running after its command ended is stopped with its session once it has burned `REGOLITH_UNATTENDED_CPU_SECONDS` while nothing else ran. Leftovers that fill the process limit hide the counter, so an idle session unreadable on two ticks running is stopped as well |
-| Neighbours | A bridge with inter-container traffic disabled |
+| Neighbors | A bridge with inter-container traffic disabled |
 | Network | The host floor and the sandbox's policy — [below](#the-network-floor) |
 | Home size | A fixed-size filesystem per sandbox — [below](#homes) |
 | Host facts | Nothing about the server — configuration, token, addresses — in a sandbox's environment, mounts or command lines |
@@ -51,7 +51,7 @@ the hardening flags.
 - **Arguments, never scripts.** Caller input reaches a container only as a process argument.
   Commands run as `<shell> -c <script>` with the script as one argument, and helper scripts receive
   paths and ids as positional parameters. No server-side shell ever interprets caller text.
-- **An image from the catalogue only.** A caller names an image, it is never taken at its word: the
+- **An image from the catalog only.** A caller names an image, it is never taken at its word: the
   name is matched against the images the configuration allows, and a session starts on a reference
   from that list or not at all. A sandbox that follows the server therefore moves only where the
   operator's configuration moves, and one that pinned an image stays on it.
@@ -197,7 +197,7 @@ Each sandbox's home is a preallocated ext4 image of its own size (`HomeDisks`).
   filesystem, offline. A grow cut short between the two is finished at the next attach. A home larger
   than its sandbox refuses to open.
 - **A reserve.** A new home is created only if the host keeps `REGOLITH_MIN_FREE_MB` free
-  afterwards.
+  afterward.
 - **Detached when the session ends.** Attachments left by a crash are released at startup.
 - **I/O throttled** per home device (`REGOLITH_HOME_READ_BPS`, `REGOLITH_HOME_WRITE_BPS`).
 - **Never forgotten.** A home is found by its sandbox's id, and retention only walks records. If the

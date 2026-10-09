@@ -92,7 +92,7 @@ class Sweeper(
 }
 
 /**
- * Keeps the network floor in place. Installing it is a startup precondition; afterwards drift is
+ * Keeps the network floor in place. Installing it is a startup precondition; afterward drift is
  * repaired in place. A floor that cannot be repaired stops every session, because the sessions behind
  * a missing floor would run unconfined, and is then installed again the way it was at startup: the
  * sandbox network itself may be gone — pruned as unused between sessions — and the runtime makes it
@@ -134,7 +134,7 @@ class NetworkGuard(
     }
 
     /**
-     * False when a session is still live afterwards: its policy would be rendered into the floor put back
+     * False when a session is still live afterward: its policy would be rendered into the floor put back
      * under it, for an address another session may be given, so the next tick starts over instead.
      */
     private suspend fun stopAll(): Boolean {

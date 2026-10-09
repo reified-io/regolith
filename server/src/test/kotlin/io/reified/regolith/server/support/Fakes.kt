@@ -47,7 +47,7 @@ import kotlin.time.Duration
 
 /**
  * A runtime without containers. A shell script is a `;`-separated list of fake commands:
- * `echo TEXT`, `err TEXT`, `exit N`, `sleep` (until signalled), `cat` (stdin to stdout) and
+ * `echo TEXT`, `err TEXT`, `exit N`, `sleep` (until signaled), `cat` (stdin to stdout) and
  * `bytes N` (N bytes of `x`).
  */
 class FakeRuntime : SandboxRuntime {

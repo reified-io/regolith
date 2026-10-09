@@ -50,7 +50,7 @@ object SitePaths {
 
 /**
  * The type a file is served as, taken from its extension and nothing else. What the publisher claims
- * is never used: a `.png` the caller labelled `text/html` would be a stored cross-site script.
+ * is never used: a `.png` the caller labeled `text/html` would be a stored cross-site script.
  */
 object ContentTypes {
     private const val DEFAULT = "application/octet-stream"

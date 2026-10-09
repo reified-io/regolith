@@ -35,7 +35,7 @@ import kotlin.time.Duration.Companion.seconds
  * Homes and the host firewall on the real machine running the build. Opt in with
  * `REGOLITH_HOST_TESTS=1`: it builds the helper and sandbox images, installs firewall chains for its
  * own namespace — they match only that namespace's bridge — attaches a loop device, and removes all of
- * it afterwards. It needs internet access for the egress checks.
+ * it afterward. It needs internet access for the egress checks.
  */
 class HostIntegrationTest {
     private val enabled = System.getenv("REGOLITH_HOST_TESTS") == "1"

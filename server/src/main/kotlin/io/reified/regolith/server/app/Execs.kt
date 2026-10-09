@@ -263,7 +263,7 @@ class Execs(
         if (!condition) throw RegolithError.Conflict(message())
     }
 
-    /** Asks the exec to stop; returns at once, and cancelling a finished exec changes nothing. */
+    /** Asks the exec to stop; returns at once, and canceling a finished exec changes nothing. */
     suspend fun cancel(sandbox: SandboxId, id: ExecId): Exec {
         val run = running[id]?.takeIf { it.exec.sandbox == sandbox } ?: return get(sandbox, id)
         run.cancelled = true
@@ -330,7 +330,7 @@ class Execs(
         run.process.detach()
         pumps.joinAll()
 
-        // one that was cancelled or timed out already says why, even when ending it took the container down.
+        // one that was canceled or timed out already says why, even when ending it took the container down.
         val failed = code != null && code != 0 && run.interruptedBy == null && !run.cancelled && !timedOut
         val limitsAtEnd = if (failed) limitEventsOrNull(exec.sandbox) else null
         if (failed) endIfSessionFailed(run, limitsAtEnd)

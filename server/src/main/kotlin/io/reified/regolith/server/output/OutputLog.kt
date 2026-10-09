@@ -13,7 +13,7 @@ import java.nio.file.Path
  * an offset is a byte position of a frame boundary, so a client resumes exactly where it stopped.
  * frames are appended in the order the pipes were read, one stream at a time. stdout and stderr payloads
  * are always valid utf-8: the writer holds back a character split across two reads and replaces
- * malformed bytes, so a frame never has to be re-joined with its neighbour to be decoded. 0xFE
+ * malformed bytes, so a frame never has to be re-joined with its neighbor to be decoded. 0xFE
  * cannot occur in utf-8, which lets a reader reject an offset that does not start a frame.
  */
 

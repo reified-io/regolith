@@ -169,14 +169,14 @@ These hold for every change; [`docs/sandbox-security.md`](docs/sandbox-security.
 ## Tests
 
 - `kotlin.test` assertions; suspend tests use `runBlocking` or `testApplication`.
-- API behaviour is tested through the real SDK against the real Ktor module over fakes
+- API behavior is tested through the real SDK against the real Ktor module over fakes
   (`server/src/test/.../support`), so the server and the SDK are checked as one contract.
 - Test paths mirror production paths; never widen visibility or add production overloads for tests.
 - Fixture text is invented English.
 
 ## Documentation
 
-Update in the same change as the behaviour:
+Update in the same change as the behavior:
 
 - `docs/api.md` — any endpoint, field, error code or semantic change, and with it the two texts
   written for agents: `server/src/main/resources/llms.txt` (served at `/llms.txt`; the root

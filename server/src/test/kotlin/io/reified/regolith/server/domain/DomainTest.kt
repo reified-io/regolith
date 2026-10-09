@@ -67,24 +67,24 @@ class DomainTest {
     }
 
     @Test
-    fun `a catalogue resolves what a sandbox follows and refuses what it does not offer`() {
+    fun `a catalog resolves what a sandbox follows and refuses what it does not offer`() {
         val base = "ghcr.io/example/sandbox:3.1"
         val full = "ghcr.io/example/sandbox-full:3.1"
-        val catalogue = ImageCatalog(base, listOf(base, full))
+        val catalog = ImageCatalog(base, listOf(base, full))
 
-        assertEquals(base, catalogue.resolve(ImagePolicy.Default))
-        assertEquals(full, catalogue.resolve(ImagePolicy.Track("ghcr.io/example/sandbox-full")))
-        assertEquals("ghcr.io/example/sandbox:1.0", catalogue.resolve(ImagePolicy.Pin("ghcr.io/example/sandbox:1.0")))
+        assertEquals(base, catalog.resolve(ImagePolicy.Default))
+        assertEquals(full, catalog.resolve(ImagePolicy.Track("ghcr.io/example/sandbox-full")))
+        assertEquals("ghcr.io/example/sandbox:1.0", catalog.resolve(ImagePolicy.Pin("ghcr.io/example/sandbox:1.0")))
 
-        catalogue.requireAllowed(ImagePolicy.Track("ghcr.io/example/sandbox-full"))
-        catalogue.requireAllowed(ImagePolicy.Pin(base))
-        assertFailsWith<RegolithError.Invalid> { catalogue.requireAllowed(ImagePolicy.Track("ghcr.io/example/other")) }
-        assertFailsWith<RegolithError.Invalid> { catalogue.requireAllowed(ImagePolicy.Pin("ghcr.io/example/sandbox:1.0")) }
+        catalog.requireAllowed(ImagePolicy.Track("ghcr.io/example/sandbox-full"))
+        catalog.requireAllowed(ImagePolicy.Pin(base))
+        assertFailsWith<RegolithError.Invalid> { catalog.requireAllowed(ImagePolicy.Track("ghcr.io/example/other")) }
+        assertFailsWith<RegolithError.Invalid> { catalog.requireAllowed(ImagePolicy.Pin("ghcr.io/example/sandbox:1.0")) }
         assertFailsWith<RegolithError.Invalid> { ImagePolicy.Pin("x".repeat(ImagePolicy.MAX_REFERENCE + 1)) }
     }
 
     @Test
-    fun `a newer catalogue moves what follows it and leaves a pin alone`() {
+    fun `a newer catalog moves what follows it and leaves a pin alone`() {
         val old = ImageCatalog("ghcr.io/example/sandbox:3.1", listOf("ghcr.io/example/sandbox:3.1"))
         val new = ImageCatalog("ghcr.io/example/sandbox:4.0", listOf("ghcr.io/example/sandbox:4.0"))
         val tracked = ImagePolicy.Track("ghcr.io/example/sandbox")

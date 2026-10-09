@@ -75,7 +75,7 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
         val stderr = BoundedText(maxOutputChars)
         val combined = BoundedText(maxOutputChars)
         var serverTruncated = false
-        // the page that completes the exec carries it, so there is nothing left to ask for afterwards.
+        // the page that completes the exec carries it, so there is nothing left to ask for afterward.
         val last = exec.pages(fromOffset = 0) { page ->
             page.frames.forEach { frame ->
                 when (frame.kind) {
@@ -104,7 +104,7 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
      * Publishes a directory of this sandbox to the server's pages role and returns its public address,
      * which the server chooses and keeps for this sandbox.
      *
-     * What goes out is a snapshot taken now, not the home itself: the files keep changing afterwards and
+     * What goes out is a snapshot taken now, not the home itself: the files keep changing afterward and
      * the site does not. Publishing again replaces it atomically, at the same address.
      *
      * The server takes the site down at [until]. Without it the site gets the server's default term

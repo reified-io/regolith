@@ -140,7 +140,7 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
     }
 
     override suspend fun signal(sandbox: SandboxId, exec: ExecId, signal: Signal) {
-        docker.run(spec.signal(sandbox, exec, signal)).requireOk("Signalling exec $exec")
+        docker.run(spec.signal(sandbox, exec, signal)).requireOk("Signaling exec $exec")
     }
 
     override suspend fun stat(sandbox: SandboxId, path: String): FileEntry {

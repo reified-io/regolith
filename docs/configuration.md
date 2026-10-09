@@ -52,7 +52,7 @@ How much of the host sandboxes may take, and what else on its network they must 
 | Variable | Default | Meaning |
 |---|---|---|
 | `REGOLITH_MAX_SESSIONS` | `2` | Sessions running at once. When the pool is full, the least recently active idle session is stopped; when none is idle, a new one is refused |
-| `REGOLITH_MIN_FREE_MB` | `2048` | Host disk space kept free. A home is created only if this much remains afterwards, and below it new sessions are refused |
+| `REGOLITH_MIN_FREE_MB` | `2048` | Host disk space kept free. A home is created only if this much remains afterward, and below it new sessions are refused |
 | `REGOLITH_HOME_READ_BPS` | `100mb` | Read rate per home device, as a Docker byte rate, or `none` |
 | `REGOLITH_HOME_WRITE_BPS` | `50mb` | Write rate per home device, the same way |
 | `REGOLITH_BLOCKED_CIDRS` | — | Extra IPv4 addresses or networks no sandbox may reach, comma-separated — typically the public address a router forwards back to this host |
@@ -75,12 +75,12 @@ Every image must name a tag other than `latest`, or a digest: an image that chan
 server changes every sandbox with it. Two allowed images may not name the same repository, because a
 sandbox tracking that repository could not tell which of them it follows.
 
-These two variables are the whole catalogue: a sandbox may only ask for what they name, and a
+These two variables are the whole catalog: a sandbox may only ask for what they name, and a
 session starts on nothing else. Which of them a sandbox runs is
 [resolved at every session start](api.md#which-image-a-sandbox-runs), so raising the version in
 `REGOLITH_SANDBOX_IMAGE` — as a server upgrade does by itself — moves every sandbox that follows
 the default onto the new image at its next session, while a sandbox that pinned one stays there.
-Lowering it moves them back the same way. The server pulls the catalogue once at startup, so the
+Lowering it moves them back the same way. The server pulls the catalog once at startup, so the
 first session after such a change does not wait for the download.
 
 ### Sandbox images

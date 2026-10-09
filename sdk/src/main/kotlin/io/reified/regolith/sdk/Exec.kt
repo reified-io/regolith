@@ -96,7 +96,7 @@ public class Exec internal constructor(private val client: RegolithClient, sandb
         pages(fromOffset) { page -> page.frames.forEach { emit(it) } }
     }
 
-    /** Stops the command: SIGTERM, then SIGKILL after a grace period. Cancelling a finished exec changes nothing. */
+    /** Stops the command: SIGTERM, then SIGKILL after a grace period. Canceling a finished exec changes nothing. */
     public suspend fun cancel(): ExecInfo = client.call(HttpMethod.Post, "$path/cancel", ExecInfo.serializer())
 
     /** Writes to the command's stdin; the exec must have been started with `stdin = true`. */

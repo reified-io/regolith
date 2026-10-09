@@ -292,13 +292,13 @@ class ApiTest {
         val done = sandbox.startExec(ExecRequest(shell = "bytes 40000"))
         // a page carries a whole frame whatever the bound, so this stops asking at 100 rather than cutting
         val bounded = done.readWithin(budget = 5.seconds, maxChars = 100)
-        val onwards = done.readWithin(offset = bounded.nextOffset, budget = 5.seconds, maxChars = 100_000)
+        val onward = done.readWithin(offset = bounded.nextOffset, budget = 5.seconds, maxChars = 100_000)
 
         assertTrue(bounded.text.isNotEmpty() && bounded.text.length < 40_000)
         assertFalse(bounded.complete)
-        assertEquals(40_000, bounded.text.length + onwards.text.length)
-        assertTrue(onwards.complete)
-        assertEquals(ExecStatus.FINISHED, onwards.exec.status)
+        assertEquals(40_000, bounded.text.length + onward.text.length)
+        assertTrue(onward.complete)
+        assertEquals(ExecStatus.FINISHED, onward.exec.status)
     }
 
     @Test

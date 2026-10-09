@@ -218,7 +218,7 @@ The body may be empty; whatever it leaves out takes the default from `GET /v1/in
   [`PATCH`](#patch-v1sandboxesid).
 - `imagePolicy` picks which image the sandbox runs — see [below](#which-image-a-sandbox-runs).
   `network` is a [network policy](#network-policy). `resources` can be raised later with
-  [`PATCH`](#patch-v1sandboxesid), the home only upwards.
+  [`PATCH`](#patch-v1sandboxesid), the home only upward.
 - `lifecycle.retainDays: 0` makes the sandbox ephemeral: the lifecycle sweep deletes it once no
   session runs and `idleStopSeconds` have passed since it was last used — right after an idle stop,
   and up to that window after an explicit `stop`, so one created just before its first command is
@@ -522,7 +522,7 @@ its stdin is already closed.
 ### `POST /v1/sandboxes/{id}/execs/{exec}/cancel`
 
 Sends SIGTERM to every process the exec started, detached ones included, then SIGKILL after five
-seconds. Returns at once with `ExecInfo`; cancelling a finished exec changes nothing.
+seconds. Returns at once with `ExecInfo`; canceling a finished exec changes nothing.
 
 A process that cleared its own environment escapes the signal. `stop` ends everything.
 

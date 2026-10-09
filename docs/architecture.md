@@ -75,7 +75,7 @@ other. Keeping them apart is why none of them can leak into somewhere it does no
 Starting a session:
 
 1. Check the health gates.
-2. Resolve the sandbox's image against the catalogue.
+2. Resolve the sandbox's image against the catalog.
 3. If the pool is full, reclaim an idle session.
 4. Open the home.
 5. Start the container on that image with an idle entrypoint, attached to the sandbox network — or,
@@ -131,7 +131,7 @@ start ──▶ lease session ──▶ docker exec ──▶ pumps: stdout, std
   are read in the background; when it exits non-zero, they are read again. A grown `oom_kill` count
   makes the outcome `exited: oom_killed`, otherwise a grown `max` count makes it `pids_limited`. The
   counters belong to the whole session, so a concurrent command can take the blame for its
-  neighbour. A failed read only leaves the reason out.
+  neighbor. A failed read only leaves the reason out.
 - **Signals.** Each exec carries `REGOLITH_EXEC_ID` in its environment. Cancel and timeout send
   SIGTERM, then SIGKILL after a grace period, to every process in the session carrying that marker —
   detached descendants included. Stopping the session is the backstop for anything that shed the
@@ -206,7 +206,7 @@ Then four loops run in the background:
 | CPU guard | 30 s | Stops sessions that burn CPU with nothing of their own running, and idle sessions it could not read on two ticks running |
 | Network guard | 5 min | Re-reads the firewall and repairs drift in place; a floor it cannot repair is installed again from the start |
 
-Once, alongside them, the server pulls every image in its catalogue. A session start would pull what
+Once, alongside them, the server pulls every image in its catalog. A session start would pull what
 it needs anyway, but it holds the session capacity while it does, so after an upgrade that changed
 the images each sandbox in turn would wait for a download.
 

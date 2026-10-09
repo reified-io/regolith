@@ -40,7 +40,7 @@ class SandboxFiles(
         }
 
         // the status is committed before the first byte, so a read the sandbox user cannot do has to be
-        // refused here: afterwards the only way left to report it is breaking the body off.
+        // refused here: afterward the only way left to report it is breaking the body off.
         if (!runtime.readable(id, resolved)) throw RegolithError.Invalid("Permission denied: `${entry.path}`")
 
         limit
