@@ -2,7 +2,6 @@ package io.reified.regolith.server.docker
 
 import io.reified.regolith.server.domain.ExecCommand
 import io.reified.regolith.server.domain.ExecId
-import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxLayout
 import io.reified.regolith.server.domain.SandboxId
@@ -80,13 +79,11 @@ class ContainerSpec(
             "--env", "REGOLITH_HOME_MB=${sandbox.resources.homeMb}",
         )
 
-        // a `none` sandbox starts with no interface at all; attaching later goes through connect.
-        if (sandbox.network == NetworkPolicy.None) {
-            args += listOf("--network", "none")
-        } else {
-            args += listOf("--network", network)
-            PublicResolvers.addresses.forEach { args += listOf("--dns", it) }
-        }
+        // every session starts on the network, a `none` one included, which the runtime detaches before
+        // anything runs. the host's search domain is the host's, and stays out of the sandbox.
+        args += listOf("--network", network)
+        PublicResolvers.addresses.forEach { args += listOf("--dns", it) }
+        args += listOf("--dns-search", ".")
 
         home.device?.let { device ->
             homeReadBps?.let { args += listOf("--device-read-bps", "$device:$it") }

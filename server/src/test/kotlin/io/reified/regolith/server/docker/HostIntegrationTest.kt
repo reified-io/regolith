@@ -144,6 +144,16 @@ class HostIntegrationTest {
                 sessions.applyNetwork(sandbox)
                 sessions.withLease(sandbox) { assertTrue(reach("1.1.1.1", 443), "attached again") }
 
+                // a session that started under none is attached as well, names and all.
+                sessions.stop(name, StopReason.STOPPED)
+                sessions.withLease(offline) { assertEquals("lo", sh("ls /sys/class/net"), "a session started under none") }
+                sessions.applyNetwork(sandbox)
+                sessions.withLease(sandbox) {
+                    assertTrue(reach("1.1.1.1", 443), "a session started under none, attached")
+                    assertTrue("no-dns" !in sh("getent hosts one.one.one.one || echo no-dns"), "and it resolves names")
+                    assertEquals("0", sh("grep -c '^search' /etc/resolv.conf || true"), "with no search domain of the host's")
+                }
+
                 // a detached busy loop outlives the command that started it; only the cpu guard ends it.
                 sessions.withLease(sandbox) {
                     sh("nohup sh -c 'while :; do :; done' >/dev/null 2>&1 &")

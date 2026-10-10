@@ -77,10 +77,17 @@ class DockerRuntime(private val docker: DockerCli, private val spec: ContainerSp
         // a container can survive a crash between its start and its registration; it is never reused.
         docker.run(listOf("rm", "--force", container))
         docker.run(spec.run(sandbox, home, image), timeout = START_TIMEOUT).requireOk("Starting session ${sandbox.id}")
-        if (sandbox.network == NetworkPolicy.None) return SessionHandle(container, address = null)
 
         return try {
-            SessionHandle(container, address(sandbox.id))
+            // a container started in docker's `none` mode can never be connected afterward, so a `none`
+            // session starts on the network and is detached before anything runs in it; until then its
+            // address has no policy and reaches nothing.
+            if (sandbox.network == NetworkPolicy.None) {
+                detachNetwork(sandbox.id)
+                SessionHandle(container, address = null)
+            } else {
+                SessionHandle(container, address(sandbox.id))
+            }
         } catch (e: Exception) {
             docker.run(listOf("rm", "--force", container))
             throw e

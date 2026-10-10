@@ -78,8 +78,9 @@ Starting a session:
 2. Resolve the sandbox's image against the catalog.
 3. If the pool is full, reclaim an idle session.
 4. Open the home.
-5. Start the container on that image with an idle entrypoint, attached to the sandbox network — or,
-   for `none`, to nothing.
+5. Start the container on that image with an idle entrypoint, attached to the sandbox network. A
+   `none` session is detached again here, before anything runs in it: Docker never connects a
+   container started in its own `none` mode to anything afterward, and the policy may change.
 6. Apply the network policy to its address.
 7. Publish the session.
 

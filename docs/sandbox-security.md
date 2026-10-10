@@ -38,7 +38,7 @@ yet.
 | Neighbors | A bridge with inter-container traffic disabled |
 | Network | The host floor and the sandbox's policy — [below](#the-network-floor) |
 | Home size | A fixed-size filesystem per sandbox — [below](#homes) |
-| Host facts | Nothing about the server — configuration, token, addresses — in a sandbox's environment, mounts or command lines |
+| Host facts | Nothing about the server — configuration, token, addresses, the host's own resolvers and search domain — in a sandbox's environment, mounts, command lines or `resolv.conf` |
 
 The container command lines are built in one place, `ContainerSpec`, and `ContainerSpecTest` asserts
 the hardening flags.

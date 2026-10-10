@@ -54,6 +54,7 @@ class ContainerSpecTest {
         assertTrue(args.none { "docker.sock" in it || it == "--privileged" || it == "--cap-add" })
         assertEquals(listOf("net.ipv6.conf.all.disable_ipv6=1", "net.ipv6.conf.default.disable_ipv6=1"), args.valueAfter("--sysctl"))
         assertEquals(listOf("1.1.1.1", "9.9.9.9"), args.valueAfter("--dns"))
+        assertEquals(listOf("."), args.valueAfter("--dns-search"), "the host's search domain stays the host's")
     }
 
     // the daemon would read as root: a snapshot comes from a process the sandbox user runs, and no other way
@@ -79,11 +80,13 @@ class ContainerSpecTest {
     }
 
     @Test
-    fun `a none sandbox starts with no network and its home device is throttled`() {
+    fun `a none sandbox starts on the network it is detached from, so it can be attached later`() {
         val args = spec.run(sandbox.copy(network = NetworkPolicy.None), HomeMount("regolith-$name-home", "/dev/loop7"), "example/sandbox:1")
 
-        assertEquals(listOf("none"), args.valueAfter("--network"))
-        assertEquals(emptyList(), args.valueAfter("--dns"))
+        // docker refuses to connect a container started in its own `none` mode to anything afterward.
+        assertEquals(listOf("regolith-sandboxes"), args.valueAfter("--network"))
+        assertEquals(listOf("1.1.1.1", "9.9.9.9"), args.valueAfter("--dns"))
+        assertEquals(listOf("."), args.valueAfter("--dns-search"))
         assertEquals(listOf("/dev/loop7:100mb"), args.valueAfter("--device-read-bps"))
         assertEquals(listOf("/dev/loop7:50mb"), args.valueAfter("--device-write-bps"))
     }
