@@ -240,6 +240,11 @@ Each sandbox's home is a preallocated ext4 image of its own size (`HomeDisks`).
   afterward.
 - **Detached when the session ends.** Attachments left by a crash are released at startup.
 - **I/O throttled** per home device (`REGOLITH_HOME_READ_BPS`, `REGOLITH_HOME_WRITE_BPS`).
+- **Snapshots beside the home.** A snapshot is a sparse copy of the image made by `e2image` in the
+  same disk volume, so it is as large as what the home holds and goes wherever the home goes. The
+  home disk helper copies only an image no loop device holds, so nothing has the filesystem open;
+  a restore, or a new sandbox's home made from a snapshot, is written whole beside the old image and
+  preallocated again before it takes its place, under the same reserve. A sandbox never sees one.
 - **Never forgotten.** A home is found by its sandbox's id, and retention only walks records. If the
   state directory is lost or points somewhere else, every home keeps somebody's files where no call
   reaches them and retention never deletes them. So the server refuses to start while a home disk

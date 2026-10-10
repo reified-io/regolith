@@ -24,6 +24,7 @@ cannot confine.
 ## What it does
 
 - **Sandboxes that remember.** Name one after a user, and its files are still there next time.
+- **Snapshots of a home.** Copy it before a risky step, then put it back or start another from it.
 - **Commands you can reconnect to.** Output stays on the server, so a dropped client just resumes.
 - **A network boundary that checks itself.** No way to the host or your LAN, in any mode.
 - **Names, not only addresses.** Let a sandbox reach `pypi.org` and no other name, DNS included.

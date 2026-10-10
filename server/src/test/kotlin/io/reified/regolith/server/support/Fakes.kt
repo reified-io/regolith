@@ -9,6 +9,7 @@ import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.SnapshotId
 import io.reified.regolith.server.ports.ExecSpec
 import io.reified.regolith.server.ports.HomeMount
 import io.reified.regolith.server.ports.HomeStore
@@ -458,9 +459,42 @@ class FakeHomes(var freeBytes: Long = Long.MAX_VALUE) : HomeStore {
         check(sandbox !in stuck) { "The home disk volume of $sandbox is still in use" }
         destroyed += sandbox
         disks.remove(sandbox)
+        snapshots.keys.removeIf { it.first == sandbox }
     }
 
     override suspend fun hostFreeBytes(): Long = freeBytes
+
+    /** Snapshots that exist on "disk", with the size of the home each was taken of. */
+    val snapshots = ConcurrentHashMap<Pair<SandboxId, SnapshotId>, Int>()
+
+    /** Every home that was restored, with the snapshot it was restored from, in order. */
+    val restored = CopyOnWriteArrayList<Pair<SandboxId, SnapshotId>>()
+
+    override suspend fun snapshot(sandbox: SandboxId, snapshot: SnapshotId): Long {
+        check(sandbox !in open) { "The home of $sandbox is attached to a session" }
+        snapshots[sandbox to snapshot] = checkNotNull(disks[sandbox]) { "$sandbox has no home" }
+
+        return SNAPSHOT_BYTES
+    }
+
+    override suspend fun restore(sandbox: SandboxId, snapshot: SnapshotId) {
+        check(sandbox !in open) { "The home of $sandbox is attached to a session" }
+        disks[sandbox] = checkNotNull(snapshots[sandbox to snapshot]) { "No snapshot $snapshot of $sandbox" }
+        restored += sandbox to snapshot
+    }
+
+    override suspend fun clone(source: SandboxId, snapshot: SnapshotId, target: SandboxId) {
+        check(!disks.containsKey(target)) { "$target already has a home" }
+        disks[target] = checkNotNull(snapshots[source to snapshot]) { "No snapshot $snapshot of $source" }
+    }
+
+    override suspend fun deleteSnapshot(sandbox: SandboxId, snapshot: SnapshotId) {
+        snapshots.remove(sandbox to snapshot)
+    }
+
+    companion object {
+        const val SNAPSHOT_BYTES = 4096L
+    }
 }
 
 class FakeEnforcer : NetworkEnforcer {

@@ -155,6 +155,15 @@ class Sessions(
         for (sandbox in live.keys.toList()) stop(sandbox, reason)
     }
 
+    /**
+     * Ends the sandbox's session, if any, and runs [block] before another can start, for work on a home
+     * that nothing may have open. The caller interrupts the execs in it first.
+     */
+    suspend fun <T> stopped(sandbox: SandboxId, reason: StopReason, block: suspend () -> T): T = locks.withLock(sandbox) {
+        stopLocked(sandbox, reason)
+        block()
+    }
+
     /** Runs [block] while no session can start, for putting the network floor back under the pool. */
     suspend fun <T> withoutStarts(block: suspend () -> T): T = capacity.withLock { block() }
 

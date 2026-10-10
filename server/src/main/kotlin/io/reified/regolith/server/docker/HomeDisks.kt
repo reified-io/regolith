@@ -3,12 +3,15 @@ package io.reified.regolith.server.docker
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.SnapshotId
 import io.reified.regolith.server.ports.HomeMount
 import io.reified.regolith.server.ports.HomeStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * [HomeStore] as one preallocated ext4 image per sandbox.
@@ -16,7 +19,8 @@ import java.nio.file.Path
  * Two Docker volumes per home: `<ns>-<sandbox>-disk` holds the image and is only ever seen by the home disk
  * helper, which attaches it to a loop device; `<ns>-<sandbox>-home` is a local-driver volume of that device,
  * which the daemon itself mounts when a session starts. A full home stops at its own size, in the kernel,
- * whatever fills it.
+ * whatever fills it. Snapshots are sparse copies of the image in the same disk volume, so deleting a home
+ * deletes them with it.
  */
 class HomeDisks(
     private val docker: DockerCli,
@@ -42,18 +46,7 @@ class HomeDisks(
         // a mount volume only names a device, which may be stale after a restart; it is always recreated.
         docker.run(listOf("volume", "rm", "--force", home))
 
-        if (!exists(disk)) {
-            docker.run(
-                listOf(
-                    "volume", "create",
-                    "--label", namespaceLabel, "--label", "$ROLE_LABEL=$ROLE_DISK", "--label", "${ContainerSpec.LABEL_PREFIX}.sandbox=$sandbox",
-                    disk,
-                ),
-            )
-                .requireOk("Creating home disk volume $disk")
-        }
-
-        requireOwned(disk, ROLE_DISK)
+        createDisk(sandbox)
         val device = helper(disk, "prepare", sizeMb.toString(), reserveMb.toString())
         check(LOOP_DEVICE.matches(device)) { "The home disk helper returned `$device` instead of a loop device" }
         docker.run(
@@ -69,6 +62,34 @@ class HomeDisks(
         ).requireOk("Creating home mount volume $home")
 
         return HomeMount(home, device)
+    }
+
+    override suspend fun snapshot(sandbox: SandboxId, snapshot: SnapshotId): Long {
+        val disk = diskVolume(sandbox)
+        requireOwned(disk, ROLE_DISK)
+        val bytes = helper(disk, "snapshot", snapshot.value, reserveMb.toString(), timeout = COPY_TIMEOUT)
+
+        return checkNotNull(bytes.toLongOrNull()) { "The home disk helper returned `$bytes` instead of a size" }
+    }
+
+    override suspend fun restore(sandbox: SandboxId, snapshot: SnapshotId) {
+        val disk = diskVolume(sandbox)
+        requireOwned(disk, ROLE_DISK)
+        helper(disk, "restore", snapshot.value, reserveMb.toString(), timeout = COPY_TIMEOUT)
+    }
+
+    override suspend fun clone(source: SandboxId, snapshot: SnapshotId, target: SandboxId) {
+        val from = diskVolume(source)
+        requireOwned(from, ROLE_DISK)
+        createDisk(target)
+        helper(diskVolume(target), "clone", snapshot.value, reserveMb.toString(), source = from, timeout = COPY_TIMEOUT)
+    }
+
+    override suspend fun deleteSnapshot(sandbox: SandboxId, snapshot: SnapshotId) {
+        val disk = diskVolume(sandbox)
+        if (!exists(disk)) return
+        requireOwned(disk, ROLE_DISK)
+        helper(disk, "drop", snapshot.value)
     }
 
     override suspend fun close(sandbox: SandboxId) {
@@ -102,11 +123,32 @@ class HomeDisks(
         return (bytes / (1024 * 1024)).toInt()
     }
 
-    private suspend fun helper(disk: String, vararg args: String): String {
-        val result = docker.run(helpers.homeDisk(disk, *args))
+    private suspend fun createDisk(sandbox: SandboxId) {
+        val disk = diskVolume(sandbox)
+
+        if (!exists(disk)) {
+            docker.run(
+                listOf(
+                    "volume", "create",
+                    "--label", namespaceLabel, "--label", "$ROLE_LABEL=$ROLE_DISK", "--label", "${ContainerSpec.LABEL_PREFIX}.sandbox=$sandbox",
+                    disk,
+                ),
+            )
+                .requireOk("Creating home disk volume $disk")
+        }
+
+        requireOwned(disk, ROLE_DISK)
+    }
+
+    private suspend fun helper(disk: String, vararg args: String, source: String? = null, timeout: Duration = HELPER_TIMEOUT): String {
+        val result = docker.run(helpers.homeDisk(disk, *args, source = source), timeout = timeout)
 
         if (!result.ok && "not enough host space" in result.stderr) {
-            throw RegolithError.Unavailable("The host has no room for this home")
+            val what = if (args.first() == "prepare") "this home" else "a copy of this home"
+            throw RegolithError.Unavailable("The host has no room for $what")
+        }
+        if (!result.ok && "attached to a session" in result.stderr) {
+            throw RegolithError.Busy("The home is in use by a session")
         }
 
         return result.requireOk("Home disk helper ${args.first()} on $disk").text.trim()
@@ -139,5 +181,9 @@ class HomeDisks(
         const val ROLE_DISK = "home-disk"
         const val ROLE_MOUNT = "home-mount"
         val LOOP_DEVICE = Regex("/dev/loop[0-9]+")
+        val HELPER_TIMEOUT = 2.minutes
+
+        // a copy runs at the speed of the disk, and a home can be as large as the server allows.
+        val COPY_TIMEOUT = 30.minutes
     }
 }

@@ -18,7 +18,8 @@ object SandboxLayout {
  * Its running container is a session, tracked separately, and a sandbox outlives as many sessions as
  * it is used for. [site] is where its published files are served and until when, while any are.
  * [homeReleasedAt] is when retention took the home of a sandbox kept for its site; the next use
- * starts an empty one and clears it.
+ * starts an empty one and clears it. [snapshots] are copies of the home kept beside it, oldest first,
+ * and go wherever the home goes.
  */
 @Serializable
 data class Sandbox(
@@ -34,6 +35,7 @@ data class Sandbox(
     val createdAt: Instant,
     val lastUsedAt: Instant,
     val homeReleasedAt: Instant? = null,
+    val snapshots: List<Snapshot> = emptyList(),
 ) {
 
     /**
@@ -51,6 +53,18 @@ data class Sandbox(
      */
     fun liveSite(now: Instant): Site? = site?.takeIf { now < it.until }
 }
+
+/**
+ * A copy of a sandbox's home taken between sessions. [bytes] is what it takes on the host; [homeMb] is the
+ * size of the home it was taken of, which a home restored or cloned from it starts at.
+ */
+@Serializable
+data class Snapshot(
+    val id: SnapshotId,
+    val createdAt: Instant,
+    val bytes: Long,
+    val homeMb: Int,
+)
 
 /** A published site: the [label] it is served at, and [until] when the server takes it down. */
 @Serializable

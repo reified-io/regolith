@@ -7,6 +7,7 @@ import io.reified.regolith.server.domain.FileEntry
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.SnapshotId
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.Path
@@ -209,6 +210,20 @@ interface HomeStore {
 
     /** Size of the sandbox's existing home in MB, or null when it has none. */
     suspend fun sizeMb(sandbox: SandboxId): Int?
+
+    /**
+     * Copies the sandbox's home, which no session has open, into [snapshot] beside it, and returns the
+     * bytes the copy takes on the host: the blocks its filesystem uses, not its size.
+     */
+    suspend fun snapshot(sandbox: SandboxId, snapshot: SnapshotId): Long
+
+    /** Replaces the sandbox's home, which no session has open, with a copy of [snapshot]. */
+    suspend fun restore(sandbox: SandboxId, snapshot: SnapshotId)
+
+    /** Makes [target]'s home, which does not exist yet, a copy of [source]'s [snapshot]. */
+    suspend fun clone(source: SandboxId, snapshot: SnapshotId, target: SandboxId)
+
+    suspend fun deleteSnapshot(sandbox: SandboxId, snapshot: SnapshotId)
 }
 
 /** The host-level network policy under every session. */

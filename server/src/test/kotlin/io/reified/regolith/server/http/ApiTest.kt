@@ -28,10 +28,13 @@ import io.reified.regolith.protocol.Resources
 import io.reified.regolith.protocol.ResourcesSpec
 import io.reified.regolith.protocol.OutputKind
 import io.reified.regolith.protocol.SandboxState
+import io.reified.regolith.protocol.SnapshotSource
 import io.reified.regolith.protocol.UpdateSandboxRequest
 import io.reified.regolith.sdk.RegolithException
 import io.reified.regolith.server.app.Health
 import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.SnapshotId
+import io.reified.regolith.server.support.FakeHomes
 import io.reified.regolith.server.support.TEST_TOKEN
 import io.reified.regolith.server.support.apiTest
 import kotlinx.coroutines.flow.toList
@@ -451,6 +454,65 @@ class ApiTest {
             }
             assertEquals(ErrorCodes.INVALID_REQUEST, refused.code)
         }
+    }
+
+    @Test
+    fun `a snapshot stops the session, and restoring it brings the home back as it was`() = apiTest { server, client ->
+        val sandbox = client.getOrCreate("snapshots")
+        val name = SandboxId.parse(sandbox.id)
+        val running = sandbox.startExec(ExecRequest(shell = "sleep"))
+
+        val snapshot = sandbox.snapshot()
+
+        assertEquals(OutcomeType.INTERRUPTED, running.await().outcome?.type)
+        assertEquals(SandboxState.STOPPED, sandbox.get().state)
+        assertEquals(listOf(snapshot), sandbox.snapshots())
+        assertEquals(FakeHomes.SNAPSHOT_BYTES, snapshot.bytes)
+        assertEquals(sandbox.get().resources.homeMb, snapshot.homeMb)
+        assertEquals(5, client.info().limits.maxSnapshots)
+
+        sandbox.start()
+        val restored = sandbox.restore(snapshot.id)
+        assertEquals(SandboxState.STOPPED, restored.state)
+        assertEquals(listOf(name to SnapshotId.parse(snapshot.id)), server.homes.restored)
+
+        sandbox.deleteSnapshot(snapshot.id)
+        assertEquals(emptyList(), sandbox.snapshots())
+        val gone = assertFailsWith<RegolithException> { sandbox.restore(snapshot.id) }
+        assertEquals(ErrorCodes.NOT_FOUND, gone.code)
+    }
+
+    @Test
+    fun `a sandbox keeps only as many snapshots as the server allows`() = apiTest(mapOf("REGOLITH_MAX_SNAPSHOTS" to "2")) { _, client ->
+        val sandbox = client.getOrCreate("kept")
+        repeat(2) { sandbox.snapshot() }
+
+        val refused = assertFailsWith<RegolithException> { sandbox.snapshot() }
+
+        assertEquals(ErrorCodes.CONFLICT, refused.code)
+        sandbox.deleteSnapshot(sandbox.snapshots().first().id)
+        sandbox.snapshot()
+        assertEquals(2, sandbox.snapshots().size)
+    }
+
+    @Test
+    fun `a new sandbox starts from a snapshot of another, with a home at least that large`() = apiTest { server, client ->
+        val origin = client.getOrCreate("origin", CreateSandboxRequest(resources = ResourcesSpec(homeMb = 8192)))
+        origin.start()
+        val snapshot = origin.snapshot()
+        val from = SnapshotSource(origin.id, snapshot.id)
+
+        val copy = client.create(CreateSandboxRequest(from = from))
+
+        assertEquals(8192, copy.get().resources.homeMb)
+        assertEquals(8192, server.homes.disks[SandboxId.parse(copy.id)])
+        val small = assertFailsWith<RegolithException> { client.create(CreateSandboxRequest(from = from, resources = ResourcesSpec(homeMb = 4096))) }
+        assertEquals(ErrorCodes.INVALID_REQUEST, small.code)
+        val missing = assertFailsWith<RegolithException> { client.create(CreateSandboxRequest(from = SnapshotSource(origin.id, copy.id))) }
+        assertEquals(ErrorCodes.NOT_FOUND, missing.code)
+
+        origin.delete()
+        assertTrue(server.homes.snapshots.isEmpty(), "snapshots go with their home")
     }
 
     @Test

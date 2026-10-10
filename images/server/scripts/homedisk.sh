@@ -7,7 +7,15 @@
 #                                            print the device
 #   homedisk.sh release                      detach every loop device attached to the image
 #   homedisk.sh size                         print the image size in bytes, or nothing without an image
+#   homedisk.sh snapshot ID RESERVE_MB       copy the detached home into snapshot ID, print the bytes it takes
+#   homedisk.sh restore ID RESERVE_MB        replace the detached home with a copy of snapshot ID
+#   homedisk.sh clone ID RESERVE_MB          make this home, which has no image yet, a copy of snapshot ID of
+#                                            the home whose backing volume is mounted read-only at /source
+#   homedisk.sh drop ID                      delete snapshot ID
 #   homedisk.sh probe                        print the next free loop device; needs no volume
+#
+# a snapshot is a sparse copy of the image in /storage/snapshots, beside the home it was taken of, so it
+# goes wherever that home goes.
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
@@ -20,6 +28,65 @@ fi
 exec 9>/storage/lock
 flock -x 9
 image=/storage/home.ext4
+
+snapshot_id() {
+  [[ "${1:-}" =~ ^[0-9a-f]{32}$ ]] || exit 2
+  echo "$1"
+}
+
+reserve_arg() {
+  [[ "${1:-}" =~ ^[0-9]+$ ]] || exit 2
+  echo "$1"
+}
+
+# a copy of a mounted filesystem is a copy of nothing in particular, so the home must have no attachment.
+detached() {
+  [[ -f "$image" && ! -L "$image" ]] || {
+    echo "this home has no image" >&2
+    exit 1
+  }
+  if [[ -n "$(losetup --associated "$image" --noheadings --output NAME)" ]]; then
+    echo "the home is attached to a session" >&2
+    exit 1
+  fi
+}
+
+# room for BYTES more and the reserve beside them.
+room() {
+  local bytes="$1" reserve="$2" available block_size
+  read -r available block_size < <(stat -f -c '%a %S' /storage)
+  (( available * block_size >= bytes + reserve * 1024 * 1024 )) || {
+    echo "not enough host space for the copy and the ${reserve} MB reserve" >&2
+    exit 1
+  }
+}
+
+# the home made anew from a snapshot, preallocated the way prepare makes a fresh one.
+materialize() {
+  local source="$1" size
+  size=$(stat -c %s "$source")
+  trap 'rm -f /storage/home.new' EXIT
+  rm -f /storage/home.new
+  touch /storage/home.new
+  if [[ "$(stat -f -c %T /storage)" == btrfs ]]; then
+    chattr +C /storage/home.new
+  fi
+  cp --sparse=always "$source" /storage/home.new
+  # the holes a snapshot keeps are allocated again, so the home stays a real size rather than a promise.
+  fallocate -l "$size" /storage/home.new
+  chmod 600 /storage/home.new
+  mv /storage/home.new "$image"
+  trap - EXIT
+}
+
+snapshot_of() {
+  local snapshot="$1"
+  [[ -f "$snapshot" && ! -L "$snapshot" ]] || {
+    echo "no such snapshot" >&2
+    exit 1
+  }
+  echo "$snapshot"
+}
 
 case "${1:-}" in
   prepare)
@@ -87,6 +154,56 @@ case "${1:-}" in
 
   size)
     if [[ -f "$image" && ! -L "$image" ]]; then stat -c %s "$image"; fi
+    ;;
+
+  snapshot)
+    id="$(snapshot_id "${2:-}")"
+    reserve="$(reserve_arg "${3:-}")"
+    detached
+    # the copy holds the blocks the filesystem uses; e2image leaves every free one a hole.
+    read -r blocks free fs_block_size < <(dumpe2fs -h "$image" 2>/dev/null | awk -F: '
+      /^Block count:/ { gsub(/ /, "", $2); count = $2 }
+      /^Free blocks:/ { gsub(/ /, "", $2); free = $2 }
+      /^Block size:/ { gsub(/ /, "", $2); bsize = $2 }
+      END { print count, free, bsize }')
+    [[ "$blocks" =~ ^[0-9]+$ && "$free" =~ ^[0-9]+$ && "$fs_block_size" =~ ^[0-9]+$ ]] || exit 1
+    room $(( (blocks - free) * fs_block_size )) "$reserve"
+    mkdir -p /storage/snapshots
+    trap 'rm -f "/storage/snapshots/$id.new"' EXIT
+    rm -f "/storage/snapshots/$id.new"
+    e2image -ra "$image" "/storage/snapshots/$id.new" >&2
+    chmod 600 "/storage/snapshots/$id.new"
+    mv "/storage/snapshots/$id.new" "/storage/snapshots/$id.ext4"
+    trap - EXIT
+    # what the copy takes on the host: its allocated blocks, not its apparent size.
+    read -r allocated unit < <(stat -c '%b %B' "/storage/snapshots/$id.ext4")
+    echo $(( allocated * unit ))
+    ;;
+
+  restore)
+    id="$(snapshot_id "${2:-}")"
+    reserve="$(reserve_arg "${3:-}")"
+    detached
+    snapshot="$(snapshot_of "/storage/snapshots/$id.ext4")"
+    room "$(stat -c %s "$snapshot")" "$reserve"
+    materialize "$snapshot"
+    ;;
+
+  clone)
+    id="$(snapshot_id "${2:-}")"
+    reserve="$(reserve_arg "${3:-}")"
+    [[ ! -e "$image" ]] || {
+      echo "this home already has an image" >&2
+      exit 1
+    }
+    snapshot="$(snapshot_of "/source/snapshots/$id.ext4")"
+    room "$(stat -c %s "$snapshot")" "$reserve"
+    materialize "$snapshot"
+    ;;
+
+  drop)
+    id="$(snapshot_id "${2:-}")"
+    rm -f "/storage/snapshots/$id.ext4" "/storage/snapshots/$id.new"
     ;;
 
   release)

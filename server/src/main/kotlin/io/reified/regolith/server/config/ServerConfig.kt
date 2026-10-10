@@ -58,6 +58,7 @@ data class ServerConfig(
         val maxOutputBytes: Long,
         val maxLabels: Int,
         val maxExecsPerSandbox: Int,
+        val maxSnapshots: Int,
         val execsRetained: Int,
         val unattendedCpu: Duration,
     )
@@ -95,6 +96,7 @@ data class ServerConfig(
                 maxOutputBytes = read.int("REGOLITH_MAX_OUTPUT_MB", 8) * MIB,
                 maxLabels = 32,
                 maxExecsPerSandbox = read.int("REGOLITH_MAX_EXECS_PER_SANDBOX", 8),
+                maxSnapshots = read.int("REGOLITH_MAX_SNAPSHOTS", 5),
                 execsRetained = 50,
                 unattendedCpu = read.int("REGOLITH_UNATTENDED_CPU_SECONDS", 600).seconds,
             )

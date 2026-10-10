@@ -34,6 +34,7 @@ import io.reified.regolith.server.app.Services
 import io.reified.regolith.server.domain.ExecId
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.SnapshotId
 import io.ktor.server.request.receiveChannel
 import kotlinx.io.readByteArray
 import kotlinx.serialization.KSerializer
@@ -176,6 +177,8 @@ internal suspend fun <T> ApplicationCall.jsonBody(serializer: KSerializer<T>, em
 internal fun ApplicationCall.sandboxId(): SandboxId = SandboxId.parse(parameters["id"].orEmpty())
 
 internal fun ApplicationCall.execId(): ExecId = ExecId.parse(parameters["exec"].orEmpty())
+
+internal fun ApplicationCall.snapshotId(): SnapshotId = SnapshotId.parse(parameters["snapshot"].orEmpty())
 
 /** The `maxBytes` a caller set: a positive whole number, or null when it set none. */
 internal fun ApplicationCall.maxBytesParameter(): Long? {

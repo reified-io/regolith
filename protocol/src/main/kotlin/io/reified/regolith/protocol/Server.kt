@@ -43,6 +43,8 @@ public data class ServerLimits(
     val maxOutputBytes: Long,
     val maxLabels: Int,
     val unattendedCpuSeconds: Int,
+    /** How many snapshots one sandbox keeps; `0` from a server that takes none. */
+    val maxSnapshots: Int = 0,
 )
 
 @Serializable

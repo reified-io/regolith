@@ -15,11 +15,13 @@ import io.reified.regolith.protocol.ServerDefaults
 import io.reified.regolith.protocol.ServerLimits
 import io.reified.regolith.protocol.SessionEndInfo
 import io.reified.regolith.protocol.SessionInfo
+import io.reified.regolith.protocol.SnapshotInfo
 import io.reified.regolith.server.app.ExecRequest
 import io.reified.regolith.server.app.LifecycleRequest
 import io.reified.regolith.server.app.ResourcesRequest
 import io.reified.regolith.server.app.SandboxPatch
 import io.reified.regolith.server.app.SandboxRequest
+import io.reified.regolith.server.app.SnapshotRef
 import io.reified.regolith.server.app.ServedSite
 import io.reified.regolith.server.app.Sessions
 import io.reified.regolith.server.config.ServerConfig
@@ -39,6 +41,9 @@ import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Sandbox
+import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.Snapshot
+import io.reified.regolith.server.domain.SnapshotId
 import io.reified.regolith.server.domain.SessionEnd
 import io.reified.regolith.server.domain.StopReason
 import io.reified.regolith.server.domain.requireValid
@@ -146,7 +151,10 @@ internal fun WireCreateSandbox.toDomain() = SandboxRequest(
     lifecycle = lifecycle?.toDomain() ?: LifecycleRequest(),
     env = env,
     labels = labels,
+    from = from?.let { SnapshotRef(SandboxId.parse(it.sandbox), SnapshotId.parse(it.snapshot)) },
 )
+
+internal fun Snapshot.toWire() = SnapshotInfo(id.value, createdAt, bytes, homeMb)
 
 internal fun WireUpdateSandbox.toDomain() = SandboxPatch(
     alias = alias?.let(Alias::parse),
@@ -256,6 +264,7 @@ internal fun ServerConfig.Limits.toWire(images: List<String>) = ServerLimits(
     maxOutputBytes = maxOutputBytes,
     maxLabels = maxLabels,
     unattendedCpuSeconds = unattendedCpu.inWholeSeconds.toInt(),
+    maxSnapshots = maxSnapshots,
 )
 
 /** A published site as the API reports it, with the term the control plane keeps for it. */

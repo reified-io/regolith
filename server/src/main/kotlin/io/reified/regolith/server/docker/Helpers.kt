@@ -25,7 +25,8 @@ class Helpers(private val image: String, private val namespace: String) {
         image,
     ) + args
 
-    fun homeDisk(diskVolume: String, vararg args: String): List<String> = listOf(
+    /** The home disk helper on [diskVolume]; a clone also sees [source], another home's backing volume, read-only. */
+    fun homeDisk(diskVolume: String, vararg args: String, source: String? = null): List<String> = listOf(
         "run", "--rm", "--pull=never", "--no-healthcheck",
         "--label", label,
         "--network=none",
@@ -39,6 +40,7 @@ class Helpers(private val image: String, private val namespace: String) {
         "--device", "/dev/loop-control",
         "--mount", "type=bind,src=/dev,dst=/dev",
         "--mount", "type=volume,src=$diskVolume,dst=/storage",
+    ) + listOfNotNull(source?.let { "--mount" }, source?.let { "type=volume,src=$it,dst=/source,readonly" }) + listOf(
         "--entrypoint", "$SCRIPTS/homedisk.sh",
         image,
     ) + args

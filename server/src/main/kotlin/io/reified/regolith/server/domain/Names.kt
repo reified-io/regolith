@@ -91,6 +91,23 @@ value class ExecId private constructor(val value: String) {
     }
 }
 
+/** A server-generated identifier of one snapshot of a sandbox's home. */
+@Serializable(with = SnapshotIdSerializer::class)
+@JvmInline
+value class SnapshotId private constructor(val value: String) {
+    override fun toString(): String = value
+
+    companion object {
+        fun random(): SnapshotId = SnapshotId(randomId())
+
+        fun parse(raw: String): SnapshotId {
+            requireValid(ID_SHAPE.matches(raw)) { "Unknown snapshot id" }
+
+            return SnapshotId(raw)
+        }
+    }
+}
+
 /*
  * one shape for every identifier the server makes. the domain names no wire type, so `protocol.Ids`
  * states the same shape for clients and `DomainTest` holds the two together.

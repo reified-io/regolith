@@ -38,6 +38,10 @@ public data class ImagePolicy(val mode: ImageMode, val image: String? = null)
  * [alias] is the caller's own name for the sandbox — the identity it stands for, such as a user or a
  * project — and asking again with the same one returns that sandbox unchanged instead of making a
  * second. Without an alias, every call creates a sandbox the caller has to remember the id of.
+ *
+ * [from] starts the new sandbox's home as a copy of a snapshot of another sandbox. Only the home is
+ * copied; everything else comes from this request and the server defaults, and the home is at least
+ * as large as the one the snapshot was taken of.
  */
 @Serializable
 public data class CreateSandboxRequest(
@@ -48,6 +52,33 @@ public data class CreateSandboxRequest(
     val lifecycle: LifecycleSpec? = null,
     val env: Map<String, String> = emptyMap(),
     val labels: Map<String, String> = emptyMap(),
+    val from: SnapshotSource? = null,
+)
+
+/** A snapshot to start a home from: [snapshot] of the sandbox [sandbox], both ids the server gave. */
+@Serializable
+public data class SnapshotSource(
+    val sandbox: String,
+    val snapshot: String,
+)
+
+/**
+ * A copy of a sandbox's home, taken between sessions. [bytes] is what it takes on the server's disk,
+ * which grows with the files in the home rather than with its size; [homeMb] is the size of the home
+ * it was taken of.
+ */
+@Serializable
+public data class SnapshotInfo(
+    val id: String,
+    val createdAt: Instant,
+    val bytes: Long,
+    val homeMb: Int,
+)
+
+/** Body of `GET /v1/sandboxes/{id}/snapshots`, oldest first. */
+@Serializable
+public data class SnapshotPage(
+    val snapshots: List<SnapshotInfo>,
 )
 
 /**

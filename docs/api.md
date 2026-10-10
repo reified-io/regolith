@@ -20,6 +20,11 @@ wraps it.
 | `POST` | `/v1/sandboxes/{id}/start` | Start a session ahead of time |
 | `POST` | `/v1/sandboxes/{id}/stop` | End the session; the home stays |
 | `DELETE` | `/v1/sandboxes/{id}` | Delete the sandbox and its home |
+| **[Snapshots](#snapshots)** | | |
+| `POST` | `/v1/sandboxes/{id}/snapshots` | Copy the home into a snapshot |
+| `GET` | `/v1/sandboxes/{id}/snapshots` | Its snapshots |
+| `POST` | `/v1/sandboxes/{id}/snapshots/{snapshot}/restore` | Put a snapshot back in place of the home |
+| `DELETE` | `/v1/sandboxes/{id}/snapshots/{snapshot}` | Delete a snapshot |
 | **[Execs](#execs)** | | |
 | `POST` | `/v1/sandboxes/{id}/execs` | Start a command |
 | `GET` | `/v1/sandboxes/{id}/execs` | Recent commands |
@@ -153,7 +158,8 @@ hard-coding them.
     "maxFileBytes": 67108864,
     "maxOutputBytes": 8388608,
     "maxLabels": 32,
-    "unattendedCpuSeconds": 600
+    "unattendedCpuSeconds": 600,
+    "maxSnapshots": 5
   },
   "publishing": false
 }
@@ -210,7 +216,8 @@ The body may be empty; whatever it leaves out takes the default from `GET /v1/in
 }
 ```
 
-- That is the whole body: there is no other field, and an unknown one is
+- That is the whole body but `from`, which starts the home as a copy of a
+  [snapshot](#a-new-sandbox-from-a-snapshot): there is no other field, and an unknown one is
   [refused](#requests-and-responses). The values shown are the stock defaults — `GET /v1/info` gives
   the ones the server you are talking to actually uses — except `alias`, `env` and `labels`, which are
   empty unless you set them.
@@ -398,6 +405,61 @@ multicast and reserved IPv4 space, the host itself and outbound SMTP are unreach
 off. An allowlist entry that lies entirely inside that space is refused, and so is a domain that is
 an address, or a wildcard over a whole top-level domain such as `*.com`. A name that resolves into
 that space reaches nothing.
+
+## Snapshots
+
+A snapshot is a copy of a sandbox's home — every file in it — kept beside the home on the server. It
+takes the space of what the home holds, not of its size. A sandbox keeps up to `limits.maxSnapshots`
+of them, and they go wherever its home goes: deleting the sandbox, or retention taking its home,
+takes its snapshots too.
+
+### `POST /v1/sandboxes/{id}/snapshots`
+
+Copies the home and answers `201` with the snapshot:
+
+```json
+{"id": "9a0c4e1b7d2f4a6c8e0b1d3f5a7c9e2b", "createdAt": "2026-09-13T12:10:00Z", "bytes": 52428800, "homeMb": 4096}
+```
+
+A home is copied only while nothing has it open, so a running session is stopped first, as `stop`
+would, and its commands end `interrupted` with `stopped`; the next command starts a new session on
+the same home. A request for this sandbox sent while the copy runs waits for it. `bytes` is what the
+snapshot takes on the server's disk, and `homeMb` the size of the home it was taken of. A sandbox
+that never ran is given the empty home it would have started with.
+
+Past `limits.maxSnapshots` it answers `409 conflict`: delete one first. A copy that would leave the
+host short of its reserve is `503 unavailable`.
+
+### `GET /v1/sandboxes/{id}/snapshots`
+
+Answers `{"snapshots": [...]}`, oldest first.
+
+### `POST /v1/sandboxes/{id}/snapshots/{snapshot}/restore`
+
+Replaces the home with a copy of the snapshot, stopping a running session first, and answers
+`SandboxInfo`. Everything written since the snapshot was taken is gone; the snapshot stays, to be
+restored again. The home takes the size it had then, and grows back to the sandbox's `homeMb` at the
+next session.
+
+### `DELETE /v1/sandboxes/{id}/snapshots/{snapshot}`
+
+Deletes the snapshot and answers `204`; the home and the other snapshots stay.
+
+### A new sandbox from a snapshot
+
+`POST /v1/sandboxes` with `from` starts the new sandbox's home as a copy of a snapshot, and answers
+once the copy is done:
+
+```json
+{"alias": "user-23-attempt-2", "from": {"sandbox": "5f2b9c7d1e3a4f6b8c0d2e4f6a8b0c1d", "snapshot": "9a0c4e1b7d2f4a6c8e0b1d3f5a7c9e2b"}}
+```
+
+Only the home comes from the snapshot. Its image, network, environment and everything else come from
+the request and the server's defaults, as for any new sandbox. The home is at least as large as the
+one the snapshot was taken of: without `resources.homeMb` it takes the larger of that and the
+default, and a smaller `homeMb` is `invalid_request`. It is the new sandbox's own from then on —
+nothing done in it reaches the snapshot or the sandbox it came from, and either can be deleted
+without the other.
 
 ## Execs
 
@@ -679,6 +741,6 @@ publishing again gives the sandbox a new address.
 ## Not in v1
 
 Left out on purpose, each with room in the protocol: credential brokering in network policy, a
-start command with a readiness probe, filesystem snapshots and clones, preview URLs for ports, an
-archived state for idle homes, lifecycle webhooks, PTY over WebSocket, and an MCP adapter.
+start command with a readiness probe, preview URLs for ports, an archived state for idle homes,
+lifecycle webhooks, PTY over WebSocket, and an MCP adapter.
 [Architecture](architecture.md#what-v1-leaves-out) sketches how each would fit.

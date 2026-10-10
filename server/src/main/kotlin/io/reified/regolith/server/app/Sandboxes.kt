@@ -14,11 +14,15 @@ import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxId
 import io.reified.regolith.server.domain.Site
 import io.reified.regolith.server.domain.SiteLabel
+import io.reified.regolith.server.domain.Snapshot
+import io.reified.regolith.server.domain.SnapshotId
 import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.ports.HomeStore
 import io.reified.regolith.server.ports.SitePublisher
 import io.reified.regolith.server.ports.StateStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -35,7 +39,11 @@ data class SandboxRequest(
     val lifecycle: LifecycleRequest = LifecycleRequest(),
     val env: Map<String, String> = emptyMap(),
     val labels: Map<String, String> = emptyMap(),
+    val from: SnapshotRef? = null,
 )
+
+/** A snapshot of one sandbox, which a new sandbox's home can start as a copy of. */
+data class SnapshotRef(val sandbox: SandboxId, val snapshot: SnapshotId)
 
 data class LifecycleRequest(val idleStop: Duration? = null, val maxSession: Duration? = null, val retain: Duration? = null)
 
@@ -119,7 +127,13 @@ class Sandboxes(
         val limits = config.limits
         val imagePolicy = request.imagePolicy ?: ImagePolicy.Default
         config.images.requireAllowed(imagePolicy)
-        val resources = resources(defaults.resources, ResourcesRequest(request.cpus, request.memoryMb, request.homeMb))
+        val origin = request.from?.let { snapshotOf(require(it.sandbox), it.snapshot) }
+        // a home made from a snapshot starts at least as large as the home the snapshot was taken of.
+        val base = origin?.let { defaults.resources.copy(homeMb = maxOf(defaults.resources.homeMb, it.homeMb)) } ?: defaults.resources
+        val resources = resources(base, ResourcesRequest(request.cpus, request.memoryMb, request.homeMb))
+        requireValid(origin == null || resources.homeMb >= origin.homeMb) {
+            "homeMb is at least ${origin?.homeMb}, the size of the home the snapshot was taken of"
+        }
         Metadata.requireEnv(request.env)
         Metadata.requireLabels(request.labels, limits.maxLabels)
         val now = clock.now()
@@ -135,11 +149,24 @@ class Sandboxes(
             createdAt = now,
             lastUsedAt = now,
         )
+        request.from?.let { from -> cloneHome(from, sandbox.id) }
         store.save(sandbox)
         remember(sandbox)
-        log.info { "Sandbox created: sandbox=[${sandbox.id}] alias=[$alias]" }
+        log.info { "Sandbox created: sandbox=[${sandbox.id}] alias=[$alias] from=[${request.from?.let { "${it.sandbox}/${it.snapshot}" }}]" }
 
         return sandbox
+    }
+
+    /** The home of a sandbox not yet recorded, made a copy of [from]; nothing of it stays behind if that fails. */
+    private suspend fun cloneHome(from: SnapshotRef, target: SandboxId) = locks.withLock(from.sandbox) {
+        snapshotOf(require(from.sandbox), from.snapshot)
+
+        try {
+            homes.clone(from.sandbox, from.snapshot, target)
+        } catch (e: Exception) {
+            withContext(NonCancellable) { runCatching { homes.destroy(target) } }
+            throw e
+        }
     }
 
     /**
@@ -254,10 +281,67 @@ class Sandboxes(
         val due = sandbox.site != null && sandbox.homeReleasedAt == null && now >= sandbox.deleteAfter
         if (!due || sessions.get(id) != null) return@withLock
         homes.destroy(id)
-        val updated = sandbox.copy(homeReleasedAt = now)
+        // the snapshots lived beside the home and went with it.
+        val updated = sandbox.copy(homeReleasedAt = now, snapshots = emptyList())
         store.save(updated)
         remember(updated)
         log.info { "Home past retention released, site kept: sandbox=[$id] site=[${sandbox.site?.label}]" }
+    }
+
+    /**
+     * Copies the sandbox's home into a new snapshot. A home is copied only while nothing has it open, so the
+     * session is stopped first, and the next command starts a new one on the same home. A sandbox that never
+     * ran gets the empty home it would have started with, and its snapshot is of that.
+     */
+    suspend fun snapshot(id: SandboxId): Snapshot = locks.withLock(id) {
+        val sandbox = require(id)
+        val max = config.limits.maxSnapshots
+        if (sandbox.snapshots.size >= max) throw RegolithError.Conflict("A sandbox keeps at most $max snapshots; delete one first")
+        val snapshotId = SnapshotId.random()
+        execs.interrupt(id, StopReason.STOPPED)
+        val (bytes, homeMb) = sessions.stopped(id, StopReason.STOPPED) {
+            val size = homes.sizeMb(id) ?: homes.open(id, sandbox.resources.homeMb).let {
+                homes.close(id)
+                sandbox.resources.homeMb
+            }
+            homes.snapshot(id, snapshotId) to size
+        }
+        val now = clock.now()
+        val snapshot = Snapshot(snapshotId, now, bytes, homeMb)
+        saved(sandbox.copy(snapshots = sandbox.snapshots + snapshot, lastUsedAt = now, homeReleasedAt = null))
+        log.info { "Snapshot taken: sandbox=[$id] snapshot=[$snapshotId] bytes=[$bytes] homeMb=[$homeMb]" }
+        snapshot
+    }
+
+    /**
+     * Replaces the sandbox's home with a copy of one of its snapshots, stopping its session first. The home
+     * takes the size it had then, and grows back to the sandbox's own at the next session.
+     */
+    suspend fun restore(id: SandboxId, snapshot: SnapshotId): Sandbox = locks.withLock(id) {
+        val sandbox = require(id)
+        snapshotOf(sandbox, snapshot)
+        execs.interrupt(id, StopReason.STOPPED)
+        sessions.stopped(id, StopReason.STOPPED) { homes.restore(id, snapshot) }
+        log.info { "Home restored from a snapshot: sandbox=[$id] snapshot=[$snapshot]" }
+        saved(sandbox.copy(lastUsedAt = clock.now()))
+    }
+
+    suspend fun deleteSnapshot(id: SandboxId, snapshot: SnapshotId) = locks.withLock(id) {
+        val sandbox = require(id)
+        snapshotOf(sandbox, snapshot)
+        homes.deleteSnapshot(id, snapshot)
+        saved(sandbox.copy(snapshots = sandbox.snapshots.filterNot { it.id == snapshot }))
+        log.info { "Snapshot deleted: sandbox=[$id] snapshot=[$snapshot]" }
+    }
+
+    private fun snapshotOf(sandbox: Sandbox, snapshot: SnapshotId): Snapshot =
+        sandbox.snapshots.firstOrNull { it.id == snapshot } ?: throw RegolithError.NotFound("Snapshot `$snapshot` of sandbox `${sandbox.id}` does not exist")
+
+    private suspend fun saved(sandbox: Sandbox): Sandbox {
+        store.save(sandbox)
+        remember(sandbox)
+
+        return sandbox
     }
 
     /** Records where this sandbox's files are served and until when, or `null` once they no longer are. */

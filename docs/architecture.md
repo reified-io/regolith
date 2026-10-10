@@ -50,7 +50,7 @@ operator commands that are not the API. Both may use every layer, and no layer m
 | Port | Production adapter | What it owns |
 |---|---|---|
 | `SandboxRuntime` | `DockerRuntime` | Session containers, the commands in them, their files, network attachment |
-| `HomeStore` | `HomeDisks` | Fixed-size homes on loop devices |
+| `HomeStore` | `HomeDisks` | Fixed-size homes on loop devices, and their snapshots |
 | `NetworkEnforcer` | `HostFirewall` | The host network floor, each sandbox's policy, and the egress proxy behind domain rules |
 | `StateStore` | `FileStateStore` | Records and output logs |
 | `SitePublisher` | `PagesPublisher` | Releases sent to the pages role |
@@ -110,6 +110,13 @@ background process started by a finished command holds no lease, and ends with i
 **Changing the policy of a running session.** To `none`, the policy is released and the session
 detached. From `none`, the session is attached and the policy applied to its new address. Otherwise
 the policy is replaced in place.
+
+**Snapshots.** A snapshot, a restore and a new sandbox's home made from a snapshot all work on a
+home that nothing has open. `Sessions.stopped` ends the sandbox's session and holds the lock a new
+one would take until the copy is done, so a command sent meanwhile waits rather than attaching the
+home under the copy; the sandbox's own lock keeps the snapshot it names from being deleted under it.
+The record lists the snapshots; the copies themselves live in the home's disk volume, and a home
+that goes takes them with it.
 
 **Guards.** Two loops stop sessions from outside the request flow:
 
@@ -296,9 +303,8 @@ Each of these can be added without reshaping what exists:
   join it.
 - **A start command with a readiness probe** — a process started with every session, its output an
   ordinary exec, ready when a TCP port answers or a command succeeds.
-- **Filesystem snapshots and clones** — a home is one filesystem image, so a snapshot is a copy of
-  it.
-- **An archived state** — compress an idle home instead of keeping it preallocated.
+- **An archived state** — compress an idle home instead of keeping it preallocated; a snapshot's
+  sparse copy is most of the way there.
 - **Preview URLs** for ports, **lifecycle webhooks**, **PTY** over WebSocket, and an **MCP**
   adapter.
 - **A stronger runtime** (`runsc`, Kata) for session containers, selectable per server. Helpers keep

@@ -84,9 +84,13 @@ public class RegolithClient(
     public suspend fun getOrCreate(alias: String, request: CreateSandboxRequest = CreateSandboxRequest()): Sandbox =
         create(request.copy(alias = alias))
 
-    /** Creates a sandbox and returns it; without an alias in [request], a caller keeps its [Sandbox.id]. */
+    /**
+     * Creates a sandbox and returns it; without an alias in [request], a caller keeps its [Sandbox.id].
+     * With [CreateSandboxRequest.from], the call returns once the home has been copied from the snapshot.
+     */
     public suspend fun create(request: CreateSandboxRequest = CreateSandboxRequest()): Sandbox {
-        val info = call(HttpMethod.Post, "/v1/sandboxes", SandboxInfo.serializer()) {
+        val timeout = if (request.from != null) COPY_TIMEOUT_MILLIS else DEFAULT_TIMEOUT_MILLIS
+        val info = call(HttpMethod.Post, "/v1/sandboxes", SandboxInfo.serializer(), timeout) {
             with(this@RegolithClient) { jsonBody(CreateSandboxRequest.serializer(), request) }
         }
 
@@ -225,6 +229,9 @@ public class RegolithClient(
 
     internal companion object {
         const val DEFAULT_TIMEOUT_MILLIS = 120_000L
+
+        // a call that copies a home waits for the copy, which runs at the speed of the server's disk.
+        const val COPY_TIMEOUT_MILLIS = 30 * 60_000L
         const val MAX_ERROR_CHARS = 500
     }
 }

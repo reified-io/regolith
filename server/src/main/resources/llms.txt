@@ -32,6 +32,7 @@ file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 
   on any port, and domains (`pypi.org`, `*.pythonhosted.org`), reached over HTTP and HTTPS on ports 80
   and 443. With any domain listed, only covered names resolve. Private addresses, the host and SMTP are
   never reachable.
+- A snapshot copies the home; restoring it undoes everything since. Take one before a risky change.
 - Limits come from `GET /v1/info`; do not assume them.
 
 ## Sandboxes
@@ -43,6 +44,14 @@ file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 
 - `POST /v1/sandboxes/{id}/start`, `POST /v1/sandboxes/{id}/stop`
 - `DELETE /v1/sandboxes/{id}` - deletes the home and any published site too; there is no undo.
 - `network` allowlist: `{"mode":"allowlist","allow":[{"cidr":"140.82.112.0/20"},{"domain":"*.example.com"}]}`, each entry one of `cidr` and `domain`. A refused HTTPS connection ends with a TLS `unrecognized_name` alert, a refused HTTP request is a 403 naming the host, and a name no domain covers does not resolve.
+
+## Snapshots
+
+- `POST /v1/sandboxes/{id}/snapshots` - copies the home and returns 201 `{"id","createdAt","bytes","homeMb"}`. It stops the running session first (its commands end `interrupted`); the next command starts a new one on the same home. At most `limits.maxSnapshots` per sandbox, else `conflict`.
+- `GET /v1/sandboxes/{id}/snapshots` - `{"snapshots":[...]}`, oldest first.
+- `POST /v1/sandboxes/{id}/snapshots/{snapshot}/restore` - puts the snapshot back in place of the home, losing everything written since; the snapshot stays.
+- `DELETE /v1/sandboxes/{id}/snapshots/{snapshot}`
+- `POST /v1/sandboxes` with `"from":{"sandbox":"<id>","snapshot":"<id>"}` - a new sandbox whose home starts as a copy of that snapshot; everything else comes from the request.
 
 ## Commands
 

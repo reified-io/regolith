@@ -33,6 +33,8 @@ internal object SiteLabelSerializer : ParsedSerializer<SiteLabel>("SiteLabel", S
 
 internal object ExecIdSerializer : ParsedSerializer<ExecId>("ExecId", ExecId::parse, ExecId::value)
 
+internal object SnapshotIdSerializer : ParsedSerializer<SnapshotId>("SnapshotId", SnapshotId::parse, SnapshotId::value)
+
 internal object CidrSerializer : ParsedSerializer<Cidr>("Cidr", Cidr::parse, Cidr::value)
 
 internal object DomainRuleSerializer : ParsedSerializer<DomainRule>("DomainRule", DomainRule::parse, DomainRule::value)

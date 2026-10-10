@@ -14,6 +14,7 @@ import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.SnapshotId
 import io.reified.regolith.server.domain.StopReason
 import io.reified.regolith.server.ports.ExecSpec
 import kotlinx.coroutines.NonCancellable
@@ -46,6 +47,7 @@ class HostIntegrationTest {
     private val namespace = "regolith-host-it"
     private val docker = DockerCli("docker")
     private val name = SandboxId.random()
+    private val twin = SandboxId.random()
     private val serverImage = System.getenv("REGOLITH_HOST_TEST_IMAGE")?.ifBlank { null } ?: "regolith-server:it"
 
     @Test
@@ -70,8 +72,8 @@ class HostIntegrationTest {
             val sandbox = Sandbox(name, alias = null, site = null, ImagePolicy.Default, Resources(1.0, 512, 256), NetworkPolicy.Public, Lifecycle(5.minutes, 1.days, 1.days), emptyMap(), emptyMap(), now, now)
             var network: io.reified.regolith.server.ports.SandboxNetwork? = null
 
-            suspend fun sh(script: String): String {
-                val process = runtime.exec(name, ExecSpec(ExecId.random(), ExecCommand.Shell("{ $script\n} 2>&1"), "/home/sandbox", emptyMap(), stdin = false))
+            suspend fun sh(script: String, sandbox: SandboxId = name): String {
+                val process = runtime.exec(sandbox, ExecSpec(ExecId.random(), ExecCommand.Shell("{ $script\n} 2>&1"), "/home/sandbox", emptyMap(), stdin = false))
                 withTimeout(120.seconds) { process.awaitExit() }
 
                 return process.stdout.readAllBytes().decodeToString().trim().also { process.detach() }
@@ -237,12 +239,41 @@ class HostIntegrationTest {
                 sessions.stop(name, StopReason.STOPPED)
                 assertEquals(512, homes.sizeMb(name))
                 assertTrue(runCatching { sessions.withLease(sandbox) {} }.isFailure, "a home is never shrunk to open it")
+
+                // a snapshot takes what the home uses, not its size, and restoring it undoes what came after.
+                val snapshot = SnapshotId.random()
+                val bytes = sessions.stopped(name, StopReason.STOPPED) { homes.snapshot(name, snapshot) }
+                assertTrue(bytes in 1 until 256L * 1024 * 1024, "a snapshot of a nearly empty 512 MB home takes $bytes bytes")
+                sessions.withLease(grown) { sh("rm /home/sandbox/kept.txt; echo later > /home/sandbox/later.txt") }
+                assertTrue(runCatching { homes.snapshot(name, SnapshotId.random()) }.isFailure, "a home in use is never copied")
+                sessions.stopped(name, StopReason.STOPPED) { homes.restore(name, snapshot) }
+                sessions.withLease(grown) {
+                    assertEquals("kept", sh("cat /home/sandbox/kept.txt"), "the restored home has what it had")
+                    assertTrue(sh("ls /home/sandbox").lines().none { it == "later.txt" }, "and nothing written since")
+                    val fill = sh("dd if=/dev/zero of=/home/sandbox/fill bs=1M count=600; echo exit=\$?")
+                    assertTrue("No space left on device" in fill && fill.endsWith("exit=1"), "a restored home is still bounded: $fill")
+                    sh("rm -f /home/sandbox/fill")
+                }
+
+                // another sandbox's home made from it, larger than the home it came from.
+                sessions.stop(name, StopReason.STOPPED)
+                homes.clone(name, snapshot, twin)
+                val copy = sandbox.copy(id = twin, resources = sandbox.resources.copy(homeMb = 768))
+                sessions.withLease(copy) {
+                    assertEquals("kept", sh("cat /home/sandbox/kept.txt", twin), "the clone has the snapshot's files")
+                    val size = sh("df --block-size=1M --output=size /home/sandbox | tail -1", twin).trim().toInt()
+                    assertTrue(size in 700..768, "the clone's home grew to $size MB")
+                }
+                sessions.stop(twin, StopReason.STOPPED)
+                homes.deleteSnapshot(name, snapshot)
+                assertTrue(runCatching { homes.restore(name, snapshot) }.isFailure, "a deleted snapshot is gone")
             } finally {
                 withContext(NonCancellable) {
                     // the one rule the test writes outside its own chains; gone already unless it failed midway.
                     network?.let { docker.run(tools("sh", "-c", "for t in iptables-nft iptables-legacy; do \$t -D INPUT -i \"\$1\" -j ACCEPT; done 2>/dev/null; true", "sh", it.bridge)) }
                     sessions.stopAll(StopReason.STOPPED)
                     runCatching { homes.destroy(name) }
+                    runCatching { homes.destroy(twin) }
                     docker.run(helpers.firewall("remove", FirewallRules.prefixFor(namespace)))
                     // the proxy would end with this process anyway, when its stdin closes.
                     docker.run(listOf("rm", "--force", "$namespace-egress"))

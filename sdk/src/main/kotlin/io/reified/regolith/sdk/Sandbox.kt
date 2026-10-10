@@ -23,6 +23,8 @@ import io.reified.regolith.protocol.OutputKind
 import io.reified.regolith.protocol.PublishRequest
 import io.reified.regolith.protocol.PublishedSite
 import io.reified.regolith.protocol.SandboxInfo
+import io.reified.regolith.protocol.SnapshotInfo
+import io.reified.regolith.protocol.SnapshotPage
 import io.reified.regolith.protocol.UpdateSandboxRequest
 import io.reified.regolith.protocol.UpdateSiteRequest
 import java.io.ByteArrayOutputStream
@@ -134,6 +136,30 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
     public suspend fun unpublish(): Boolean =
         absentAsNull { client.send(HttpMethod.Delete, "$path/site") } != null
 
+    /**
+     * Copies the home into a new snapshot and returns it once the copy is done. A home is copied only while
+     * nothing has it open, so a running session is stopped first, its commands ending `interrupted`; the next
+     * command starts a new session on the same home. `limits.maxSnapshots` in [RegolithClient.info] says how
+     * many a sandbox keeps.
+     */
+    public suspend fun snapshot(): SnapshotInfo =
+        client.call(HttpMethod.Post, "$path/snapshots", SnapshotInfo.serializer(), RegolithClient.COPY_TIMEOUT_MILLIS)
+
+    /** This sandbox's snapshots, oldest first. */
+    public suspend fun snapshots(): List<SnapshotInfo> = client.call(HttpMethod.Get, "$path/snapshots", SnapshotPage.serializer()).snapshots
+
+    /**
+     * Replaces the home with a copy of [snapshot], stopping a running session first. Everything written
+     * since the snapshot was taken is gone; the snapshot itself stays, to be restored again.
+     */
+    public suspend fun restore(snapshot: String): SandboxInfo =
+        client.call(HttpMethod.Post, "$path/snapshots/${snapshotId(snapshot)}/restore", SandboxInfo.serializer(), RegolithClient.COPY_TIMEOUT_MILLIS)
+
+    /** Deletes [snapshot]; the home and the other snapshots are untouched. */
+    public suspend fun deleteSnapshot(snapshot: String) {
+        client.send(HttpMethod.Delete, "$path/snapshots/${snapshotId(snapshot)}")
+    }
+
     /** A handle to an exec started earlier, for example by a previous process. */
     public fun exec(id: String): Exec {
         require(Ids.isId(id)) { "`$id` is not an exec id: ids are ${Ids.LENGTH} hex characters" }
@@ -143,6 +169,12 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
 
     /** Recent execs, newest first. */
     public suspend fun execs(): List<ExecInfo> = client.call(HttpMethod.Get, "$path/execs", ExecPage.serializer()).execs
+
+    private fun snapshotId(id: String): String {
+        require(Ids.isId(id)) { "`$id` is not a snapshot id: ids are ${Ids.LENGTH} hex characters" }
+
+        return id
+    }
 
     public companion object {
         public const val DEFAULT_MAX_OUTPUT_CHARS: Int = 1_000_000

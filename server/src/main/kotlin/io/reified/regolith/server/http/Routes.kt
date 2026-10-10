@@ -34,6 +34,7 @@ import io.reified.regolith.protocol.OutputPage
 import io.reified.regolith.protocol.PublishRequest
 import io.reified.regolith.protocol.RegolithJson
 import io.reified.regolith.protocol.SandboxPage
+import io.reified.regolith.protocol.SnapshotPage
 import io.reified.regolith.protocol.UpdateSandboxRequest
 import io.reified.regolith.protocol.UpdateSiteRequest
 import io.reified.regolith.server.app.Services
@@ -105,6 +106,22 @@ internal fun Route.sandboxRoutes(services: Services) = route("/sandboxes") {
         delete("/site") {
             services.sites.unpublish(call.sandboxId())
             call.respond(HttpStatusCode.NoContent)
+        }
+
+        route("/snapshots") {
+            get {
+                call.respond(SnapshotPage(services.sandboxes.require(call.sandboxId()).snapshots.map { it.toWire() }))
+            }
+            post {
+                call.respond(HttpStatusCode.Created, services.sandboxes.snapshot(call.sandboxId()).toWire())
+            }
+            delete("/{snapshot}") {
+                services.sandboxes.deleteSnapshot(call.sandboxId(), call.snapshotId())
+                call.respond(HttpStatusCode.NoContent)
+            }
+            post("/{snapshot}/restore") {
+                call.respond(info(services.sandboxes.restore(call.sandboxId(), call.snapshotId())))
+            }
         }
     }
 }

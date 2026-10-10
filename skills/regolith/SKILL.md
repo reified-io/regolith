@@ -137,6 +137,19 @@ curl -s -X POST -H "Authorization: Bearer $REGOLITH_TOKEN" -H 'Content-Type: app
 A refusal says what was refused: `curl` reports a TLS `unrecognized name` alert for HTTPS, an HTTP
 request gets a 403 naming the host, and a name off the list does not resolve.
 
+## Snapshots
+
+Take one before a change you may want to undo — a dependency upgrade, a migration, a risky refactor:
+
+- `POST /v1/sandboxes/{id}/snapshots` copies the home. It stops the running session first, so do not
+  take one while a command you need is still running.
+- `POST /v1/sandboxes/{id}/snapshots/{snapshot}/restore` puts the home back as it was then;
+  everything written since is gone. The snapshot stays, so you can try again from the same point.
+- `POST /v1/sandboxes` with `"from":{"sandbox":"<id>","snapshot":"<id>"}` starts a separate sandbox
+  from it, to try two approaches side by side.
+- A sandbox keeps `limits.maxSnapshots` of them: delete old ones with
+  `DELETE /v1/sandboxes/{id}/snapshots/{snapshot}`.
+
 ## Errors
 
 Errors are RFC 9457 problem documents. Branch on `code`, show `detail` to people:
