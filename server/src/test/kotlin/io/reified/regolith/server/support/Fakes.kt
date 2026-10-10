@@ -130,6 +130,18 @@ class FakeRuntime : SandboxRuntime {
         processes.values.filter { it.first == sandbox }.forEach { it.second.kill(137) }
     }
 
+    /**
+     * Ends a session's container the way a command that takes the idle process down with its own shell
+     * does: the commands die first, with [code], and the daemon reports the container stopped [lag] later.
+     */
+    fun exitContainerAfter(sandbox: SandboxId, code: Int, lag: Duration) {
+        processes.values.filter { it.first == sandbox }.forEach { it.second.kill(code) }
+        scope.launch {
+            delay(lag)
+            exited += sandbox
+        }
+    }
+
     override suspend fun exec(sandbox: SandboxId, spec: ExecSpec): RunningProcess {
         check(sandbox in sessions) { "No session for $sandbox" }
         val process = FakeProcess(spec.stdin) { limits.merge(sandbox, LimitEvents(1, 0)) { a, b -> LimitEvents(a.oomKills + b.oomKills, a.forksRefused) } }

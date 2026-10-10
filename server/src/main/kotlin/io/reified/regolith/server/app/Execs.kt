@@ -31,6 +31,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
@@ -51,6 +52,7 @@ import kotlin.contracts.contract
 import kotlin.io.path.createDirectories
 import kotlin.time.Clock
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /** What a caller asks to run; `null` takes the default. */
@@ -285,12 +287,12 @@ class Execs(
      * nothing else of the caller's running, has leftovers holding its pids limit — no command will start
      * there until the session is ended. A busy session is left alone: what fills it may be a real build.
      */
-    private suspend fun endIfSessionFailed(run: Running, limitsAtEnd: LimitEvents?) {
+    private suspend fun endIfSessionFailed(run: Running, code: Int, limitsAtEnd: LimitEvents?) {
         val sandbox = run.exec.sandbox
         val session = run.lease.session
 
         when {
-            exited(sandbox) -> endUnreachable(sandbox, session, StopReason.CONTAINER_EXITED)
+            exited(sandbox, patient = code > SIGNALED) -> endUnreachable(sandbox, session, StopReason.CONTAINER_EXITED)
             limitsAtEnd == null && run.limitsAtStart.await() == null &&
                 running.values.none { it !== run && it.lease.session === session } ->
                 endUnreachable(sandbox, session, StopReason.UNRESPONSIVE)
@@ -333,7 +335,7 @@ class Execs(
         // one that was canceled or timed out already says why, even when ending it took the container down.
         val failed = code != null && code != 0 && run.interruptedBy == null && !run.canceled && !timedOut
         val limitsAtEnd = if (failed) limitEventsOrNull(exec.sandbox) else null
-        if (failed) endIfSessionFailed(run, limitsAtEnd)
+        if (failed) endIfSessionFailed(run, checkNotNull(code), limitsAtEnd)
 
         val outcome = when {
             run.interruptedBy != null -> ExecOutcome.Interrupted(checkNotNull(run.interruptedBy))
@@ -443,8 +445,22 @@ class Execs(
         }
     }
 
-    /** Whether the session's container is gone. A check that fails answers no: doubt never ends a session. */
-    private suspend fun exited(sandbox: SandboxId): Boolean = try {
+    /**
+     * Whether the session's container is gone. [patient] asks a running one again for a moment: a command
+     * killed by a signal can end just before the container it took down is seen to stop — one that ends
+     * the idle process with `pkill` takes its own shell with it — and would pass for its own failure.
+     */
+    private suspend fun exited(sandbox: SandboxId, patient: Boolean = false): Boolean {
+        repeat(if (patient) EXIT_CHECKS else 1) { check ->
+            if (check > 0) delay(EXIT_CHECK_INTERVAL)
+            if (stopped(sandbox)) return true
+        }
+
+        return false
+    }
+
+    /** A check that fails answers no: doubt never ends a session. */
+    private suspend fun stopped(sandbox: SandboxId): Boolean = try {
         !runtime.isRunning(sandbox)
     } catch (e: CancellationException) {
         throw e
@@ -477,6 +493,13 @@ class Execs(
         val KILL_WAIT = 5.seconds
         val DRAIN = 2.seconds
         val SETTLE = 30.seconds
+
+        // an exit status above this is 128 and the signal that killed the process.
+        const val SIGNALED = 128
+
+        // measured: the daemon reports such a container stopped within 200 ms of the command's end.
+        const val EXIT_CHECKS = 11
+        val EXIT_CHECK_INTERVAL = 100.milliseconds
     }
 }
 

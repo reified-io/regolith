@@ -74,6 +74,32 @@ class LifecycleTest {
     }
 
     @Test
+    fun `a command that takes its container down with it is interrupted, though the daemon says so late`() = runBlocking {
+        TestServer().use { server ->
+            val sandbox = server.sandbox("slow-to-stop")
+            val name = sandbox.id
+            val running = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("sleep")), null)
+
+            server.runtime.exitContainerAfter(name, code = 143, lag = 300.milliseconds)
+
+            assertEquals(ExecOutcome.Interrupted(StopReason.CONTAINER_EXITED), server.execs.await(name, running.id, 10.seconds).outcome)
+            val next = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("echo hi")), null)
+            assertEquals(ExecOutcome.Exited(0), server.execs.await(name, next.id, 10.seconds).outcome)
+        }
+    }
+
+    @Test
+    fun `a command killed by a signal in a container that lives on stays its own failure`() = runBlocking {
+        TestServer().use { server ->
+            val sandbox = server.sandbox("signaled")
+            val exec = server.execs.start(sandbox, ExecRequest(ExecCommand.Shell("exit 143")), null)
+
+            assertEquals(ExecOutcome.Exited(143), server.execs.await(sandbox.id, exec.id, 10.seconds).outcome)
+            assertTrue(server.sessions.get(sandbox.id) != null)
+        }
+    }
+
+    @Test
     fun `a command started into a container that already exited reports the session ending, not itself`() = runBlocking {
         TestServer().use { server ->
             val sandbox = server.sandbox("dead")
