@@ -11,6 +11,7 @@ import io.reified.regolith.server.docker.HomeDisks
 import io.reified.regolith.server.domain.Cidr
 import io.reified.regolith.server.domain.PlatformFloor
 import io.reified.regolith.server.domain.RegolithError
+import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.ports.SitePublisher
 import io.reified.regolith.server.publish.PagesPublisher
 import io.reified.regolith.server.store.FileStateStore
@@ -47,6 +48,7 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
         }
 
         checks += ok("docker", "Docker ${version.text.trim()}")
+        val records = records()
         checks += attempt("docker-host") { dockerHost() }
         checks += attempt("cgroups") { cgroups() }
         val helpers = try {
@@ -59,7 +61,7 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
             checks += fail("helper-image", "${e.message}; set REGOLITH_HELPER_IMAGE to the server image")
             null
         }
-        checks += attempt("sandbox-images") { sandboxImages() }
+        checks += attempt("sandbox-images") { sandboxImages(records.orEmpty()) }
 
         if (helpers != null) {
             checks += attempt("netfilter") { netfilter(helpers) }
@@ -68,15 +70,24 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
         }
 
         checks += attempt("free-space") { freeSpace() }
-        checks += attempt("state") { state() }
+        checks += attempt("state") { withContext(Dispatchers.IO) { stateCheck(config.stateDir, config.namespace) } }
         if (helpers != null) checks += attempt("orphan-homes") { orphanHomes(helpers) }
-        checks += pagesCheck(config.pagesUrl, claimedSites()) { PagesPublisher(it, checkNotNull(config.pagesToken)) }
+        val claimed = records?.mapNotNull { it.site?.label?.value }?.toSet()
+        checks += pagesCheck(config.pagesUrl, claimed) { PagesPublisher(it, checkNotNull(config.pagesToken)) }
 
         return checks
     }
 
-    private suspend fun claimedSites(): Set<String> =
-        withContext(Dispatchers.IO) { FileStateStore.recorded(config.stateDir) }.mapNotNull { it.site?.label?.value }.toSet()
+    /** The recorded sandboxes, or null when this server cannot read them; the `state` check says why. */
+    private suspend fun records(): List<Sandbox>? = withContext(Dispatchers.IO) {
+        try {
+            FileStateStore.recorded(config.stateDir)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: RuntimeException) {
+            null
+        }
+    }
 
     private suspend fun dockerHost(): Check {
         val refusals = DockerHost.refusals(docker)
@@ -105,8 +116,8 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
      * Every image a session could start on: the allowed ones, and whatever the recorded sandboxes
      * resolve to — a sandbox pinned to an image that has since left the allowlist still runs it.
      */
-    private suspend fun sandboxImages(): Check {
-        val recorded = withContext(Dispatchers.IO) { FileStateStore.recorded(config.stateDir) }.associate { it.id.value to it.imagePolicy }
+    private suspend fun sandboxImages(sandboxes: List<Sandbox>): Check {
+        val recorded = sandboxes.associate { it.id.value to it.imagePolicy }
         val stranded = recorded.filterValues { config.images.resolveOrNull(it) == null }.keys
         val references = (config.images.allowed + recorded.values.mapNotNull { config.images.resolveOrNull(it) }).distinct()
         val missing = references.filterNot { docker.run(listOf("image", "inspect", "--format", "{{.Id}}", it)).ok }
@@ -174,19 +185,6 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
         }
     }
 
-    private suspend fun state(): Check = withContext(Dispatchers.IO) {
-        val root = config.stateDir
-        val pin = root.resolve("namespace")
-
-        when {
-            !root.exists() -> ok("state", "$root does not exist yet; the server creates it")
-            pin.exists() && pin.readText().trim() != config.namespace ->
-                fail("state", "$root belongs to namespace `${pin.readText().trim()}`, not `${config.namespace}`")
-            FileStateStore.inUse(root) -> ok("state", "$root is in use by a running server")
-            else -> ok("state", "$root holds ${FileStateStore.recordedIds(root).size} sandboxes; no server is using it")
-        }
-    }
-
     private suspend fun orphanHomes(helpers: Helpers): Check {
         val disks = HomeDisks(docker, helpers, config.namespace, config.stateDir, config.minFreeMb)
         val homes = disks.list().map { it.value }
@@ -219,19 +217,44 @@ class Doctor(private val config: ServerConfig, private val docker: DockerCli) {
 
     companion object {
         /**
+         * The state directory: its namespace, and whether this server can read every record in it. A record
+         * of another schema stops the server at its first one, so all of them are counted here, beside a
+         * live server of the version before as much as on a host about to start this one.
+         */
+        fun stateCheck(root: Path, namespace: String): Check {
+            val pin = root.resolve("namespace")
+            val behind = if (root.exists()) FileStateStore.schemas(root).filterKeys { it != FileStateStore.SCHEMA } else emptyMap()
+
+            return when {
+                !root.exists() -> ok("state", "$root does not exist yet; the server creates it")
+                pin.exists() && pin.readText().trim() != namespace ->
+                    fail("state", "$root belongs to namespace `${pin.readText().trim()}`, not `$namespace`")
+                behind.isNotEmpty() -> fail(
+                    "state",
+                    "${behind.values.sum()} records under $root/sandboxes have schema ${behind.keys.sorted().joinToString()}, " +
+                        "and this server reads schema ${FileStateStore.SCHEMA}; with the server stopped, move them as the notes of this release say",
+                )
+                FileStateStore.inUse(root) -> ok("state", "$root is in use by a running server")
+                else -> ok("state", "$root holds ${FileStateStore.recordedIds(root).size} sandboxes; no server is using it")
+            }
+        }
+
+        /**
          * Whether the pages role this server publishes to answers, accepts its token, and serves only sites
-         * a record in [claimed] holds. A warning, not a failure: the server starts either way, and only
+         * a record in [claimed] holds; with records this server cannot read, [claimed] is null and that
+         * last part is left out. A warning, not a failure: the server starts either way, and only
          * publishing is refused when the role is unreachable.
          */
-        suspend fun pagesCheck(url: String?, claimed: Set<String>, connect: (String) -> SitePublisher): Check {
+        suspend fun pagesCheck(url: String?, claimed: Set<String>?, connect: (String) -> SitePublisher): Check {
             if (url == null) return ok("pages", "No pages role configured; publish answers not_implemented")
             val publisher = connect(url)
 
             return try {
                 val limits = publisher.limits()
-                val orphans = OrphanSites(publisher).find(claimed)
+                val orphans = claimed?.let { OrphanSites(publisher).find(it) }.orEmpty()
                 if (orphans.isNotEmpty()) return warn("pages", OrphanSites.message(orphans))
-                ok("pages", "$url answers: up to ${limits.maxFiles} files and ${limits.maxSiteBytes / MIB} MB a site")
+                val unread = if (claimed == null) "; its sites were not compared with records this server cannot read" else ""
+                ok("pages", "$url answers: up to ${limits.maxFiles} files and ${limits.maxSiteBytes / MIB} MB a site$unread")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: RegolithError) {

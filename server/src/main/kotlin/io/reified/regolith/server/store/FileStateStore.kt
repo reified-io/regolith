@@ -13,6 +13,7 @@ import kotlinx.serialization.json.Json
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
+import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
@@ -104,6 +105,22 @@ class FileStateStore private constructor(private val root: Path, private val loc
 
         private const val SANDBOX_FILE = "sandbox.json"
         private val json = Json { encodeDefaults = true }
+        private val headers = Json { ignoreUnknownKeys = true }
+
+        @Serializable
+        private data class Header(val schema: Int)
+
+        /**
+         * How many records under [root] carry each schema, every exec record included, read without taking
+         * the lock and without decoding anything but the schema: what a server would refuse, told ahead.
+         */
+        fun schemas(root: Path): Map<Int, Int> {
+            val dir = root.resolve("sandboxes")
+            if (!dir.exists()) return emptyMap()
+            val records = Files.walk(dir).use { paths -> paths.filter { it.name.endsWith(".json") }.toList() }
+
+            return records.groupingBy { headers.decodeFromString(Header.serializer(), it.readText()).schema }.eachCount()
+        }
 
         /** Ids of the sandboxes recorded under [root], read without taking the lock. */
         fun recordedIds(root: Path): List<String> {
