@@ -28,8 +28,10 @@ file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 
 - A session starts on first use and stops when idle; `lastSessionEnd.reason` says why the last one ended.
   A process left in the background after its command ends stops with it, or sooner if it keeps using
   CPU: keep long work inside a command.
-- The network is `public`, `allowlist` (CIDRs) or `none` (no network, no DNS). Private addresses, the host
-  and SMTP are never reachable.
+- The network is `public`, `allowlist` or `none` (no network, no DNS). An allowlist lists CIDRs, reached
+  on any port, and domains (`pypi.org`, `*.pythonhosted.org`), reached over HTTP and HTTPS on ports 80
+  and 443. With any domain listed, only covered names resolve. Private addresses, the host and SMTP are
+  never reachable.
 - Limits come from `GET /v1/info`; do not assume them.
 
 ## Sandboxes
@@ -40,6 +42,7 @@ file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 
 - `PATCH /v1/sandboxes/{id}` - `alias`, `imagePolicy`, `network`, `lifecycle`, `env`, `labels`, `resources` (`homeMb` never below the size the home has); a network change applies to the running session at once, the rest from the next session. `imagePolicy` is `{"mode":"default"}`, `{"mode":"track","image":"<image without its tag>"}` or `{"mode":"pin","image":"<exact image>"}`, from `limits.images`.
 - `POST /v1/sandboxes/{id}/start`, `POST /v1/sandboxes/{id}/stop`
 - `DELETE /v1/sandboxes/{id}` - deletes the home and any published site too; there is no undo.
+- `network` allowlist: `{"mode":"allowlist","allow":[{"cidr":"140.82.112.0/20"},{"domain":"*.example.com"}]}`, each entry one of `cidr` and `domain`. A refused HTTPS connection ends with a TLS `unrecognized_name` alert, a refused HTTP request is a 403 naming the host, and a name no domain covers does not resolve.
 
 ## Commands
 

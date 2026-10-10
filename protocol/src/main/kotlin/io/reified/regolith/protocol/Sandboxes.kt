@@ -121,17 +121,28 @@ public enum class NetworkMode {
     ALLOWLIST,
 }
 
-/** A network policy; [allow] is meaningful only for [NetworkMode.ALLOWLIST]. */
+/**
+ * A network policy; [allow] is meaningful only for [NetworkMode.ALLOWLIST]. The server answers with
+ * the networks first and the domains after them, whatever order they were given in.
+ */
 @Serializable
 public data class NetworkPolicy(
     val mode: NetworkMode,
     val allow: List<NetworkAllow> = emptyList(),
 )
 
-/** One allowed destination. An object rather than a string, so domain rules can join it later. */
+/**
+ * One allowed destination, exactly one of [cidr] and [domain].
+ *
+ * [cidr] is an IPv4 network, reached directly on any port. [domain] is a name — `example.com` that
+ * name alone, `*.example.com` every name below it — reached over HTTP and HTTPS on ports 80 and 443
+ * through the server's egress proxy. Any domain in a policy also limits DNS: only names a domain rule
+ * covers resolve, so a listed network is then reached by its address.
+ */
 @Serializable
 public data class NetworkAllow(
-    val cidr: String,
+    val cidr: String? = null,
+    val domain: String? = null,
 )
 
 /** Whether a sandbox currently has a running session. */

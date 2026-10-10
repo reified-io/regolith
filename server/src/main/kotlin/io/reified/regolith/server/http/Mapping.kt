@@ -25,6 +25,7 @@ import io.reified.regolith.server.app.Sessions
 import io.reified.regolith.server.config.ServerConfig
 import io.reified.regolith.server.domain.Alias
 import io.reified.regolith.server.domain.Cidr
+import io.reified.regolith.server.domain.DomainRule
 import io.reified.regolith.server.domain.EntryType
 import io.reified.regolith.server.domain.Exec
 import io.reified.regolith.server.domain.ExecCommand
@@ -111,7 +112,10 @@ internal fun Lifecycle.toWire() = WireLifecycle(
 internal fun NetworkPolicy.toWire(): WireNetworkPolicy = when (this) {
     NetworkPolicy.Public -> WireNetworkPolicy(NetworkMode.PUBLIC)
     NetworkPolicy.None -> WireNetworkPolicy(NetworkMode.NONE)
-    is NetworkPolicy.Allowlist -> WireNetworkPolicy(NetworkMode.ALLOWLIST, cidrs.map { NetworkAllow(it.value) })
+    is NetworkPolicy.Allowlist -> WireNetworkPolicy(
+        NetworkMode.ALLOWLIST,
+        cidrs.map { NetworkAllow(cidr = it.value) } + domains.map { NetworkAllow(domain = it.value) },
+    )
 }
 
 internal fun WireNetworkPolicy.toDomain(): NetworkPolicy {
@@ -120,7 +124,10 @@ internal fun WireNetworkPolicy.toDomain(): NetworkPolicy {
     return when (mode) {
         NetworkMode.PUBLIC -> NetworkPolicy.Public
         NetworkMode.NONE -> NetworkPolicy.None
-        NetworkMode.ALLOWLIST -> NetworkPolicy.Allowlist(allow.map { Cidr.parse(it.cidr) })
+        NetworkMode.ALLOWLIST -> {
+            requireValid(allow.all { (it.cidr == null) != (it.domain == null) }) { "Each allowed destination sets exactly one of cidr and domain" }
+            NetworkPolicy.Allowlist(allow.mapNotNull { it.cidr?.let(Cidr::parse) }, allow.mapNotNull { it.domain?.let(DomainRule::parse) })
+        }
     }
 }
 

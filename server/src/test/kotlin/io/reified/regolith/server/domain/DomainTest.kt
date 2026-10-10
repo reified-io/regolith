@@ -54,6 +54,23 @@ class DomainTest {
     }
 
     @Test
+    fun `a domain rule is a lowercase name or a wildcard below one, never an address or a whole tld`() {
+        assertEquals("files.example.com", DomainRule.parse(" Files.Example.COM. ").value)
+        assertEquals("*.example.com", DomainRule.parse("*.example.com").value)
+        assertEquals("xn--80ak6aa92e.com", DomainRule.parse("xn--80ak6aa92e.com").value)
+        listOf("*.com", "com", "10.1.2.3", "*.example.*", "ex ample.com", "приклад.com", "-x.example.com", "a..example.com", "").forEach { raw ->
+            assertFailsWith<RegolithError.Invalid>(raw) { DomainRule.parse(raw) }
+        }
+
+        val mixed = NetworkPolicy.Allowlist(listOf(Cidr.parse("8.8.8.8")), listOf(DomainRule.parse("example.com")))
+        assertTrue(mixed.proxied)
+        assertFalse(NetworkPolicy.Allowlist(listOf(Cidr.parse("8.8.8.8"))).proxied)
+        assertFailsWith<RegolithError.Invalid> {
+            NetworkPolicy.Allowlist(listOf(Cidr.parse("8.8.8.8")), (1..NetworkPolicy.Allowlist.MAX_ENTRIES).map { DomainRule.parse("n$it.example.com") })
+        }
+    }
+
+    @Test
     fun `a repository is a reference without its tag or digest`() {
         assertEquals("ghcr.io/example/sandbox", ImageRef.repositoryOf("ghcr.io/example/sandbox:3.1"))
         assertEquals("ghcr.io/example/sandbox", ImageRef.repositoryOf("ghcr.io/example/sandbox@sha256:abc"))

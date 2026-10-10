@@ -367,19 +367,37 @@ A sandbox's `network`, set when it is created and changed with `PATCH`:
 {"mode": "public"}
 {"mode": "none"}
 {"mode": "allowlist", "allow": [{"cidr": "140.82.112.0/20"}, {"cidr": "1.1.1.1"}]}
+{"mode": "allowlist", "allow": [{"domain": "pypi.org"}, {"domain": "*.pythonhosted.org"}]}
 ```
 
 - `public` — the internet, resolving names through Docker's resolver.
-- `allowlist` — only the listed networks. Names still resolve through Docker's resolver, which is a
-  channel out, as with any address allowlist.
+- `allowlist` — only what is listed, up to 64 entries. Each is one of:
+  - `cidr` — an IPv4 network, reached directly on any port;
+  - `domain` — a name, reached over HTTP and HTTPS on ports 80 and 443: `example.com` is that name
+    alone, `*.example.com` every name below it but not itself. A name in other than ASCII letters is
+    written in punycode (`xn--`).
 - `none` — detached from every network: loopback only, no DNS.
+
+With networks alone, names still resolve through Docker's resolver, which is a channel out, as with
+any address allowlist. With any domain in the list, the sandbox's DNS and its traffic to ports 80
+and 443 go through the server's egress proxy instead:
+
+- Only a name a domain covers resolves; any other is answered as a name that does not exist,
+  whichever resolver the query was sent to. A listed network is then reached by its address.
+- A connection goes through only when the name it opens with — the TLS server name, or the `Host` of
+  a plain HTTP request — is covered, and it goes to an address the proxy resolved for that name
+  itself, never to the one the sandbox dialed. An HTTPS connection for another name, or for none,
+  ends with a TLS `unrecognized_name` alert; a plain request is answered `403` with one line naming
+  the host that is not allowed.
+- A connection open when its name leaves the policy is closed.
+
+[Security](sandbox-security.md#domain-rules) says what a domain rule does not stop.
 
 Under every mode sits the same floor. Private, shared, loopback, link-local (cloud metadata),
 multicast and reserved IPv4 space, the host itself and outbound SMTP are unreachable, and IPv6 is
-off. An allowlist entry that lies entirely inside that space is refused.
-
-Domain rules are not supported — [security](sandbox-security.md#why-addresses-and-not-domains)
-explains why.
+off. An allowlist entry that lies entirely inside that space is refused, and so is a domain that is
+an address, or a wildcard over a whole top-level domain such as `*.com`. A name that resolves into
+that space reaches nothing.
 
 ## Execs
 
@@ -660,7 +678,7 @@ publishing again gives the sandbox a new address.
 
 ## Not in v1
 
-Left out on purpose, each with room in the protocol: domain rules and credential brokering in
-network policy, a start command with a readiness probe, filesystem snapshots and clones, preview
-URLs for ports, an archived state for idle homes, lifecycle webhooks, PTY over WebSocket, and an MCP
-adapter. [Architecture](architecture.md#what-v1-leaves-out) sketches how each would fit.
+Left out on purpose, each with room in the protocol: credential brokering in network policy, a
+start command with a readiness probe, filesystem snapshots and clones, preview URLs for ports, an
+archived state for idle homes, lifecycle webhooks, PTY over WebSocket, and an MCP adapter.
+[Architecture](architecture.md#what-v1-leaves-out) sketches how each would fit.

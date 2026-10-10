@@ -38,6 +38,7 @@ COPY buildSrc buildSrc
 COPY protocol protocol
 COPY server server
 COPY pages pages
+COPY egress egress
 COPY sdk sdk
 COPY koog koog
 RUN ./gradlew :server:installDist --no-daemon --console=plain

@@ -8,6 +8,8 @@ dependencies {
     implementation(project(":protocol"))
     // the server image carries both roles: `serve` is the control plane, `pages` the public one.
     implementation(project(":pages"))
+    // and the egress proxy the control plane runs from the same image for domain rules.
+    implementation(project(":egress"))
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.ktor.client.core)
@@ -46,6 +48,7 @@ tasks.test {
     environment("REGOLITH_DOCKER_TESTS", dockerTests)
     environment("REGOLITH_HOST_TESTS", hostTests)
     environment("REGOLITH_HOST_TEST_LAN", System.getenv("REGOLITH_HOST_TEST_LAN") ?: "")
+    environment("REGOLITH_HOST_TEST_IMAGE", System.getenv("REGOLITH_HOST_TEST_IMAGE") ?: "")
 
     // a test task's environment is not one of its inputs: without these, a result stored without a
     // switch is served to a run with it, and the other way round.

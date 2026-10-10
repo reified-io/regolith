@@ -4,6 +4,7 @@ import io.reified.regolith.server.app.CpuGuard
 import io.reified.regolith.server.app.Health
 import io.reified.regolith.server.app.Sessions
 import io.reified.regolith.server.domain.Cidr
+import io.reified.regolith.server.domain.DomainRule
 import io.reified.regolith.server.domain.ExecCommand
 import io.reified.regolith.server.domain.ExecId
 import io.reified.regolith.server.domain.ImageCatalog
@@ -33,15 +34,19 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * Homes and the host firewall on the real machine running the build. Opt in with
- * `REGOLITH_HOST_TESTS=1`: it builds the helper and sandbox images, installs firewall chains for its
- * own namespace — they match only that namespace's bridge — attaches a loop device, and removes all of
- * it afterward. It needs internet access for the egress checks.
+ * `REGOLITH_HOST_TESTS=1`: it builds the server and sandbox images, installs firewall chains for its
+ * own namespace — they match only that namespace's bridge — runs the egress proxy, attaches loop
+ * devices, and removes all of it afterward. It needs internet access for the egress checks.
+ *
+ * The helpers and the egress proxy run from a whole server image: `REGOLITH_HOST_TEST_IMAGE` when it
+ * names one already on this machine, otherwise one built here.
  */
 class HostIntegrationTest {
     private val enabled = System.getenv("REGOLITH_HOST_TESTS") == "1"
     private val namespace = "regolith-host-it"
     private val docker = DockerCli("docker")
     private val name = SandboxId.random()
+    private val serverImage = System.getenv("REGOLITH_HOST_TEST_IMAGE")?.ifBlank { null } ?: "regolith-server:it"
 
     @Test
     fun `homes are bounded and persistent, and the network floor holds under every policy`() {
@@ -49,10 +54,12 @@ class HostIntegrationTest {
         val repository = Path.of("").toAbsolutePath().parent
         val stateDir = Files.createTempDirectory("regolith-host-it")
         runBlocking {
-            build("--target", "tools", "-t", "regolith-tools:it", "-f", repository.resolve("images/server/Dockerfile").toString(), repository.toString())
+            if (serverImage == "regolith-server:it") {
+                build("-t", serverImage, "-f", repository.resolve("images/server/Dockerfile").toString(), repository.toString())
+            }
             build("--target", "base", "-t", "regolith-sandbox:it", repository.resolve("images/sandbox").toString())
 
-            val helpers = Helpers(Helpers.resolveImage(docker, "regolith-tools:it"), namespace)
+            val helpers = Helpers(Helpers.resolveImage(docker, serverImage), namespace)
             val spec = ContainerSpec(namespace, "/bin/bash", homeReadBps = "100mb", homeWriteBps = "50mb")
             val runtime = DockerRuntime(docker, spec)
             val homes = HomeDisks(docker, helpers, namespace, stateDir, reserveMb = 256)
@@ -134,6 +141,31 @@ class HostIntegrationTest {
                     assertTrue(!reach("1.1.1.1", 443), "the resolver's address, for anything but names")
                 }
 
+                // domain rules: names and web traffic go through the egress proxy, which lets through only
+                // what a rule covers, and the rest of the host stays as closed as it was.
+                val domains = sandbox.copy(network = NetworkPolicy.Allowlist(emptyList(), listOf(DomainRule.parse("one.one.one.one"), DomainRule.parse("*.github.com"))))
+                sessions.applyNetwork(domains)
+                suspend fun provesDomains() {
+                    assertTrue("no-dns" !in sh("getent hosts one.one.one.one || echo no-dns"), "an allowed name resolves")
+                    assertTrue(sh("getent hosts example.com || echo no-dns").endsWith("no-dns"), "a name no rule covers does not")
+                    val code = sh("curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://one.one.one.one/")
+                    assertTrue(Regex("[1-5][0-9][0-9]").matches(code), "an allowed name answers over https: $code")
+                    val fronted = sh("curl -sk -o /dev/null --max-time 5 --resolve example.com:443:1.1.1.1 https://example.com/ && echo leak || echo refused")
+                    assertTrue(fronted.endsWith("refused"), "another name sent to an allowed address: $fronted")
+                    val plain = sh("curl -s --max-time 5 -H 'Host: example.com' http://1.1.1.1/")
+                    assertTrue("is not allowed by this sandbox's network policy" in plain, "another host over http: $plain")
+                    assertTrue(!reach("1.1.1.1", 853), "a port the proxy does not take")
+                    assertTrue(!reach(checkNotNull(network).gateway, 22), "the host, beside the proxy")
+                }
+                sessions.withLease(domains) { provesDomains() }
+
+                // a proxy that went is started again by the guard's check, with the table of every live session.
+                docker.run(listOf("rm", "--force", "$namespace-egress")).requireOk("taking the egress proxy away")
+                // the client attached to it notices a moment after the container is gone.
+                delay(2.seconds)
+                assertTrue(firewall.verifyAndRepair(), "a proxy that went is started again")
+                sessions.withLease(domains) { provesDomains() }
+
                 val offline = sandbox.copy(network = NetworkPolicy.None)
                 sessions.applyNetwork(offline)
                 sessions.withLease(offline) {
@@ -212,6 +244,8 @@ class HostIntegrationTest {
                     sessions.stopAll(StopReason.STOPPED)
                     runCatching { homes.destroy(name) }
                     docker.run(helpers.firewall("remove", FirewallRules.prefixFor(namespace)))
+                    // the proxy would end with this process anyway, when its stdin closes.
+                    docker.run(listOf("rm", "--force", "$namespace-egress"))
                     docker.run(listOf("network", "rm", spec.network))
                     stateDir.toFile().deleteRecursively()
                 }
@@ -245,10 +279,10 @@ class HostIntegrationTest {
         docker.run(tools(iptables, "-S", chain)).requireOk("reading $chain").text.lines().firstOrNull { it.startsWith("-A ") }
 
     private fun tools(vararg command: String): List<String> =
-        listOf("run", "--rm", "--network=host", "--cap-drop=ALL", "--cap-add=NET_ADMIN", "--cap-add=NET_RAW", "--entrypoint", command.first(), "regolith-tools:it") + command.drop(1)
+        listOf("run", "--rm", "--network=host", "--cap-drop=ALL", "--cap-add=NET_ADMIN", "--cap-add=NET_RAW", "--entrypoint", command.first(), serverImage) + command.drop(1)
 
     private suspend fun build(vararg args: String) {
-        val result = docker.run(listOf("build", "--quiet") + args, timeout = 15.minutes)
+        val result = docker.run(listOf("build", "--quiet") + args, timeout = 30.minutes)
         check(result.ok) { "docker build failed: ${result.stderr}" }
     }
 }

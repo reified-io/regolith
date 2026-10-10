@@ -24,6 +24,7 @@ import io.reified.regolith.server.docker.DockerRuntime
 import io.reified.regolith.server.docker.Helpers
 import io.reified.regolith.server.docker.HomeDisks
 import io.reified.regolith.server.docker.HostFirewall
+import io.reified.regolith.egress.runEgress
 import io.reified.regolith.pages.PagesConfig
 import io.reified.regolith.pages.runPages
 import io.reified.regolith.server.domain.StopReason
@@ -54,12 +55,16 @@ private const val USAGE = """usage: server [serve | pages | doctor | orphans [ad
   orphans          list homes and sites no sandbox record claims, beside a running server or not
   orphans adopt    give each orphaned home a record again, keeping its files
   orphans delete   delete orphaned homes with their files, and take orphaned sites down
+  egress ...       the egress proxy behind domain rules, which the server runs itself
 
 Adopting and deleting take the state lock, so they need the server stopped; the rest do not.
 
 Each role reads its own REGOLITH_* variables; see docs/configuration.md."""
 
 fun main(args: Array<String>) {
+    // the proxy takes options of its own, so it is told apart by its first word alone.
+    if (args.firstOrNull() == "egress") exitProcess(runEgress(args.drop(1)))
+
     when (args.toList()) {
         emptyList<String>(), listOf("serve") -> serve(serverConfig())
         listOf("pages") -> runPages(configured("pages") { PagesConfig.fromEnvironment() })

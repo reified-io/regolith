@@ -432,6 +432,28 @@ class ApiTest {
     }
 
     @Test
+    fun `domains travel beside networks and come back in their canonical form`() = apiTest { server, client ->
+        val sandbox = client.getOrCreate("domains")
+        sandbox.start()
+        val requested = listOf(NetworkAllow(domain = "*.Example.com."), NetworkAllow(cidr = "140.82.112.7/20"), NetworkAllow(domain = "files.example.org"))
+
+        val info = sandbox.update(UpdateSandboxRequest(network = NetworkPolicy(NetworkMode.ALLOWLIST, requested)))
+
+        assertEquals(
+            listOf(NetworkAllow(cidr = "140.82.112.0/20"), NetworkAllow(domain = "*.example.com"), NetworkAllow(domain = "files.example.org")),
+            info.network.allow,
+        )
+        val applied = server.enforcer.applied[SandboxId.parse(sandbox.id)] as DomainPolicy.Allowlist
+        assertEquals(listOf("*.example.com", "files.example.org"), applied.domains.map { it.value })
+        listOf(NetworkAllow(), NetworkAllow(cidr = "1.1.1.1", domain = "example.com"), NetworkAllow(domain = "*.com"), NetworkAllow(domain = "10.0.0.1")).forEach { allow ->
+            val refused = assertFailsWith<RegolithException>(allow.toString()) {
+                sandbox.update(UpdateSandboxRequest(network = NetworkPolicy(NetworkMode.ALLOWLIST, listOf(allow))))
+            }
+            assertEquals(ErrorCodes.INVALID_REQUEST, refused.code)
+        }
+    }
+
+    @Test
     fun `none detaches a running session and any other mode attaches it again under its policy`() = apiTest { server, client ->
         val sandbox = client.getOrCreate("switch")
         val name = SandboxId.parse(sandbox.id)

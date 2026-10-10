@@ -53,6 +53,18 @@ class ArchitectureTest {
     }
 
     @Test
+    fun `the egress proxy is run by main and driven by the firewall alone`() {
+        // its table is the one type the docker adapter shares with it; nothing else knows the proxy is there.
+        val allowed = setOf("Main.kt", "docker/EgressProcess.kt", "docker/HostFirewall.kt")
+        val violations = Files.walk(root).use { paths ->
+            paths.filter { it.extension == "kt" && it.relativeTo(root).toString() !in allowed }.toList()
+        }.flatMap { file ->
+            file.readLines().filter { it.startsWith("import io.reified.regolith.egress.") }.map { "$file: $it" }
+        }
+        assertEquals(emptyList(), violations)
+    }
+
+    @Test
     fun `adapters do not reach into each other`() {
         val violations = adapters.flatMap { adapter ->
             Files.walk(root.resolve(adapter)).use { it.filter { path -> path.extension == "kt" }.toList() }.flatMap { file ->

@@ -59,6 +59,47 @@ class Helpers(private val image: String, private val namespace: String) {
         image, "probe",
     )
 
+    /**
+     * The egress proxy: the server's own program in the host's network namespace, as its own uid with no
+     * capability, listening on the sandbox gateway. It is attached to the server's stdin and outlives it
+     * by nothing: when the server goes, its stdin ends and so does it.
+     */
+    fun egress(name: String, gateway: String): List<String> = listOf(
+        "run", "--rm", "--interactive", "--pull=never", "--no-healthcheck",
+        "--name", name,
+        "--label", label,
+        "--network=host",
+        "--read-only",
+        "--tmpfs", "/tmp:size=16m",
+        "--user=${EgressListener.UID}:${EgressListener.UID}",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--pids-limit=256", "--memory=256m", "--memory-swap=256m",
+        "--log-driver=none",
+        "--env", "JAVA_OPTS=-Xmx96m -XX:+UseSerialGC -XX:-UsePerfData -XX:TieredStopAtLevel=1 -Dkotlin-logging.logStartupMessage=false",
+        "--entrypoint", "/opt/regolith/bin/server",
+        image, "egress",
+        "--listen", gateway,
+        "--http", EgressListener.HTTP_PORT.toString(),
+        "--tls", EgressListener.TLS_PORT.toString(),
+        "--dns", EgressListener.DNS_PORT.toString(),
+        "--resolvers", PublicResolvers.addresses.joinToString(",") { "$it:53" },
+    )
+
+    /** Whether [address]:[port] answers from the host's own network namespace as the egress proxy's uid. */
+    fun egressReach(address: String, port: Int): List<String> = listOf(
+        "run", "--rm", "--pull=never", "--no-healthcheck",
+        "--label", label,
+        "--network=host",
+        "--read-only",
+        "--user=${EgressListener.UID}:${EgressListener.UID}",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--pids-limit=16", "--memory=64m",
+        "--entrypoint", "nc",
+        image, "-z", "-w", "2", address, port.toString(),
+    )
+
     /** Whether [address]:[port] answers from the host's own network namespace; a connection only. */
     fun hostReach(address: String, port: Int): List<String> = listOf(
         "run", "--rm", "--pull=never", "--no-healthcheck",

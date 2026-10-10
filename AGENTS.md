@@ -13,8 +13,9 @@ touching what creates, confines or reaches into a container.
 | Module | Holds | Depends on |
 |---|---|---|
 | `protocol/` | Wire types of `/v1` and, in `protocol.pages`, of the pages intake | kotlinx.serialization only |
-| `server/` | The control plane | `protocol`, `pages` |
+| `server/` | The control plane | `protocol`, `pages`, `egress` |
 | `pages/` | The public role: published sites and the intake that receives them | `protocol` |
+| `egress/` | The proxy behind domain rules, which the server runs from its own image | kotlinx.serialization only |
 | `sdk/` | The Kotlin client | `protocol`, Ktor client |
 | `koog/` | Koog `ShellCommandExecutor` over the SDK | `sdk`, Koog `agents-ext` |
 | `images/` | The server image and the sandbox images | — |
@@ -42,9 +43,9 @@ touching what creates, confines or reaches into a container.
   the host firewall on this machine: it installs iptables chains that match only its own bridge and
   attaches a loop device, then removes both. Run it after changing `HostFirewall`, `FirewallRules`,
   `HomeDisks`, `Helpers` or `images/server/scripts/`, and say that you did: it touches the machine.
-- The program takes a command: `serve` (default), `pages`, `doctor`, `orphans [adopt | delete]` —
-  see [architecture](docs/architecture.md#commands). `doctor` is read-only and the first thing to
-  run on a host that misbehaves.
+- The program takes a command: `serve` (default), `pages`, `doctor`, `orphans [adopt | delete]`,
+  and `egress`, which the server runs itself — see [architecture](docs/architecture.md#commands).
+  `doctor` is read-only and the first thing to run on a host that misbehaves.
 - CI: `.github/workflows/build.yml` runs `./gradlew build detekt` on every push and pull request,
   with actions pinned by commit and bumped by Dependabot. A GitHub release publishes all three
   images through `.github/workflows/images.yml`, each tagged with the version, because a server
@@ -145,7 +146,12 @@ These hold for every change; [`docs/sandbox-security.md`](docs/sandbox-security.
   in it before that. An address with no policy reaches nothing; `none` means detached, never
   attached with a deny rule, because Docker's resolver answers from outside any rule.
 - The firewall ruleset is rendered whole in `FirewallRules` and swapped atomically: never edit rules
-  incrementally, and never let the helper touch a chain outside its namespace prefix.
+  incrementally, and never let the helper touch a chain outside its namespace prefix. Its one accept
+  is a proxied sandbox reaching the egress proxy; nothing else of the host is ever accepted.
+- The egress proxy matches a connection by the name it opens with and connects only to addresses it
+  resolved itself, never to the one the sandbox dialed. It takes its table whole and acknowledges it
+  before the rules that redirect to it move, so an address it does not know is refused everything.
+  The floor holds for it twice: in its own checks, and in the output chain on its uid.
 - Helpers run the server's own image with only the capability their one script needs. A new
   privileged operation is a new fixed script, never a shell command assembled in Kotlin.
 
@@ -196,7 +202,7 @@ example names such as `user-23`, never a real product.
 ## Commits
 
 - Subject `scope: imperative lowercase phrase`, no trailing period, at most ~65 characters.
-- Scopes: `protocol`, `server`, `pages`, `sdk`, `koog`, `images`, `skills`, `docs`, `build`, `ci`;
-  omit for repo-wide changes.
+- Scopes: `protocol`, `server`, `pages`, `egress`, `sdk`, `koog`, `images`, `skills`, `docs`, `build`,
+  `ci`; omit for repo-wide changes.
 - The subject alone is usually enough; add a body wrapped at 72 characters only when the why is not
   obvious from the diff. Never mix unrelated work in one commit.

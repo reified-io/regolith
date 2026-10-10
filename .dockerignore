@@ -26,6 +26,8 @@
 !server/src/main/**
 !pages/build.gradle.kts
 !pages/src/main/**
+!egress/build.gradle.kts
+!egress/src/main/**
 !sdk/build.gradle.kts
 !sdk/src/main/**
 !koog/build.gradle.kts

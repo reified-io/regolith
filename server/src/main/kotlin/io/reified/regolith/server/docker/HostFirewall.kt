@@ -1,7 +1,9 @@
 package io.reified.regolith.server.docker
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.reified.regolith.egress.EgressSandbox
 import io.reified.regolith.server.domain.Cidr
+import io.reified.regolith.server.domain.DomainRule
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.PlatformFloor
 import io.reified.regolith.server.domain.SandboxId
@@ -20,6 +22,10 @@ import kotlin.time.Duration.Companion.milliseconds
  * helper. The server keeps the policies of live sessions in memory, renders the whole ruleset on every
  * change and remembers the fingerprint the helper printed; the guard later compares a fresh fingerprint
  * with it rule for rule.
+ *
+ * Domain rules add the egress proxy, which this class starts with the floor and keeps running. Every
+ * change sends the proxy its whole table before the rules move, and only once it is in force: an address
+ * redirected before the proxy knows it is refused everything, never let through.
  */
 class HostFirewall(
     private val docker: DockerCli,
@@ -33,13 +39,16 @@ class HostFirewall(
     private val policies = LinkedHashMap<SandboxId, Pair<String, NetworkPolicy.Attached>>()
     private var network: SandboxNetwork? = null
     private var refused: List<Cidr> = PlatformFloor.refused
-    private var probeAddress: String? = null
+    private var probing: Pair<String, NetworkPolicy.Attached>? = null
     private var fingerprint: String? = null
+    private var egress: EgressProcess? = null
+    private val egressName = "$namespace-egress"
 
     override suspend fun install(network: SandboxNetwork) = mutex.withLock {
         this.network = network
         val hostAddresses = helper(helpers.firewall("addresses")).lines().filter { it.isNotBlank() }.map(Cidr::parse)
         refused = (PlatformFloor.refused + hostAddresses + extraRefused).distinct()
+        startEgress(network)
         applyLocked()
         val lan = prove(network)
         log.info { "Network floor installed and proven: prefix=[$prefix] bridge=[${network.bridge}] lanControls=[${lan.joinToString()}]" }
@@ -55,10 +64,12 @@ class HostFirewall(
             log.error(e) { "Reading the firewall failed" }
             null
         }
-        if (current != null && current == fingerprint) return@withLock true
-        log.warn { "Firewall drifted from what was installed; reinstalling: prefix=[$prefix]" }
+        val proxied = egress?.alive == true
+        if (current != null && current == fingerprint && proxied) return@withLock true
+        if (proxied) log.warn { "Firewall drifted from what was installed; reinstalling: prefix=[$prefix]" } else log.warn { "The egress proxy is gone; starting it again" }
 
         try {
+            if (!proxied) startEgress(network)
             applyLocked()
             helper(helpers.firewall("check", prefix, network.bridge)) == fingerprint
         } catch (e: CancellationException) {
@@ -86,9 +97,36 @@ class HostFirewall(
 
     private suspend fun applyLocked() {
         val network = checkNotNull(network) { "The firewall is not installed" }
-        val addresses = policies.byAddress() + listOfNotNull(probeAddress).associateWith { NetworkPolicy.Public }
+        val addresses = policies.byAddress() + listOfNotNull(probing)
+        val entries = policies.map { (id, entry) -> Triple(id.value, entry.first, entry.second) } +
+            listOfNotNull(probing?.let { (address, policy) -> Triple("probe", address, policy) })
+        val proxied = entries.mapNotNull { (sandbox, address, policy) ->
+            (policy as? NetworkPolicy.Allowlist)?.takeIf { it.proxied }?.let { address to EgressSandbox(sandbox, it.domains.map(DomainRule::value)) }
+        }.toMap()
+        // a proxy that went is needed again only by an address it would serve; nothing else waits for it.
+        if (egress?.alive != true && proxied.isNotEmpty()) startEgress(network)
+        egress?.takeIf { it.alive }?.push((refused + Cidr.parse(network.subnet)).distinct().map { it.value }, proxied)
         val rules = FirewallRules(prefix, network, refused, addresses).render()
-        fingerprint = helper(helpers.firewall("apply", prefix, network.bridge), input = rules)
+        fingerprint = helper(helpers.firewall("apply", prefix, network.bridge, EgressListener.UID.toString()), input = rules)
+    }
+
+    /** Starts the egress proxy on [network]'s gateway, in place of any proxy this or a previous run left. */
+    private suspend fun startEgress(network: SandboxNetwork) {
+        egress?.destroy()
+        egress = null
+        docker.run(listOf("rm", "--force", egressName))
+        val process = docker.start(helpers.egress(egressName, network.gateway), stdin = true)
+        val started = EgressProcess(process)
+
+        try {
+            started.awaitReady()
+        } catch (e: Exception) {
+            started.destroy()
+            withContext(NonCancellable) { docker.run(listOf("rm", "--force", egressName)) }
+            throw e
+        }
+        egress = started
+        log.info { "Egress proxy listening: gateway=[${network.gateway}] ports=[${EgressListener.HTTP_PORT},${EgressListener.TLS_PORT},${EgressListener.DNS_PORT}]" }
     }
 
     /**
@@ -116,9 +154,10 @@ class HostFirewall(
                 log.info { "No device on the host's network answered from the host; the floor is proven against the host only" }
             }
 
-            probeAddress = address
+            probing = address to NetworkPolicy.Public
             applyLocked()
-            val policed = probeOutput(probe, PROBE_SCRIPT, listOf("${network.gateway}:$CONTROL_PORT") + lan)
+            val controls = listOf("${network.gateway}:$CONTROL_PORT") + lan
+            val policed = probeOutput(probe, PROBE_SCRIPT, controls)
             val leaks = policed.filter { it.startsWith("leak ") }
             check(leaks.isEmpty()) { "The network floor is not in effect: ${leaks.joinToString()}" }
             val egress = "egress" in policed
@@ -126,7 +165,9 @@ class HostFirewall(
                 log.warn { "Sandboxes cannot reach the public internet; check the host or provider firewall" }
             }
 
-            probeAddress = null
+            proveDomains(probe, address, egress, controls)
+
+            probing = null
             applyLocked()
             if (egress) {
                 val unpoliced = probeOutput(probe, EGRESS_SCRIPT)
@@ -136,7 +177,7 @@ class HostFirewall(
         } finally {
             withContext(NonCancellable) {
                 removeContainers(listener, probe)
-                if (probeAddress != null) dropProbeLocked()
+                if (probing != null) dropProbeLocked()
             }
         }
     }
@@ -146,7 +187,7 @@ class HostFirewall(
      * names an address nobody holds, and the next change of a policy renders the rules without it.
      */
     private suspend fun dropProbeLocked() {
-        probeAddress = null
+        probing = null
 
         try {
             applyLocked()
@@ -155,6 +196,28 @@ class HostFirewall(
         } catch (e: Exception) {
             log.warn(e) { "Could not take the probe's policy out of the rules" }
         }
+    }
+
+    /**
+     * Domain rules, proven from the same probe given a policy of one name. The proxy itself must answer a
+     * request for another name, and refuse it; another name must not resolve; a hello for another name
+     * must get nowhere, whatever address it was sent to; a port the proxy does not take must stay shut.
+     * The name allowed must get through, which is a control only when the probe could reach the internet
+     * at all. And the proxy's uid, in the host's namespace, must reach none of the controls the host
+     * itself reaches: that is the floor put back on the proxy.
+     */
+    private suspend fun proveDomains(probe: String, address: String, egress: Boolean, controls: List<String>) {
+        probing = address to NetworkPolicy.Allowlist(emptyList(), listOf(DomainRule.parse(PROOF_DOMAIN)))
+        applyLocked()
+        val proxied = probeOutput(probe, DOMAIN_SCRIPT, listOf(PROOF_DOMAIN, if (egress) "egress" else "none"))
+        val leaks = proxied.filter { it.startsWith("leak ") }
+        check(leaks.isEmpty()) { "Domain rules are not in effect: ${leaks.joinToString()}" }
+        check("refused" in proxied) { "The egress proxy did not answer a sandbox on the gateway" }
+        if (egress && "allowed" !in proxied) {
+            log.warn { "A domain rule let nothing through the egress proxy; check that the host reaches ${PublicResolvers.addresses.joinToString()} on port 53" }
+        }
+        val escaped = controls.filter { target -> docker.run(helpers.egressReach(target.substringBefore(':'), target.substringAfter(':').toInt())).ok }
+        check(escaped.isEmpty()) { "The egress proxy's uid reaches refused space: ${escaped.joinToString()}" }
     }
 
     /**
@@ -215,6 +278,24 @@ class HostFirewall(
             if reach 1.1.1.1 443; then
               echo egress
               reach 8.8.4.4 53 && echo "leak resolver 8.8.4.4:53"
+            fi
+            exit 0
+        """.trimIndent()
+
+        const val PROOF_DOMAIN = "one.one.one.one"
+
+        // under a policy of one name: the proxy refuses another name on port 80, which proves it answers;
+        // another name does not resolve; a hello for another name sent to an address the allowed name has
+        // gets nowhere; a port the proxy does not take is closed. the allowed name is tried last.
+        val DOMAIN_SCRIPT = """
+            reach() { timeout 3 bash -c 'exec 3<>"/dev/tcp/${'$'}1/${'$'}2"' reach "${'$'}1" "${'$'}2" 2>/dev/null; }
+            code="${'$'}(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H 'Host: example.com' http://1.1.1.1/ || true)"
+            case "${'$'}code" in 403) echo refused ;; 000) ;; *) echo "leak host ${'$'}code" ;; esac
+            getent hosts example.com >/dev/null 2>&1 && echo "leak dns example.com"
+            curl -sk -o /dev/null --max-time 5 --resolve example.com:443:1.1.1.1 https://example.com/ && echo "leak sni example.com"
+            reach 1.1.1.1 853 && echo "leak port 1.1.1.1:853"
+            if [[ "${'$'}2" == egress ]]; then
+              curl -s -o /dev/null --max-time 10 "https://${'$'}1/" && echo allowed
             fi
             exit 0
         """.trimIndent()

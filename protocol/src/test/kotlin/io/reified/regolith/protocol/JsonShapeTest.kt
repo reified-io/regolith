@@ -18,6 +18,14 @@ class JsonShapeTest {
     }
 
     @Test
+    fun `a domain is an allowed destination of its own, with no cidr beside it`() {
+        val policy = NetworkPolicy(NetworkMode.ALLOWLIST, listOf(NetworkAllow(cidr = "140.82.112.0/20"), NetworkAllow(domain = "*.example.com")))
+        val json = RegolithJson.strict.encodeToString(NetworkPolicy.serializer(), policy)
+
+        assertEquals("""{"mode":"allowlist","allow":[{"cidr":"140.82.112.0/20"},{"domain":"*.example.com"}]}""", json)
+    }
+
+    @Test
     fun `an image policy uses lowercase modes and leaves out the image it does not need`() {
         fun json(policy: ImagePolicy) = RegolithJson.strict.encodeToString(ImagePolicy.serializer(), policy)
 

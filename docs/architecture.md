@@ -11,6 +11,7 @@ enough.
 protocol   wire types of /v1 and of the pages intake — the contract
 server     the control plane
 pages      the public role: published sites and the intake that receives them
+egress     the proxy behind domain rules, which the control plane runs from its own image
 sdk        Kotlin client (protocol + Ktor client)
 koog       Koog ShellCommandExecutor over the sdk
 images     the server image, and the base and full sandbox images
@@ -50,7 +51,7 @@ operator commands that are not the API. Both may use every layer, and no layer m
 |---|---|---|
 | `SandboxRuntime` | `DockerRuntime` | Session containers, the commands in them, their files, network attachment |
 | `HomeStore` | `HomeDisks` | Fixed-size homes on loop devices |
-| `NetworkEnforcer` | `HostFirewall` | The host network floor and each sandbox's policy |
+| `NetworkEnforcer` | `HostFirewall` | The host network floor, each sandbox's policy, and the egress proxy behind domain rules |
 | `StateStore` | `FileStateStore` | Records and output logs |
 | `SitePublisher` | `PagesPublisher` | Releases sent to the pages role |
 
@@ -59,6 +60,11 @@ short runs of the server's own image with exactly the capability one fixed scrip
 resolves that image to an id at startup — from `REGOLITH_HELPER_IMAGE`, or by inspecting the
 container it runs in — so what it checks and what it runs come from one build.
 [Security](sandbox-security.md) describes both.
+
+`HostFirewall` also runs the **egress proxy** from that image, for as long as the server runs: a
+process in the host's network namespace with no capability, attached to the server's own stdin,
+which takes the whole table of domain rules on every change and acknowledges it before the rules
+that redirect to it move. When the server goes, its stdin ends, and so does the proxy.
 
 ## Sandboxes and sessions
 
@@ -195,7 +201,8 @@ Startup runs its preconditions before the API listens, and any failure exits:
 6. Refuse to start while a home exists that no sandbox record claims, or whose name holds no
    sandbox id (see [security](sandbox-security.md#homes)); `orphans` resolves the first, and an
    operator the second.
-7. Install the network floor, and prove it with a control listener and a throwaway probe.
+7. Install the network floor and start the egress proxy, and prove both with a control listener and
+   a throwaway probe.
 8. Check host storage.
 
 Then four loops run in the background:
@@ -205,7 +212,7 @@ Then four loops run in the background:
 | Lifecycle sweep | 15 s | Ends sessions whose container has exited, stops idle and expired sessions, takes down sites past their term, deletes sandboxes past retention — only the home of one whose site is up |
 | Storage guard | 10 s | Fails the `storage` health check, and with it new sessions, while free space is below the reserve; an upload lands in a home, which takes no host space |
 | CPU guard | 30 s | Stops sessions that burn CPU with nothing of their own running, and idle sessions it could not read on two ticks running |
-| Network guard | 5 min | Re-reads the firewall and repairs drift in place; a floor it cannot repair is installed again from the start |
+| Network guard | 5 min | Re-reads the firewall and repairs drift in place, starting the egress proxy again if it went; a floor it cannot repair is installed again from the start |
 
 Once, alongside them, the server pulls every image in its catalog. A session start would pull what
 it needs anyway, but it holds the session capacity while it does, so after an upgrade that changed
@@ -229,6 +236,7 @@ The server image runs one program, which takes a command:
 |---|---|
 | `serve` (the default) | Runs the control plane API |
 | `pages` | Runs the public role: serves published sites and takes releases in (see [pages](pages.md)) |
+| `egress` | Runs the egress proxy behind domain rules; the control plane starts it itself, from its own image |
 | `doctor` | Checks the host against every startup precondition and prints each check with its fix; exits 1 if one would stop the server |
 | `orphans` | Lists homes that no sandbox record claims, homes whose name holds no sandbox id, and sites the pages role serves for no record |
 | `orphans adopt` | Gives each orphaned home a record again: default settings, its own size, label `regolith.adopted=true` |
@@ -282,9 +290,10 @@ control plane  ──▶ intake listener ──▶ release         ──▶ act
 
 Each of these can be added without reshaping what exists:
 
-- **Domain rules and credential brokering** in network policy — an egress proxy on the host that
-  matches SNI and, for brokered domains, terminates TLS with a per-sandbox CA and injects headers,
-  so a sandbox uses a token it never sees. `NetworkAllow` is an object so these can join it.
+- **Credential brokering** in network policy — the egress proxy terminating TLS for brokered
+  domains with a per-sandbox CA and injecting headers, so a sandbox uses a token it never sees, and
+  sees inside the connections it now only matches by name. `NetworkAllow` is an object so it can
+  join it.
 - **A start command with a readiness probe** — a process started with every session, its output an
   ordinary exec, ready when a TCP port answers or a command succeeds.
 - **Filesystem snapshots and clones** — a home is one filesystem image, so a snapshot is a copy of

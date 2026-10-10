@@ -1,6 +1,7 @@
 package io.reified.regolith.server.docker
 
 import io.reified.regolith.server.domain.Cidr
+import io.reified.regolith.server.domain.DomainRule
 import io.reified.regolith.server.domain.NetworkPolicy
 import io.reified.regolith.server.domain.PlatformFloor
 import io.reified.regolith.server.ports.SandboxNetwork
@@ -67,5 +68,53 @@ class FirewallRulesTest {
         // names resolve under any allowlist: the resolvers a sandbox is given answer on port 53 and nothing else.
         assertEquals(resolvers + listOf("-A $chain -d 140.82.112.0/20 -j RETURN", "-A $chain -j REJECT"), lines.rules(chain))
         assertEquals(listOf("-A ${prefix}_N -d 1.1.1.1/32 -j RETURN", "-A ${prefix}_N -d 9.9.9.9/32 -j RETURN", "-A ${prefix}_N -j REJECT"), lines.rules("${prefix}_N"))
+    }
+
+    @Test
+    fun `a policy with domains sends names and web traffic to the proxy and the rest of its list direct`() {
+        val policy = NetworkPolicy.Allowlist(listOf(Cidr.parse("140.82.112.0/20")), listOf(DomainRule.parse("*.example.com")))
+        val lines = render(mapOf("172.30.0.7" to policy, "172.30.0.8" to NetworkPolicy.Public))
+        val chain = lines.first { it.startsWith("-A ${prefix}_D -s 172.30.0.7/32") }.substringAfter("-g ")
+        val nat = lines.dropWhile { it != "*nat" }
+        val redirect = nat.first { it.startsWith("-A ${prefix}_R -s 172.30.0.7/32") }.substringAfter("-g ")
+
+        // its queries never reach forward: they are redirected, so no resolver is let through for it there.
+        assertEquals(listOf("-A $chain -d 140.82.112.0/20 -j RETURN", "-A $chain -j REJECT"), lines.rules(chain))
+        assertEquals(
+            listOf(
+                "-A $redirect -p udp -m udp --dport 53 -j REDIRECT --to-ports ${EgressListener.DNS_PORT}",
+                "-A $redirect -p tcp -m tcp --dport 53 -j REDIRECT --to-ports ${EgressListener.DNS_PORT}",
+                "-A $redirect -d 140.82.112.0/20 -j RETURN",
+                "-A $redirect -p tcp -m tcp --dport 80 -j REDIRECT --to-ports ${EgressListener.HTTP_PORT}",
+                "-A $redirect -p tcp -m tcp --dport 443 -j REDIRECT --to-ports ${EgressListener.TLS_PORT}",
+            ),
+            nat.rules(redirect),
+        )
+        assertEquals("-A ${prefix}_R ! -i br-0123456789ab -j RETURN", nat.rules("${prefix}_R").first())
+        assertTrue(nat.none { "172.30.0.8" in it }, "a public address is never redirected")
+    }
+
+    @Test
+    fun `only a proxied address is offered the proxy, and nothing else of the host`() {
+        val policy = NetworkPolicy.Allowlist(emptyList(), listOf(DomainRule.parse("example.com")))
+        val input = render(mapOf("172.30.0.7" to policy, "172.30.0.8" to NetworkPolicy.Public)).rules("${prefix}_IN")
+        val accepts = input.filter { it.endsWith("-j ACCEPT") }
+
+        assertEquals(2, accepts.size)
+        assertTrue(accepts.all { "-i br-0123456789ab -s 172.30.0.7/32 -d 172.30.0.1/32" in it })
+        assertTrue(input.indexOfFirst { "hashlimit" in it } < input.indexOfFirst { it.endsWith("-j ACCEPT") })
+        assertEquals("-A ${prefix}_IN -i br-0123456789ab -j DROP", input.last())
+    }
+
+    @Test
+    fun `the proxy's own uid meets the floor before it may leave on the web and dns ports`() {
+        val output = render().rules("${prefix}_O")
+        val firstReturn = output.indexOfFirst { it.endsWith("-j RETURN") && "--ctstate" !in it && "uid-owner" !in it }
+
+        assertEquals("-A ${prefix}_O -m owner ! --uid-owner ${EgressListener.UID} -j RETURN", output.first())
+        assertTrue(output.indexOf("-A ${prefix}_O -d 10.0.0.0/8 -j REJECT") in 2 until firstReturn)
+        assertTrue(output.indexOf("-A ${prefix}_O -d 172.30.0.0/16 -j REJECT") in 2 until firstReturn)
+        assertTrue("-A ${prefix}_O -d 1.1.1.1/32 -p udp -m udp --dport 53 -j RETURN" in output)
+        assertEquals("-A ${prefix}_O -j REJECT", output.last())
     }
 }

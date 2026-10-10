@@ -21,19 +21,55 @@ sealed interface NetworkPolicy {
     @SerialName("none")
     data object None : NetworkPolicy
 
+    /**
+     * Only [cidrs] and [domains]. With domains, the sandbox's HTTP, HTTPS and DNS go through the egress
+     * proxy, which lets a connection through only for a name a rule covers, and answers a query only for
+     * one; a listed network is still reached directly, on any port.
+     */
     @Serializable
     @SerialName("allowlist")
-    data class Allowlist(val cidrs: List<Cidr>) : Attached {
+    data class Allowlist(val cidrs: List<Cidr>, val domains: List<DomainRule> = emptyList()) : Attached {
         init {
-            requireValid(cidrs.size <= MAX_ENTRIES) { "An allowlist holds at most $MAX_ENTRIES entries" }
+            requireValid(cidrs.size + domains.size <= MAX_ENTRIES) { "An allowlist holds at most $MAX_ENTRIES entries" }
 
             for (cidr in cidrs) {
                 requireValid(!PlatformFloor.refuses(cidr)) { "$cidr is never reachable from a sandbox" }
             }
         }
 
+        /** Whether the sandbox's names and web traffic go through the egress proxy. */
+        val proxied: Boolean get() = domains.isNotEmpty()
+
         companion object {
             const val MAX_ENTRIES = 64
+        }
+    }
+}
+
+/**
+ * A name a sandbox may reach through the egress proxy: `example.com` is that name alone, and
+ * `*.example.com` every name below it but not itself. Kept lowercase, without a trailing dot; an
+ * address is never a domain, and a wildcard never covers a whole top-level domain.
+ */
+@Serializable(with = DomainRuleSerializer::class)
+@JvmInline
+value class DomainRule private constructor(val value: String) {
+    override fun toString(): String = value
+
+    companion object {
+        private const val MAX_CHARS = 253
+        private val label = Regex("[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?")
+
+        fun parse(raw: String): DomainRule {
+            val text = raw.trim().lowercase().removeSuffix(".")
+            val labels = text.removePrefix("*.").split('.')
+            requireValid(text.length <= MAX_CHARS && labels.all { label.matches(it) }) {
+                "`$raw` is not a domain name; one with other than ASCII letters is written in punycode (xn--)"
+            }
+            requireValid(!labels.last().all { it.isDigit() }) { "`$raw` is an address; allow it as a cidr" }
+            requireValid(labels.size >= 2) { "`$raw` would cover a whole top-level domain" }
+
+            return DomainRule(text)
         }
     }
 }

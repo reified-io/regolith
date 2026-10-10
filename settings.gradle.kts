@@ -11,4 +11,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "regolith"
 
-include("protocol", "server", "pages", "sdk", "koog")
+include("protocol", "server", "pages", "egress", "sdk", "koog")

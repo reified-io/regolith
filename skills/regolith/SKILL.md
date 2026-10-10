@@ -40,9 +40,10 @@ it when you need a detail this file leaves out.
 - **Read limits from `GET /v1/info`** (timeouts, file size, memory) instead of guessing. Inside a
   sandbox, `free` and `nproc` report the host: its own share is in `REGOLITH_MEMORY_MB`,
   `REGOLITH_CPUS` and `REGOLITH_HOME_MB`.
-- **The network may be closed.** Private addresses and the host are never reachable; with mode `none`
-  nothing is, DNS included. A download failing with a name-resolution error in a `none` sandbox is the
-  policy, not a bug.
+- **The network may be closed.** Private addresses and the host are never reachable; with mode
+  `none` nothing is, DNS included. A download failing with a name-resolution error in a `none`
+  sandbox is the policy, not a bug, and so is one in an allowlist with domains when the name is not
+  on the list: add the name, do not work around it.
 - **Output is kept on the server.** If a connection drops, read the output again from the last `end`
   offset you saw; nothing is lost.
 - **A page of output says how the command is doing.** Its `exec` is the exec as of that page, so
@@ -126,8 +127,15 @@ curl -s -X POST -H "Authorization: Bearer $REGOLITH_TOKEN" -H 'Content-Type: app
 
 - `{"network":{"mode":"none"}}` cuts it off — use it after installing dependencies and before running
   code you do not trust;
-- `{"network":{"mode":"allowlist","allow":[{"cidr":"140.82.112.0/20"}]}}` allows only listed networks;
+- `{"network":{"mode":"allowlist","allow":[{"domain":"pypi.org"},{"domain":"*.pythonhosted.org"}]}}`
+  allows only those names over HTTP and HTTPS — `*.` covers the names below, not the name itself.
+  Package managers fetch from more names than their index: a `pip install` needs both of these;
+- `{"network":{"mode":"allowlist","allow":[{"cidr":"140.82.112.0/20"}]}}` allows only listed
+  networks, on any port;
 - `{"network":{"mode":"public"}}` restores the internet.
+
+A refusal says what was refused: `curl` reports a TLS `unrecognized name` alert for HTTPS, an HTTP
+request gets a 403 naming the host, and a name off the list does not resolve.
 
 ## Errors
 

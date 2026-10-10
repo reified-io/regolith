@@ -8,6 +8,6 @@ plugins {
 detekt {
     buildUponDefaultConfig = true
     config.setFrom("$rootDir/detekt.yml")
-    source.setFrom(listOf("protocol", "server", "pages", "sdk", "koog").flatMap { listOf("$it/src/main/kotlin", "$it/src/test/kotlin") })
+    source.setFrom(listOf("protocol", "server", "pages", "egress", "sdk", "koog").flatMap { listOf("$it/src/main/kotlin", "$it/src/test/kotlin") })
     autoCorrect = false
 }
