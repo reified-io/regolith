@@ -65,7 +65,7 @@ From Kotlin:
 
 ```kotlin
 dependencies {
-    implementation("io.reified.regolith:sdk:0.6.1")
+    implementation("io.reified.regolith:sdk:0.7.0")
 }
 ```
 
