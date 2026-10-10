@@ -132,7 +132,7 @@ hard-coding them.
 ```json
 {
   "version": "0.6.1",
-  "protocol": 4,
+  "protocol": 5,
   "defaults": {
     "image": "ghcr.io/reified-io/regolith-sandbox:0.6.1",
     "resources": {"cpus": 1.0, "memoryMb": 1024, "homeMb": 4096},

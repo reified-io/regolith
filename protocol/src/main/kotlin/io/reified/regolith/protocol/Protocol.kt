@@ -10,7 +10,7 @@ import kotlinx.serialization.json.Json
  * `/v1` prefix does not move with it: the prefix marks the family of endpoints, while this number is
  * what a client checks before trusting what it decodes.
  */
-public const val PROTOCOL_VERSION: Int = 4
+public const val PROTOCOL_VERSION: Int = 5
 
 /** Request header carrying a client-chosen key that makes starting an exec safe to retry. */
 public const val IDEMPOTENCY_KEY_HEADER: String = "Idempotency-Key"
