@@ -8,7 +8,7 @@
 #   docker build --target full -t regolith-sandbox-full images/sandbox
 
 # pinned by digest, which dependabot refreshes: a tag can be rebuilt under a running fleet, a digest cannot.
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS base
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bash coreutils findutils grep procps \
