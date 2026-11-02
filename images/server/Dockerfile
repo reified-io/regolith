@@ -7,7 +7,7 @@
 
 # every base image is pinned by digest, which dependabot refreshes: a tag can be rebuilt under the
 # server, a digest cannot.
-FROM eclipse-temurin:21-jre@sha256:227118764cccd3c3294617061aaa93a08309c63a395eefa83e6b35032992ea99 AS tools
+FROM eclipse-temurin:21-jre@sha256:0b99b3376fbb50dbf9c0af8535fdd5b8eb0d3fdfc8b1e4967f383b6919f6901a AS tools
 
 # the server drives the host's docker daemon through this binary, so the tarball is verified against a
 # pinned checksum instead of trusting the download. version and checksum change together.
@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY images/server/scripts/firewall.sh images/server/scripts/homedisk.sh /opt/regolith/scripts/
 RUN chmod 755 /opt/regolith/scripts/*.sh
 
-FROM eclipse-temurin:21-jdk@sha256:23cc5734ff46e776f51ce66eb9ee08444fd47caabec0a95b7eb6e94be2d3696d AS build
+FROM eclipse-temurin:21-jdk@sha256:ebfbb18d11ff163ee83b21258acf12248af48d22a0fdfdc68fa1a1516c05976a AS build
 WORKDIR /src
 COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties detekt.yml ./
 COPY gradle gradle
