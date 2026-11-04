@@ -30,8 +30,6 @@
 !egress/src/main/**
 !sdk/build.gradle.kts
 !sdk/src/main/**
-!koog/build.gradle.kts
-!koog/src/main/**
 
 # the helper scripts the image carries: the server drives them from this same image.
 !images/server/scripts/**

@@ -13,7 +13,6 @@ server     the control plane
 pages      the public role: published sites and the intake that receives them
 egress     the proxy behind domain rules, which the control plane runs from its own image
 sdk        Kotlin client (protocol + Ktor client)
-koog       Koog ShellCommandExecutor over the sdk
 images     the server image, and the base and full sandbox images
 skills     the Agent Skill for using a Regolith server
 ```

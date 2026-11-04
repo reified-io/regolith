@@ -32,7 +32,7 @@ cannot confine.
 - **Upgrades reach every sandbox.** The next session runs the new image, unless one is pinned.
 - **Failures a model can act on.** `oom_killed` instead of a bare exit code 137.
 - **Publishing, if you want it.** What an agent built, on the web at an address that gives nobody away.
-- **Made for Kotlin and for agents.** A coroutine SDK, Koog, `/llms.txt` and an
+- **Made for Kotlin and for agents.** A coroutine SDK, `/llms.txt` and an
   [Agent Skill](skills/regolith/SKILL.md).
 
 ## Quick start
@@ -82,14 +82,6 @@ RegolithClient("http://127.0.0.1:8080", token).use { client ->
     val server = sandbox.startExec(ExecRequest(shell = "python3 -m http.server 8000"))
     server.output().collect { frame -> print(frame.text) }
 }
-```
-
-With [Koog](https://github.com/JetBrains/koog) and `io.reified.regolith:koog`, an agent's shell tool
-runs inside a sandbox instead of on the machine running the agent:
-
-```kotlin
-val executor = RegolithShellCommandExecutor(client.getOrCreate("agent-7"))
-val shell = ExecuteShellCommandTool(executor, PrintShellCommandConfirmationHandler())
 ```
 
 From anything else, the [API](docs/api.md) is plain HTTP and JSON.

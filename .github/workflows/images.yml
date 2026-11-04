@@ -16,8 +16,6 @@ on:
       - gradle.properties
       - gradle/**
       - images/**
-      - koog/build.gradle.kts
-      - koog/src/main/**
       - pages/build.gradle.kts
       - pages/src/main/**
       - protocol/build.gradle.kts
@@ -41,8 +39,6 @@ on:
       - gradle.properties
       - gradle/**
       - images/**
-      - koog/build.gradle.kts
-      - koog/src/main/**
       - pages/build.gradle.kts
       - pages/src/main/**
       - protocol/build.gradle.kts

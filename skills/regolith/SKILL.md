@@ -1,6 +1,6 @@
 ---
 name: regolith
-description: Run commands and keep files in Regolith sandboxes — persistent, named Linux homes on a self-hosted server — over its HTTP API, the Kotlin SDK, or the Koog shell executor. Use when an agent needs somewhere safe to execute code, install tools, build projects or keep a workspace between conversations on a Regolith server.
+description: Run commands and keep files in Regolith sandboxes — persistent, named Linux homes on a self-hosted server — over its HTTP API or the Kotlin SDK. Use when an agent needs somewhere safe to execute code, install tools, build projects or keep a workspace between conversations on a Regolith server.
 ---
 
 # Regolith
@@ -171,6 +171,3 @@ RegolithClient(System.getenv("REGOLITH_URL"), System.getenv("REGOLITH_TOKEN")).u
     println("${result.exitCode}: ${result.stdout}")
 }
 ```
-
-With Koog, give the agent's shell tool `RegolithShellCommandExecutor(client.getOrCreate("user-23"))`: every
-command then runs in the sandbox instead of on the machine running the agent.

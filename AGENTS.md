@@ -1,8 +1,8 @@
 # AGENTS.md
 
 Regolith is a self-hosted sandbox service for AI agents: persistent, named Linux sandboxes on one
-Docker host behind an HTTP API, with a Kotlin SDK and a Koog integration. These are the rules for
-working on it (`CLAUDE.md` imports this file); the product is in `README.md` and `docs/`.
+Docker host behind an HTTP API, with a Kotlin SDK. These are the rules for working on it
+(`CLAUDE.md` imports this file); the product is in `README.md` and `docs/`.
 
 Read [`docs/architecture.md`](docs/architecture.md) before changing request flow, sessions, execs,
 output, storage or startup, and [`docs/sandbox-security.md`](docs/sandbox-security.md) before
@@ -17,13 +17,12 @@ touching what creates, confines or reaches into a container.
 | `pages/` | The public role: published sites and the intake that receives them | `protocol` |
 | `egress/` | The proxy behind domain rules, which the server runs from its own image | kotlinx.serialization only |
 | `sdk/` | The Kotlin client | `protocol`, Ktor client |
-| `koog/` | Koog `ShellCommandExecutor` over the SDK | `sdk`, Koog `agents-ext` |
 | `images/` | The server image and the sandbox images | — |
 | `skills/` | The Agent Skill for using a Regolith server | — |
 | `buildSrc/` | The convention plugins every module applies | — |
 
-- `protocol`, `sdk` and `koog` are libraries built with `explicitApi()`: every public declaration
-  says `public` and carries KDoc. The server keeps default visibility. They are what a release
+- `protocol` and `sdk` are libraries built with `explicitApi()`: every public declaration says
+  `public` and carries KDoc. The server keeps default visibility. They are what a release
   publishes to Maven Central, as `io.reified.regolith:<module>`, so a module added to that list needs
   a `description` — the POM is refused without one.
 - A module's build file applies one convention plugin — `regolith.library` for a published library,
@@ -51,7 +50,7 @@ touching what creates, confines or reaches into a container.
   images through `.github/workflows/images.yml`, each tagged with the version, because a server
   pointed at a sandbox image from another build fails only when a command does. Only the server also
   takes `latest` and `major.minor`, since a moving sandbox image changes every running sandbox. The
-  same release signs the three libraries and uploads them through `.github/workflows/libraries.yml`,
+  same release signs both libraries and uploads them through `.github/workflows/libraries.yml`,
   which runs in the `maven-central` environment — the one place the Central token and the signing key
   exist, and it admits release tags and no branch. The upload only stages the deployment: a version
   published to Maven Central can never be replaced or removed, so releasing it stays a person's click
@@ -202,7 +201,7 @@ example names such as `user-23`, never a real product.
 ## Commits
 
 - Subject `scope: imperative lowercase phrase`, no trailing period, at most ~65 characters.
-- Scopes: `protocol`, `server`, `pages`, `egress`, `sdk`, `koog`, `images`, `skills`, `docs`, `build`,
-  `ci`; omit for repo-wide changes.
+- Scopes: `protocol`, `server`, `pages`, `egress`, `sdk`, `images`, `skills`, `docs`, `build`, `ci`;
+  omit for repo-wide changes.
 - The subject alone is usually enough; add a body wrapped at 72 characters only when the why is not
   obvious from the diff. Never mix unrelated work in one commit.
