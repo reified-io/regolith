@@ -142,7 +142,8 @@ request gets a 403 naming the host, and a name off the list does not resolve.
 Take one before a change you may want to undo — a dependency upgrade, a migration, a risky refactor:
 
 - `POST /v1/sandboxes/{id}/snapshots` copies the home. It stops the running session first, so do not
-  take one while a command you need is still running.
+  take one while a command you need is still running. Send `{"note":"before the upgrade"}` to say
+  what it keeps: the list shows the note, and a time alone rarely tells you which one to restore.
 - `POST /v1/sandboxes/{id}/snapshots/{snapshot}/restore` puts the home back as it was then;
   everything written since is gone. The snapshot stays, so you can try again from the same point.
 - `POST /v1/sandboxes` with `"from":{"sandbox":"<id>","snapshot":"<id>"}` starts a separate sandbox

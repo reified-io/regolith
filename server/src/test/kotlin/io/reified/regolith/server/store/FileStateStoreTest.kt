@@ -13,6 +13,9 @@ import io.reified.regolith.server.domain.Cidr
 import io.reified.regolith.server.domain.Resources
 import io.reified.regolith.server.domain.Sandbox
 import io.reified.regolith.server.domain.SandboxId
+import io.reified.regolith.server.domain.Snapshot
+import io.reified.regolith.server.domain.SnapshotId
+import io.reified.regolith.server.domain.SnapshotNote
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.SerializationException
 import java.nio.file.Files
@@ -73,6 +76,24 @@ class FileStateStoreTest {
             store.delete(sandbox.id)
             assertEquals(emptyList(), store.sandboxes())
             assertTrue(!Files.exists(store.outputFile(sandbox.id, exec.id)))
+        }
+    }
+
+    @Test
+    fun `a snapshot recorded before notes reads without a new schema`() = runBlocking {
+        val noted = Snapshot(SnapshotId.random(), sandbox.createdAt, 1024, 4096, SnapshotNote.parse("before the upgrade"))
+        val plain = Snapshot(SnapshotId.random(), sandbox.lastUsedAt, 2048, 4096)
+        val kept = sandbox.copy(snapshots = listOf(noted, plain))
+
+        FileStateStore.open(root, "regolith").use { store ->
+            store.save(kept)
+            val record = root.resolve("sandboxes").resolve(kept.id.value).resolve("sandbox.json")
+            val written = Files.readString(record)
+            assertTrue(""","note":null""" in written)
+            // a record written before notes has no such field at all
+            Files.writeString(record, written.replace(""","note":null""", ""))
+
+            assertEquals(listOf(kept), store.sandboxes())
         }
     }
 

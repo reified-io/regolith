@@ -47,7 +47,7 @@ file. Bodies are JSON; unknown request fields are rejected. Errors are RFC 9457 
 
 ## Snapshots
 
-- `POST /v1/sandboxes/{id}/snapshots` - copies the home and returns 201 `{"id","createdAt","bytes","homeMb"}`. It stops the running session first (its commands end `interrupted`); the next command starts a new one on the same home. At most `limits.maxSnapshots` per sandbox, else `conflict`.
+- `POST /v1/sandboxes/{id}/snapshots` - body optional: `{"note":"before the upgrade"}`, one line of up to 200 characters saying what it keeps. Copies the home and returns 201 `{"id","createdAt","bytes","homeMb","note"}`. It stops the running session first (its commands end `interrupted`); the next command starts a new one on the same home. At most `limits.maxSnapshots` per sandbox, else `conflict`.
 - `GET /v1/sandboxes/{id}/snapshots` - `{"snapshots":[...]}`, oldest first.
 - `POST /v1/sandboxes/{id}/snapshots/{snapshot}/restore` - puts the snapshot back in place of the home, losing everything written since; the snapshot stays.
 - `DELETE /v1/sandboxes/{id}/snapshots/{snapshot}`

@@ -16,6 +16,7 @@ import io.reified.regolith.server.domain.Site
 import io.reified.regolith.server.domain.SiteLabel
 import io.reified.regolith.server.domain.Snapshot
 import io.reified.regolith.server.domain.SnapshotId
+import io.reified.regolith.server.domain.SnapshotNote
 import io.reified.regolith.server.domain.requireValid
 import io.reified.regolith.server.ports.HomeStore
 import io.reified.regolith.server.ports.SitePublisher
@@ -289,11 +290,11 @@ class Sandboxes(
     }
 
     /**
-     * Copies the sandbox's home into a new snapshot. A home is copied only while nothing has it open, so the
-     * session is stopped first, and the next command starts a new one on the same home. A sandbox that never
-     * ran gets the empty home it would have started with, and its snapshot is of that.
+     * Copies the sandbox's home into a new snapshot, kept with the caller's [note]. A home is copied only while
+     * nothing has it open, so the session is stopped first, and the next command starts a new one on the same
+     * home. A sandbox that never ran gets the empty home it would have started with, and its snapshot is of that.
      */
-    suspend fun snapshot(id: SandboxId): Snapshot = locks.withLock(id) {
+    suspend fun snapshot(id: SandboxId, note: SnapshotNote?): Snapshot = locks.withLock(id) {
         val sandbox = require(id)
         val max = config.limits.maxSnapshots
         if (sandbox.snapshots.size >= max) throw RegolithError.Conflict("A sandbox keeps at most $max snapshots; delete one first")
@@ -307,7 +308,7 @@ class Sandboxes(
             homes.snapshot(id, snapshotId) to size
         }
         val now = clock.now()
-        val snapshot = Snapshot(snapshotId, now, bytes, homeMb)
+        val snapshot = Snapshot(snapshotId, now, bytes, homeMb, note)
         saved(sandbox.copy(snapshots = sandbox.snapshots + snapshot, lastUsedAt = now, homeReleasedAt = null))
         log.info { "Snapshot taken: sandbox=[$id] snapshot=[$snapshotId] bytes=[$bytes] homeMb=[$homeMb]" }
         snapshot

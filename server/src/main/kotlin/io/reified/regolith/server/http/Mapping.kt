@@ -154,7 +154,7 @@ internal fun WireCreateSandbox.toDomain() = SandboxRequest(
     from = from?.let { SnapshotRef(SandboxId.parse(it.sandbox), SnapshotId.parse(it.snapshot)) },
 )
 
-internal fun Snapshot.toWire() = SnapshotInfo(id.value, createdAt, bytes, homeMb)
+internal fun Snapshot.toWire() = SnapshotInfo(id.value, createdAt, bytes, homeMb, note?.value)
 
 internal fun WireUpdateSandbox.toDomain() = SandboxPatch(
     alias = alias?.let(Alias::parse),

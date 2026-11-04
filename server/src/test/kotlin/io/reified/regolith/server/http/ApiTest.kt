@@ -496,6 +496,26 @@ class ApiTest {
     }
 
     @Test
+    fun `a snapshot keeps the note it was taken with, and a note is optional`() = apiTest { _, client ->
+        val sandbox = client.getOrCreate("noted")
+
+        val noted = sandbox.snapshot("before the upgrade")
+        val plain = sandbox.snapshot()
+
+        assertEquals("before the upgrade", noted.note)
+        assertNull(plain.note)
+        assertEquals(listOf("before the upgrade", null), sandbox.snapshots().map { it.note })
+
+        // a caller written before notes sends no body at all
+        val bare = createClient {}.post("/v1/sandboxes/${sandbox.id}/snapshots") { header(HttpHeaders.Authorization, "Bearer $TEST_TOKEN") }
+        assertEquals(HttpStatusCode.Created, bare.status)
+
+        val refused = assertFailsWith<RegolithException> { sandbox.snapshot("two\nlines") }
+        assertEquals(ErrorCodes.INVALID_REQUEST, refused.code)
+        assertEquals(3, sandbox.snapshots().size, "a refused note takes no snapshot")
+    }
+
+    @Test
     fun `a new sandbox starts from a snapshot of another, with a home at least that large`() = apiTest { server, client ->
         val origin = client.getOrCreate("origin", CreateSandboxRequest(resources = ResourcesSpec(homeMb = 8192)))
         origin.start()

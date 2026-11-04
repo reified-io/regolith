@@ -24,6 +24,7 @@ import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
 import io.ktor.utils.io.readRemaining
 import io.reified.regolith.protocol.CreateSandboxRequest
+import io.reified.regolith.protocol.CreateSnapshotRequest
 import io.reified.regolith.protocol.DirectoryListing
 import io.reified.regolith.protocol.ExecInfo
 import io.reified.regolith.protocol.ExecPage
@@ -41,6 +42,7 @@ import io.reified.regolith.server.app.Services
 import io.reified.regolith.server.domain.Alias
 import io.reified.regolith.server.domain.RegolithError
 import io.reified.regolith.server.domain.Sandbox
+import io.reified.regolith.server.domain.SnapshotNote
 import io.reified.regolith.server.domain.requireValid
 import kotlinx.io.readByteArray
 import kotlin.time.Duration
@@ -113,7 +115,9 @@ internal fun Route.sandboxRoutes(services: Services) = route("/sandboxes") {
                 call.respond(SnapshotPage(services.sandboxes.require(call.sandboxId()).snapshots.map { it.toWire() }))
             }
             post {
-                call.respond(HttpStatusCode.Created, services.sandboxes.snapshot(call.sandboxId()).toWire())
+                val request = call.jsonBody(CreateSnapshotRequest.serializer(), empty = CreateSnapshotRequest())
+                val snapshot = services.sandboxes.snapshot(call.sandboxId(), request.note?.let(SnapshotNote::parse))
+                call.respond(HttpStatusCode.Created, snapshot.toWire())
             }
             delete("/{snapshot}") {
                 services.sandboxes.deleteSnapshot(call.sandboxId(), call.snapshotId())

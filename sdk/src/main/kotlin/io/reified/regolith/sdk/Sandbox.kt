@@ -11,6 +11,7 @@ import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.cancel
 import io.ktor.utils.io.readAvailable
 import io.reified.regolith.protocol.CreateSandboxRequest
+import io.reified.regolith.protocol.CreateSnapshotRequest
 import io.reified.regolith.protocol.DirectoryListing
 import io.reified.regolith.protocol.ErrorCodes
 import io.reified.regolith.protocol.ExecInfo
@@ -141,9 +142,14 @@ public class Sandbox internal constructor(private val client: RegolithClient, pu
      * nothing has it open, so a running session is stopped first, its commands ending `interrupted`; the next
      * command starts a new session on the same home. `limits.maxSnapshots` in [RegolithClient.info] says how
      * many a sandbox keeps.
+     *
+     * A [note] says what the snapshot keeps — `before the upgrade` — so whoever lists the snapshots later can
+     * tell them apart by more than their time: up to 200 characters on one line, kept as given.
      */
-    public suspend fun snapshot(): SnapshotInfo =
-        client.call(HttpMethod.Post, "$path/snapshots", SnapshotInfo.serializer(), RegolithClient.COPY_TIMEOUT_MILLIS)
+    public suspend fun snapshot(note: String? = null): SnapshotInfo =
+        client.call(HttpMethod.Post, "$path/snapshots", SnapshotInfo.serializer(), RegolithClient.COPY_TIMEOUT_MILLIS) {
+            with(client) { jsonBody(CreateSnapshotRequest.serializer(), CreateSnapshotRequest(note)) }
+        }
 
     /** This sandbox's snapshots, oldest first. */
     public suspend fun snapshots(): List<SnapshotInfo> = client.call(HttpMethod.Get, "$path/snapshots", SnapshotPage.serializer()).snapshots

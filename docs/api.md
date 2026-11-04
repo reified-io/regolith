@@ -415,10 +415,14 @@ takes its snapshots too.
 
 ### `POST /v1/sandboxes/{id}/snapshots`
 
-Copies the home and answers `201` with the snapshot:
+Copies the home and answers `201` with the snapshot. The body is optional:
 
 ```json
-{"id": "9a0c4e1b7d2f4a6c8e0b1d3f5a7c9e2b", "createdAt": "2026-09-13T12:10:00Z", "bytes": 52428800, "homeMb": 4096}
+{"note": "before the upgrade"}
+```
+
+```json
+{"id": "9a0c4e1b7d2f4a6c8e0b1d3f5a7c9e2b", "createdAt": "2026-09-13T12:10:00Z", "bytes": 52428800, "homeMb": 4096, "note": "before the upgrade"}
 ```
 
 A home is copied only while nothing has it open, so a running session is stopped first, as `stop`
@@ -426,6 +430,10 @@ would, and its commands end `interrupted` with `stopped`; the next command start
 the same home. A request for this sandbox sent while the copy runs waits for it. `bytes` is what the
 snapshot takes on the server's disk, and `homeMb` the size of the home it was taken of. A sandbox
 that never ran is given the empty home it would have started with.
+
+`note` says what the snapshot keeps, so that whoever lists them later can choose one by more than
+its time. It is the caller's own text, kept as given and absent when none was sent: 1 to 200
+characters on one line, with no leading or trailing whitespace, or `invalid_request`.
 
 Past `limits.maxSnapshots` it answers `409 conflict`: delete one first. A copy that would leave the
 host short of its reserve is `503 unavailable`.

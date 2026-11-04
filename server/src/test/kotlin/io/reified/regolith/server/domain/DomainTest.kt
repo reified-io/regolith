@@ -40,6 +40,14 @@ class DomainTest {
     }
 
     @Test
+    fun `a snapshot note is one line of the caller's own text`() {
+        listOf("before the upgrade", "x".repeat(SnapshotNote.MAX_CHARS)).forEach { SnapshotNote.parse(it) }
+        listOf("", " padded", "two\nlines", "with\u0000nul", "x".repeat(SnapshotNote.MAX_CHARS + 1)).forEach { raw ->
+            assertFailsWith<RegolithError.Invalid>(raw) { SnapshotNote.parse(raw) }
+        }
+    }
+
+    @Test
     fun `cidrs are canonical and refused space cannot be allowed`() {
         assertEquals("140.82.112.0/20", Cidr.parse("140.82.112.7/20").value)
         assertEquals("1.1.1.1/32", Cidr.parse("1.1.1.1").value)

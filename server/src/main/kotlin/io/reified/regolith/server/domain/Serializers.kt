@@ -35,6 +35,8 @@ internal object ExecIdSerializer : ParsedSerializer<ExecId>("ExecId", ExecId::pa
 
 internal object SnapshotIdSerializer : ParsedSerializer<SnapshotId>("SnapshotId", SnapshotId::parse, SnapshotId::value)
 
+internal object SnapshotNoteSerializer : ParsedSerializer<SnapshotNote>("SnapshotNote", SnapshotNote::parse, SnapshotNote::value)
+
 internal object CidrSerializer : ParsedSerializer<Cidr>("Cidr", Cidr::parse, Cidr::value)
 
 internal object DomainRuleSerializer : ParsedSerializer<DomainRule>("DomainRule", DomainRule::parse, DomainRule::value)

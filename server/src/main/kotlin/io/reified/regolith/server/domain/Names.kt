@@ -108,6 +108,28 @@ value class SnapshotId private constructor(val value: String) {
     }
 }
 
+/**
+ * What a caller says one snapshot keeps, such as `before the upgrade`: opaque text read back by whoever
+ * chooses a snapshot to restore, and never by the server. One line, so a listing stays one per snapshot.
+ */
+@Serializable(with = SnapshotNoteSerializer::class)
+@JvmInline
+value class SnapshotNote private constructor(val value: String) {
+    override fun toString(): String = value
+
+    companion object {
+        const val MAX_CHARS = 200
+
+        fun parse(raw: String): SnapshotNote {
+            requireValid(raw.isNotEmpty() && raw.length <= MAX_CHARS) { "A snapshot note is 1 to $MAX_CHARS characters" }
+            requireValid(raw.trim() == raw) { "A snapshot note has no leading or trailing whitespace" }
+            requireValid(raw.none { it.isISOControl() }) { "A snapshot note is one line with no control characters" }
+
+            return SnapshotNote(raw)
+        }
+    }
+}
+
 /*
  * one shape for every identifier the server makes. the domain names no wire type, so `protocol.Ids`
  * states the same shape for clients and `DomainTest` holds the two together.

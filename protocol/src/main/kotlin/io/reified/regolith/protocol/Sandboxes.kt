@@ -63,9 +63,19 @@ public data class SnapshotSource(
 )
 
 /**
+ * Body of `POST /v1/sandboxes/{id}/snapshots`, which may be omitted. [note] says what the snapshot
+ * keeps, for whoever lists the snapshots later to choose one by: the caller's own text, up to 200
+ * characters on one line, which the server keeps as it was given.
+ */
+@Serializable
+public data class CreateSnapshotRequest(
+    val note: String? = null,
+)
+
+/**
  * A copy of a sandbox's home, taken between sessions. [bytes] is what it takes on the server's disk,
  * which grows with the files in the home rather than with its size; [homeMb] is the size of the home
- * it was taken of.
+ * it was taken of. [note] is what the caller said it keeps, when it said.
  */
 @Serializable
 public data class SnapshotInfo(
@@ -73,6 +83,7 @@ public data class SnapshotInfo(
     val createdAt: Instant,
     val bytes: Long,
     val homeMb: Int,
+    val note: String? = null,
 )
 
 /** Body of `GET /v1/sandboxes/{id}/snapshots`, oldest first. */

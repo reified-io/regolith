@@ -56,7 +56,8 @@ data class Sandbox(
 
 /**
  * A copy of a sandbox's home taken between sessions. [bytes] is what it takes on the host; [homeMb] is the
- * size of the home it was taken of, which a home restored or cloned from it starts at.
+ * size of the home it was taken of, which a home restored or cloned from it starts at. [note] is what the
+ * caller said it keeps, when it said.
  */
 @Serializable
 data class Snapshot(
@@ -64,6 +65,8 @@ data class Snapshot(
     val createdAt: Instant,
     val bytes: Long,
     val homeMb: Int,
+    // a default, so a record written before notes reads without a new schema.
+    val note: SnapshotNote? = null,
 )
 
 /** A published site: the [label] it is served at, and [until] when the server takes it down. */
