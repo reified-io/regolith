@@ -3,14 +3,14 @@ updates:
   - package-ecosystem: gradle
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
     commit-message:
       prefix: build
     labels:
       - dependencies
       - gradle
-    # one pull request per ecosystem per week instead of one per dependency: fewer CI runs, one
+    # one pull request per ecosystem per month instead of one per dependency: fewer CI runs, one
     # merge, and no textual conflict between bumps that sit on adjacent lines of the version catalog.
     # majors stay outside the group on purpose — a ktor major needs its own audit before landing,
     # which cannot happen inside a pull request that also moves five patch versions.
@@ -25,7 +25,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
     commit-message:
       prefix: ci
@@ -41,7 +41,7 @@ updates:
   - package-ecosystem: docker
     directory: /images/server
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
     commit-message:
       prefix: images
@@ -64,7 +64,7 @@ updates:
   - package-ecosystem: docker
     directory: /images/sandbox
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
     commit-message:
       prefix: images
