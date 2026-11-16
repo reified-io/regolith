@@ -17,13 +17,11 @@ import io.reified.regolith.server.domain.Snapshot
 import io.reified.regolith.server.domain.SnapshotId
 import io.reified.regolith.server.domain.SnapshotNote
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.SerializationException
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.minutes
@@ -104,8 +102,7 @@ class FileStateStoreTest {
             val record = root.resolve("sandboxes").resolve(sandbox.id.value).resolve("sandbox.json")
             Files.writeString(record, Files.readString(record).replace("140.82.112.0/20", "140.82.112.0 -j RETURN\\n-A X -s 1.1.1.1/20"))
 
-            val failure = assertFailsWith<SerializationException> { store.sandboxes() }
-            assertIs<RegolithError.Invalid>(failure.cause)
+            assertFailsWith<RegolithError.Invalid> { store.sandboxes() }
         }
     }
 
