@@ -356,10 +356,11 @@ class Execs(
             run.stdinOpen = false
             done
         }
-        run.done.complete(finished)
-        run.progress.value = Progress(finished.outputEnd, finished.outputTruncated, finished = true)
+        // the lease goes first: whoever sees the exec finished must also find its session idle.
         running.remove(exec.id)
         run.lease.close()
+        run.done.complete(finished)
+        run.progress.value = Progress(finished.outputEnd, finished.outputTruncated, finished = true)
         log.info { "Exec finished: sandbox=[${exec.sandbox}] exec=[${exec.id}] outcome=[$outcome]" }
     }
 
